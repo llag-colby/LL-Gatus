@@ -384,7 +384,7 @@ const showTooltip = (result, event, action = 'hover') => {
 }
 
 const prettifyTimestamp = (timestamp) => {
-  return new Date(timestamp).toLocaleString()
+  return new Date(timestamp).toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: true })
 }
 
 const generateHealthBadgeImageURL = () => {

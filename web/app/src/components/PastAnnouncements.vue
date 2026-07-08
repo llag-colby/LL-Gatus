@@ -183,6 +183,7 @@ const getTypeClasses = (type) => {
 const formatDate = (dateString) => {
   const date = new Date(dateString)
   return date.toLocaleDateString('en-US', {
+    timeZone: 'America/Chicago',
     weekday: 'long',
     year: 'numeric',
     month: 'long',
@@ -192,20 +193,23 @@ const formatDate = (dateString) => {
 
 const formatTime = (timestamp) => {
   return new Date(timestamp).toLocaleTimeString('en-US', {
-    hour: '2-digit',
+    timeZone: 'America/Chicago',
+    hour: 'numeric',
     minute: '2-digit',
-    hour12: false
+    hour12: true
   })
 }
 
 const formatFullTimestamp = (timestamp) => {
   return new Date(timestamp).toLocaleString('en-US', {
+    timeZone: 'America/Chicago',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
     second: '2-digit',
+    hour12: true,
     timeZoneName: 'short'
   })
 }

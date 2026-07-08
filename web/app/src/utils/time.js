@@ -55,18 +55,21 @@ export const generatePrettyTimeDifference = (start, end) => {
   }
 }
 
+// All timestamps are displayed in US Central Time, 12-hour clock.
+export const DISPLAY_TIMEZONE = 'America/Chicago'
+
 /**
- * Formats a timestamp into YYYY-MM-DD HH:mm:ss format
+ * Formats a timestamp in Central Time, 12-hour format
+ * (e.g., "07/08/2026, 7:43:08 PM CDT")
  * @param {string|Date} timestamp - The timestamp to format
  * @returns {string} Formatted timestamp
  */
 export const prettifyTimestamp = (timestamp) => {
-  let date = new Date(timestamp);
-  let YYYY = date.getFullYear();
-  let MM = ((date.getMonth() + 1) < 10 ? "0" : "") + "" + (date.getMonth() + 1);
-  let DD = ((date.getDate()) < 10 ? "0" : "") + "" + (date.getDate());
-  let hh = ((date.getHours()) < 10 ? "0" : "") + "" + (date.getHours());
-  let mm = ((date.getMinutes()) < 10 ? "0" : "") + "" + (date.getMinutes());
-  let ss = ((date.getSeconds()) < 10 ? "0" : "") + "" + (date.getSeconds());
-  return YYYY + "-" + MM + "-" + DD + " " + hh + ":" + mm + ":" + ss;
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: DISPLAY_TIMEZONE,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: 'numeric', minute: '2-digit', second: '2-digit',
+    hour12: true,
+    timeZoneName: 'short',
+  }).format(new Date(timestamp));
 }

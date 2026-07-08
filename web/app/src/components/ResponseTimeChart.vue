@@ -163,7 +163,7 @@ const chartOptions = computed(() => {
           title: (tooltipItems) => {
             if (tooltipItems.length > 0) {
               const date = new Date(tooltipItems[0].parsed.x)
-              return date.toLocaleString()
+              return date.toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: true })
             }
             return ''
           },
@@ -207,7 +207,7 @@ const chartOptions = computed(() => {
             },
             label: {
               display: () => hoveredEventIndex.value === index,
-              content: [event.isOngoing ? `Status: ONGOING` : `Status: RESOLVED`, `Unhealthy for ${event.duration}`, `Started at ${new Date(event.timestamp).toLocaleString()}`],
+              content: [event.isOngoing ? `Status: ONGOING` : `Status: RESOLVED`, `Unhealthy for ${event.duration}`, `Started at ${new Date(event.timestamp).toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: true })}`],
               backgroundColor: getEventColor(),
               color: '#ffffff',
               font: {

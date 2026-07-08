@@ -236,7 +236,7 @@ const formatRelativeTime = (timestamp) => {
 
 const formatTimestamp = (timestamp) => {
   const date = new Date(timestamp)
-  return date.toLocaleString()
+  return date.toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: true })
 }
 
 const calculateSuccessRate = (result) => {
