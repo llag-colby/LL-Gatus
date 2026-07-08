@@ -1,0 +1,106 @@
+storage:
+  type: sqlite
+  path: /data/data.db
+
+ui:
+  title: "Long Lewis Status"
+  header: " "
+  logo: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA3NzMuNzggNzAuNCIgd2lkdGg9IjE2Ni42NyI+PGcgZmlsbD0iIzIzMWYyMCI+PHBhdGggZD0iTTU0LjM5LDU4Ljc0YzMuMDgsMCw4LjY5LS40NCwxMi4xMy0yLjMxbC01Ljc5LDEzLjk3SDBjMi4wMS0yLjc1LDMuNTQtNS4zOSw1LjIyLTEyLjFMMTYuNzMsMTIuMWMxLjY3LTYuNzEsMS40NS05LjM1LjgyLTEyLjFoMzEuMjRjLTIuMDEsMi43NS0zLjU0LDUuMzktNS4yMiwxMi4xbC0xMS42Myw0Ni42NGgyMi40NFoiPjwvcGF0aD48cGF0aCBkPSJNNzkuNiwyMC42OEM4My4zOSw1LjUsOTEuMTQsMCwxMDIuNTgsMGg0MC4yNmMxMS40NCwwLDE2LjQ1LDUuNSwxMi42NywyMC42OGwtNy4yNCwyOS4wNGMtMy43OCwxNS4xOC0xMS41NCwyMC42OC0yMi45OCwyMC42OGgtNDAuMjZjLTExLjQ0LDAtMTYuNDUtNS41LTEyLjY2LTIwLjY4bDcuMjQtMjkuMDRaTTk4LjA4LDU0LjIzYy0uODUsMy40MS42NCw0LjUxLDQuMTYsNC41MWgxMS42NmMzLjUyLDAsNS41NS0xLjEsNi40LTQuNTFsOS40OS0zOC4wNmMuODUtMy40MS0uNjQtNC41MS00LjE2LTQuNTFoLTExLjY2Yy0zLjUyLDAtNS41NSwxLjEtNi40LDQuNTFsLTkuNDksMzguMDZaIj48L3BhdGg+PHBhdGggZD0iTTE4MC4zLDEyLjFoLS4yMmwtMTEuMzgsNDUuNjVjLTEuOTcsNy45Mi0yLDkuMzUtLjUxLDEyLjY1aC0xNi45NGMzLjEzLTMuMywzLjgyLTQuNzMsNS43OS0xMi42NWwxMS4yNC00NS4xYzEuOTctNy45MiwyLTkuMzUuNTEtMTIuNjVoMzcuNzNsMTQuMjksNTcuNDJoLjMzbDExLjE2LTQ0Ljc3YzEuOTctNy45MiwyLTkuMzUuNTEtMTIuNjVoMTYuOTRjLTMuMTMsMy4zLTMuODIsNC43My01Ljc5LDEyLjY1bC0xNC4zOSw1Ny43NWgtMzQuNzZsLTE0LjUxLTU4LjNaIj48L3BhdGg+PHBhdGggZD0iTTMyNy40NCwyOC4xNmMtNC4xNSw0LjczLTQuODQsNi4xNi02LjA0LDExbC00LjMzLDE3LjM4Yy0yLjE3LDguNjktMi4wOCwxMC4xMi0uNTksMTMuODZoLTIzLjY1bC43NC02LjQ5aC0uMjJjLTIuMjIsNC4wNy0zLjgyLDYuNDktMTEuNDEsNi40OWgtMjMuNzZjLTExLjQ0LDAtMTYuNDUtNS41LTEyLjY2LTIwLjY4bDcuMjQtMjkuMDRjMy43OC0xNS4xOCwxMS41NC0yMC42OCwyMi45Ny0yMC42OGg1MS40OGwtMS4yOCwxMy41M2MtMi43LTEuMS01LjE0LTEuODctMTAuMzEtMS44N2gtMjguNDljLTMuNTIsMC01LjU1LDEuMS02LjQsNC41MWwtOS40OSwzOC4wNmMtLjg1LDMuNDEuNjQsNC41MSw0LjE2LDQuNTFoOS4wMmMzLjUyLDAsNS41NS0xLjEsNi40LTQuNTFsMy41OS0xNC40MWgtMTAuMDFjLTEuOTgsMC0zLjM1LjY2LTQuODQsMS4zMmwzLjI0LTEyLjk4aDQ0LjY2WiI+PC9wYXRoPjxwYXRoIGQ9Ik0zMzEuODEsMzUuMzFoMzguNzJsLTQuNjEsMTguNDhoLTM4LjcybDQuNjEtMTguNDhaIj48L3BhdGg+PHBhdGggZD0iTTQyNS4wOCw1OC43NGMzLjA4LDAsOC42OS0uNDQsMTIuMTMtMi4zMWwtNS43OSwxMy45N2gtNjAuNzJjMi4wMS0yLjc1LDMuNTQtNS4zOSw1LjIyLTEyLjFsMTEuNTItNDYuMmMxLjY3LTYuNzEsMS40NS05LjM1LjgyLTEyLjFoMzEuMjRjLTIuMDEsMi43NS0zLjU0LDUuMzktNS4yMiwxMi4xbC0xMS42Myw0Ni42NGgyMi40NFoiPjwvcGF0aD48cGF0aCBkPSJNNDkyLjA3LDU4Ljc0YzYuMjcsMCw5LjYtLjk5LDEyLjU3LTEuODdsLTUuNzksMTMuNTNoLTYyLjA0YzItMi43NSwzLjU0LTUuMzksNS4yMi0xMi4xbDExLjUyLTQ2LjJjMS42Ny02LjcxLDEuNDUtOS4zNS44Mi0xMi4xaDYwLjk0bC0xLjE3LDEzLjUzYy0yLjY0LS44OC01LjQ3LTEuODctMTEuNzQtMS44N2gtMjEuODlsLTQuMTEsMTYuNWgxOS4xNGM2LjE2LDAsOS40OS0uOTksMTIuNTctMS44N2wtMy44NCwxNS40Yy0yLjY0LS44OC01LjQ3LTEuODctMTEuNjMtMS44N2gtMTkuMTRsLTQuNzIsMTguOTJoMjMuMzJaIj48L3BhdGg+PHBhdGggZD0iTTU2OC45OSwyMy43NmgtLjIybC0yMi45Niw0Ni42NGgtMjUuNjNsLS40Ni02MS4yN2MtLjA5LTQuNTEtMS4xMy02LjkzLTIuMjMtOS4xM2gzMS45Yy0uODgsMS4zMi0xLjQzLDIuMi0yLjAzLDQuNjItLjU1LDIuMi0uNzksNC4wNy0uODUsNi45M2wtLjMsMzMuODhoLjIyTDU2OC43NSwwaDI2Ljg0bC4yLDQ1LjU0aC4yMmwxNi41LTMzLjk5YzEuMjktMi41MywyLjE0LTUuMDYsMi42MS02LjkzLjQ0LTEuNzYuNjMtMy40MS4xNi00LjYyaDE3LjA1Yy0xLjQzLDEuMzItNC4xOCwzLjUyLTcuNzIsMTAuNjdsLTI5LjMsNTkuNzNoLTI1Ljk2bC0uMzYtNDYuNjRaIj48L3BhdGg+PHBhdGggZD0iTTYxOC4wOCw3MC40YzIuMDEtMi43NSwzLjU0LTUuMzksNS4yMi0xMi4xbDExLjUyLTQ2LjJjMS42Ny02LjcxLDEuNDUtOS4zNS44Mi0xMi4xaDMxLjI0Yy0yLDIuNzUtMy41NCw1LjM5LTUuMjIsMTIuMWwtMTEuNTIsNDYuMmMtMS42Nyw2LjcxLTEuNDUsOS4zNS0uODIsMTIuMWgtMzEuMjRaIj48L3BhdGg+PHBhdGggZD0iTTc0MS4wNSwxMy45N2MtMi45NC0xLjQzLTUuMTQtMi4zMS0xMC4zMS0yLjMxaC0yNC45N2MtNC4xOCwwLTUuMzEuNTUtNS45NCwzLjA4bC0uOTksMy45NmMtLjY2LDIuNjQuMjIsMy4wOCw0LjQsMy4wOGgxOS4wM2MxMS40NCwwLDE2LjYxLDMuOTYsMTQuMDYsMTQuMTlsLTQuMjgsMTcuMTZjLTIuNzcsMTEuMTEtOC4yNiwxNy4yNy0yMS4xMywxNy4yN2gtNDguNGwxLjI1LTE0LjNjMi4zMSwxLjMyLDQuNjIsMi42NCw5LjksMi42NGgyNS45NmM0LjE4LDAsNS4xNy0uNDQsNS44My0zLjA4bDEuMjEtNC44NGMuNjMtMi41My0uMTEtMy4wOC00LjI5LTMuMDhoLTIxLjg5Yy0xMC42NywwLTEzLjk3LTMuNTItMTEuMDQtMTUuMjlsMy45Mi0xNS43M2MyLjc0LTExLDkuNTYtMTYuNzIsMTkuMDItMTYuNzJoNDkuODNsLTEuMTcsMTMuOTdaIj48L3BhdGg+PHBhdGggZD0iTTc1Ni43OCwyLjU1aC0zLjgxbC0yLjY2LDEwLjY3aC0yLjU4bDIuNjYtMTAuNjdoLTMuODFsLjQ4LTEuOWgxMC4ybC0uNDcsMS45Wk03NjQuNTksOS41NWw1LjYyLTguOTFoMy41N2wtMy4xNCwxMi41OGgtMi4zMWwyLjQ4LTkuOTNoLS4wN2wtNi4yNSw5LjkzaC0xLjdsLTEuMy05LjkzaC0uMDdsLTIuNDgsOS45M2gtMi4zMWwzLjE0LTEyLjU4aDMuNTdsMS4yNSw4LjkxWiI+PC9wYXRoPjwvZz48L3N2Zz4K"
+  favicon:
+    default: "/favicon-32x32.png"
+    size16x16: "/favicon-16x16.png"
+    size32x32: "/favicon-32x32.png"
+  custom-css: |
+    /* Wordmark logo: allow it to be wide instead of a 48px square */
+    header .w-12.h-12 { width: auto !important; }
+    header img { height: 38px !important; width: auto !important; max-width: 260px; }
+    /* Force the near-black wordmark to render white in dark mode */
+    html.dark header img { filter: brightness(0) invert(1); }
+    /* Remove the header text next to the logo */
+    header h1 { display: none !important; }
+    /* Remove the GitHub logo in the bottom-right */
+    #social { display: none !important; }
+
+endpoints:
+  # ---------- Muscle Shoals ----------
+  - name: Muscle Shoals
+    group: WAN 1 (Comcast Fiber)
+    url: "icmp://50.225.219.74"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+  - name: Muscle Shoals
+    group: WAN 2 (ATT Backup)
+    url: "icmp://45.17.37.185"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+
+  # ---------- Ivory Tower ----------
+  - name: Ivory Tower
+    group: WAN 1 (ATT Fiber)
+    url: "icmp://99.28.23.1"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+  - name: Ivory Tower
+    group: WAN 2 (Comcast)
+    url: "icmp://162.17.79.209"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+
+  # ---------- Prattville ----------
+  - name: Prattville
+    group: WAN 1 (ATT F1)
+    url: "icmp://12.247.225.58"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+  - name: Prattville
+    group: WAN 2 (WOW)
+    url: "icmp://24.42.189.244"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+
+  # ---------- Bessemer ----------
+  - name: Bessemer
+    group: WAN 1 (Spectrum Fiber)
+    url: "icmp://75.114.33.100"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+  - name: Bessemer
+    group: WAN 2 (Spectrum Coax)
+    url: "icmp://71.45.253.164"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+
+  # ---------- Florence ----------
+  - name: Florence
+    group: WAN 1
+    url: "icmp://23.119.67.89"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+
+  # ---------- Hoover ----------
+  - name: Hoover
+    group: WAN 1
+    url: "icmp://162.199.109.193"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+
+  # ---------- Tuscumbia ----------
+  - name: Tuscumbia
+    group: WAN 1
+    url: "icmp://45.25.124.73"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+
+  # ---------- Alabaster ----------
+  - name: Alabaster
+    group: WAN 1
+    url: "icmp://12.247.225.94"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+
+  # ---------- Cullman ----------
+  - name: Cullman
+    group: WAN 1
+    url: "icmp://12.77.92.2"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]

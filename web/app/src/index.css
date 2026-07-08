@@ -1,0 +1,197 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+  }
+  
+  :root.dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+.bg-success {
+    background-color: #28a745;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Classy tooltips: any element with [data-tooltip="..."] gets one.  */
+/*  Add data-tip-pos="bottom" to make it appear below (e.g. header).  */
+/* ------------------------------------------------------------------ */
+[data-tooltip]:not([data-tooltip=""]) {
+    position: relative;
+}
+
+[data-tooltip]:not([data-tooltip=""])::before,
+[data-tooltip]:not([data-tooltip=""])::after {
+    position: absolute;
+    left: 50%;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 70;
+    transition: opacity .16s ease, transform .16s ease;
+    will-change: opacity, transform;
+}
+
+/* Bubble */
+[data-tooltip]:not([data-tooltip=""])::after {
+    content: attr(data-tooltip);
+    bottom: calc(100% + 9px);
+    transform: translateX(-50%) translateY(5px) scale(.97);
+    transform-origin: bottom center;
+    white-space: nowrap;
+    max-width: 320px;
+    background: hsl(222.2 47% 11% / .97);
+    color: #f8fafc;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.1;
+    letter-spacing: .1px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid rgb(255 255 255 / .08);
+    box-shadow: 0 10px 30px -8px rgb(0 0 0 / .5), 0 3px 8px -3px rgb(0 0 0 / .35);
+}
+
+/* Arrow */
+[data-tooltip]:not([data-tooltip=""])::before {
+    content: "";
+    bottom: calc(100% + 4px);
+    transform: translateX(-50%) translateY(5px);
+    border: 5px solid transparent;
+    border-top-color: hsl(222.2 47% 11% / .97);
+}
+
+[data-tooltip]:not([data-tooltip=""]):hover::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+}
+[data-tooltip]:not([data-tooltip=""]):hover::before {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Bottom-positioned variant (for the sticky header) */
+[data-tooltip][data-tip-pos="bottom"]:not([data-tooltip=""])::after {
+    bottom: auto;
+    top: calc(100% + 9px);
+    transform-origin: top center;
+}
+[data-tooltip][data-tip-pos="bottom"]:not([data-tooltip=""])::before {
+    bottom: auto;
+    top: calc(100% + 4px);
+    border-top-color: transparent;
+    border-bottom-color: hsl(222.2 47% 11% / .97);
+}
+
+@media (hover: none) {
+    /* Don't show hover tooltips on touch devices */
+    [data-tooltip]::before,
+    [data-tooltip]::after { display: none; }
+}
+
+/* ------------------------------------------------------------------ */
+/*  No scrollbars anywhere — the dashboard is meant to fit on screen.  */
+/* ------------------------------------------------------------------ */
+* {
+    scrollbar-width: none;        /* Firefox */
+    -ms-overflow-style: none;     /* IE/Edge */
+}
+*::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;                /* Chrome/Safari */
+}
+
+/* ------------------------------------------------------------------ */
+/*  Fullscreen wall-display mode: hide chrome, fill the whole screen.  */
+/* ------------------------------------------------------------------ */
+.fs-active {
+    height: 100vh;
+    overflow: hidden;
+}
+.fs-active header,
+.fs-active footer {
+    display: none !important;
+}
+.fs-active .dashboard-container > div {
+    padding: 14px !important;
+}
+/* Wider cards spread across the screen, vertically centered as a block.
+   Rows are sized to their content and centered — bars never stretch. */
+.fs-active .dashboard-grid {
+    height: calc(100vh - 28px);
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)) !important;
+    grid-auto-rows: min-content;
+    align-content: center;
+    gap: 16px;
+    overflow: hidden;
+}
+/* Status bars keep a fixed, comfortable height — no vertical stretching */
+.fs-active .loc-bars > div {
+    height: 2.25rem !important;
+}
+
+
+html {
+    height: 100%;
+}
+
+body {
+    min-height: 100vh;
+}
+
+@media screen and (max-width: 1279px) {
+    body {
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+}
