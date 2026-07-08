@@ -1,0 +1,14 @@
+services:
+  gatus:
+    build: .
+    image: ll-gatus:local
+    container_name: gatus
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - TZ=America/Chicago
+    cap_add:
+      - NET_RAW   # required for ICMP (WAN ping) checks
