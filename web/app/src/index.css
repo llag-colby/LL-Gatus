@@ -154,30 +154,36 @@
 /* ------------------------------------------------------------------ */
 /*  Fullscreen wall-display mode: hide chrome, fill the whole screen.  */
 /* ------------------------------------------------------------------ */
-.fs-active {
-    height: 100vh;
-    overflow: hidden;
-}
 .fs-active header,
 .fs-active footer {
     display: none !important;
 }
-.fs-active .dashboard-container > div {
-    padding: 14px !important;
-}
-/* Wider cards spread across the screen, vertically centered as a block.
-   Rows are sized to their content and centered — bars never stretch. */
-.fs-active .dashboard-grid {
-    height: calc(100vh - 28px);
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)) !important;
-    grid-auto-rows: min-content;
-    align-content: center;
-    gap: 16px;
+/* The DASHBOARD is clamped to exactly one screen and centered — no scroll.
+   (Detail views have no .dashboard-container, so they can still scroll.) */
+.fs-active .dashboard-container {
+    height: 100vh;
     overflow: hidden;
+}
+.fs-active .dashboard-container > div {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 16px !important;
+    margin: 0 !important;
+}
+/* Wider cards spread across the screen; cards keep their natural height. */
+.fs-active .dashboard-grid {
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)) !important;
+    gap: 16px;
 }
 /* Status bars keep a fixed, comfortable height — no vertical stretching */
 .fs-active .loc-bars > div {
     height: 2.25rem !important;
+}
+/* Empty announcement banner shouldn't push the grid off-center */
+.fs-active .dashboard-container .mb-6:empty {
+    display: none;
 }
 
 
