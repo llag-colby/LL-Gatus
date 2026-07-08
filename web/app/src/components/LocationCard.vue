@@ -49,10 +49,9 @@
         </div>
       </div>
 
-      <!-- Shared time axis -->
-      <div class="flex items-center justify-between text-[11px] text-muted-foreground mt-2 pl-[72px] sm:pl-[76px]">
+      <!-- Data-age label (updates live) -->
+      <div class="text-[11px] text-muted-foreground mt-2 pl-[72px] sm:pl-[76px]">
         <span>{{ oldestResultTime }}</span>
-        <span>{{ newestResultTime }}</span>
       </div>
     </CardContent>
   </Card>
@@ -64,6 +63,7 @@ import { useRouter } from 'vue-router'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { generatePrettyTimeAgo } from '@/utils/time'
+import { now } from '@/store'
 
 const router = useRouter()
 
@@ -220,16 +220,11 @@ const primaryEndpoint = computed(() => {
 })
 
 const oldestResultTime = computed(() => {
+  now.value // depend on the live clock so this re-evaluates every second
   const ep = primaryEndpoint.value
   if (!ep || !ep.results || ep.results.length === 0) return ''
   const idx = Math.max(0, ep.results.length - props.maxResults)
   return generatePrettyTimeAgo(ep.results[idx].timestamp)
-})
-
-const newestResultTime = computed(() => {
-  const ep = primaryEndpoint.value
-  if (!ep || !ep.results || ep.results.length === 0) return ''
-  return generatePrettyTimeAgo(ep.results[ep.results.length - 1].timestamp)
 })
 
 // --- Cell styling ---

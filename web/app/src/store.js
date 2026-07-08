@@ -1,4 +1,4 @@
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 
 // Reads a value from window.config, ignoring unreplaced Go template placeholders.
 function fromConfig(key) {
@@ -28,3 +28,8 @@ export const controls = reactive({
 export function requestRefresh() {
   window.dispatchEvent(new CustomEvent('gatus:refresh'))
 }
+
+// Live clock (ticks every second) so relative "x ago" labels update on their
+// own between data refreshes instead of sitting frozen.
+export const now = ref(Date.now())
+setInterval(() => { now.value = Date.now() }, 1000)
