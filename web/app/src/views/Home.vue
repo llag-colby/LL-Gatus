@@ -1,5 +1,5 @@
 <template>
-  <div class="dashboard-container bg-background">
+  <div class="dashboard-container home-view bg-background">
     <div class="w-full px-4 sm:px-6 py-6">
       <!-- Announcement Banner (Active Announcements) -->
       <AnnouncementBanner :announcements="activeAnnouncements" class="mb-6" />

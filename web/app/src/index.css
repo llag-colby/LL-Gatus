@@ -171,17 +171,18 @@
     overflow-y: auto;
 }
 
-/* DASHBOARD: fill exactly one screen so all cards are visible — never clipped,
-   never scrolled. Detail views have no .dashboard-container, so they scroll. */
-.fs-active .dashboard-container {
+/* DASHBOARD (home only): fill exactly one screen so all cards are visible —
+   never clipped, never scrolled. Detail views are NOT clamped, so they scroll
+   inside <main>. (Detail pages reuse .dashboard-container, so scope to .home-view.) */
+.fs-active .home-view {
     height: 100vh;
     overflow: hidden;
 }
-.fs-active .dashboard-container > div {
+.fs-active .home-view > div {
     padding: 14px !important;
     margin: 0 !important;
 }
-.fs-active .dashboard-container .mb-6:empty {
+.fs-active .home-view .mb-6:empty {
     display: none;
 }
 /* Balanced grid (columns computed from card count) that fills the whole screen */

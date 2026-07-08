@@ -12,12 +12,10 @@
         <div class="w-full px-4 sm:px-6 py-3">
           <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
             <!-- Logo -->
-            <component
-              :is="link ? 'a' : 'div'"
-              :href="link"
-              target="_blank"
-              :class="['flex items-center shrink-0', link && 'hover:opacity-80 transition-opacity']"
-              data-tooltip="Long Lewis Infrastructure"
+            <router-link
+              to="/"
+              class="flex items-center shrink-0 hover:opacity-80 transition-opacity"
+              data-tooltip="Back to dashboard"
               data-tip-pos="bottom"
             >
               <div class="h-10 flex items-center">
@@ -34,7 +32,7 @@
                   class="h-full w-auto object-contain"
                 />
               </div>
-            </component>
+            </router-link>
 
             <!-- Controls: search / filter / sort + actions -->
             <div class="flex items-center gap-2 sm:gap-3 flex-wrap justify-end grow">
@@ -191,10 +189,6 @@ const logo = computed(() => {
 
 const header = computed(() => {
   return window.config && window.config.header && window.config.header !== '{{ .UI.Header }}' ? window.config.header : "Gatus"
-})
-
-const link = computed(() => {
-  return window.config && window.config.link && window.config.link !== '{{ .UI.Link }}' ? window.config.link : null
 })
 
 const buttons = computed(() => {
