@@ -275,9 +275,8 @@ const formatFullTimestamp = (timestamp) => {
     hour: 'numeric',
     minute: '2-digit',
     second: '2-digit',
-    hour12: true,
-    timeZoneName: 'short'
-  })
+    hour12: true
+  }) + ' CST'
 }
 </script>
 
