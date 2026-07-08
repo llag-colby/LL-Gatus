@@ -159,9 +159,14 @@
     display: none !important;
 }
 
-/* #global is the fullscreen element, so it is the scroll context: the dashboard
-   fits exactly (no scroll), while a drilled-in detail page can scroll. */
+/* #global is the fullscreen element and fills the screen. Scrolling happens on
+   an INNER container (main) — the browser resists scrolling the fullscreen
+   element itself, but an inner element scrolls normally. */
 .fs-active {
+    height: 100vh;
+    overflow: hidden;
+}
+.fs-active main {
     height: 100vh;
     overflow-y: auto;
 }
