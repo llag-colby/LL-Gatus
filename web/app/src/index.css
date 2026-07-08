@@ -158,32 +158,53 @@
 .fs-active footer {
     display: none !important;
 }
-/* The DASHBOARD is clamped to exactly one screen and centered — no scroll.
-   (Detail views have no .dashboard-container, so they can still scroll.) */
+
+/* Allow the fullscreen root to scroll — needed for drilled-in detail pages.
+   (The Fullscreen API otherwise pins the root and blocks scrolling.) */
+:root:fullscreen { overflow: auto !important; }
+:root:-webkit-full-screen { overflow: auto !important; }
+
+/* DASHBOARD: fill exactly one screen so all cards are visible — never clipped,
+   never scrolled. Detail views have no .dashboard-container, so they scroll. */
 .fs-active .dashboard-container {
     height: 100vh;
     overflow: hidden;
 }
 .fs-active .dashboard-container > div {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding: 16px !important;
+    padding: 14px !important;
     margin: 0 !important;
 }
-/* Wider cards spread across the screen; cards keep their natural height. */
-.fs-active .dashboard-grid {
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)) !important;
-    gap: 16px;
-}
-/* Status bars keep a fixed, comfortable height — no vertical stretching */
-.fs-active .loc-bars > div {
-    height: 2.25rem !important;
-}
-/* Empty announcement banner shouldn't push the grid off-center */
 .fs-active .dashboard-container .mb-6:empty {
     display: none;
+}
+.fs-active .dashboard-grid {
+    height: calc(100vh - 28px);
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)) !important;
+    grid-auto-rows: 1fr;
+    gap: 14px;
+}
+/* Each card fills its grid cell; its content is vertically centered with
+   fixed-height bars, so nothing stretches. */
+.fs-active .location {
+    height: 100%;
+}
+.fs-active .loc-content {
+    display: flex;
+    flex-direction: column;
+}
+/* Spread the WAN/Overall rows evenly down the card so the extra height is used
+   cleanly — the gaps grow, the bars stay a fixed height (no stretching). */
+.fs-active .loc-rows {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+}
+.fs-active .loc-rows > * {
+    margin-top: 0 !important;
+}
+.fs-active .loc-bars > div {
+    height: 2rem !important;
 }
 
 
