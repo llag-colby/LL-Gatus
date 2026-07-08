@@ -159,10 +159,12 @@
     display: none !important;
 }
 
-/* Allow the fullscreen root to scroll — needed for drilled-in detail pages.
-   (The Fullscreen API otherwise pins the root and blocks scrolling.) */
-:root:fullscreen { overflow: auto !important; }
-:root:-webkit-full-screen { overflow: auto !important; }
+/* #global is the fullscreen element, so it is the scroll context: the dashboard
+   fits exactly (no scroll), while a drilled-in detail page can scroll. */
+.fs-active {
+    height: 100vh;
+    overflow-y: auto;
+}
 
 /* DASHBOARD: fill exactly one screen so all cards are visible — never clipped,
    never scrolled. Detail views have no .dashboard-container, so they scroll. */
@@ -177,9 +179,10 @@
 .fs-active .dashboard-container .mb-6:empty {
     display: none;
 }
+/* Balanced grid (columns computed from card count) that fills the whole screen */
 .fs-active .dashboard-grid {
     height: calc(100vh - 28px);
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)) !important;
+    grid-template-columns: repeat(var(--fs-cols, 3), 1fr) !important;
     grid-auto-rows: 1fr;
     gap: 14px;
 }

@@ -36,7 +36,7 @@
         <!-- Locations Section -->
         <div v-if="locations.length > 0">
           <h2 v-if="filteredSuites.length > 0" class="text-lg font-semibold text-foreground mb-3">Locations</h2>
-          <div class="dashboard-grid grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+          <div class="dashboard-grid grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5" :style="{ '--fs-cols': fsCols }">
             <LocationCard
               v-for="location in paginatedLocations"
               :key="location.name"
@@ -221,6 +221,25 @@ const paginatedLocations = computed(() => {
 const paginatedSuites = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage
   return filteredSuites.value.slice(start, start + itemsPerPage)
+})
+
+// Balanced column count for the fullscreen grid: pick the layout that fills the
+// screen evenly (fewest empty cells, no lone-orphan row, roughly widescreen).
+const fsCols = computed(() => {
+  const n = locations.value.length
+  if (n <= 1) return 1
+  const aspect = 16 / 9
+  let best = 1, bestScore = Infinity
+  for (let c = 1; c <= n; c++) {
+    const r = Math.ceil(n / c)
+    const empty = c * r - n
+    const lastRow = n - (r - 1) * c
+    const orphan = (r > 1 && lastRow === 1) ? 1 : 0
+    const aspectDiff = Math.abs(Math.log((c / r) / aspect))
+    const score = empty + aspectDiff * 3 + orphan * 6
+    if (score < bestScore) { bestScore = score; best = c }
+  }
+  return best
 })
 
 const visiblePages = computed(() => {

@@ -1,5 +1,5 @@
 <template>
-  <div id="global" :class="['bg-background text-foreground', { 'fs-active': isFullscreen }]">
+  <div id="global" ref="globalEl" :class="['bg-background text-foreground', { 'fs-active': isFullscreen }]">
     <!-- Loading State -->
     <div v-if="!retrievedConfig" class="flex items-center justify-center min-h-screen">
       <Loading size="lg" />
@@ -169,11 +169,13 @@ let configInterval = null
 
 const refreshData = () => requestRefresh()
 
-// Full-screen toggle
+// Full-screen toggle — fullscreen the app container (not the document root) so
+// it becomes its own scroll context (drilled-in detail pages can scroll).
+const globalEl = ref(null)
 const isFullscreen = ref(false)
 const toggleFullscreen = () => {
   if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen?.()
+    globalEl.value?.requestFullscreen?.()
   } else {
     document.exitFullscreen?.()
   }
