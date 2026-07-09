@@ -277,10 +277,14 @@ const chartOptions = computed(() => {
 
 // Live view: plot the raw pings from the last 10 minutes (per-ping resolution).
 const buildLiveData = () => {
-  const cutoff = Date.now() - 10 * 60 * 1000
-  const points = (props.results || [])
-    .filter(r => r && r.timestamp && new Date(r.timestamp).getTime() >= cutoff)
+  const all = (props.results || [])
+    .filter(r => r && r.timestamp)
     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+  // Anchor the window to the NEWEST sample (not the client clock) so any skew
+  // between the browser and server never hides the data.
+  const newest = all.length ? new Date(all[all.length - 1].timestamp).getTime() : Date.now()
+  const cutoff = newest - 10 * 60 * 1000
+  const points = all.filter(r => new Date(r.timestamp).getTime() >= cutoff)
   timestamps.value = points.map(r => new Date(r.timestamp).getTime())
   // Failed pings become gaps (null) rather than a fake 10s timeout spike.
   values.value = points.map(r => (r.success && r.duration ? Math.round(r.duration / 1000000) : null))

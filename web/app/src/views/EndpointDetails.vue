@@ -332,6 +332,8 @@ const fetchData = async () => {
       // Always update currentStatus when on page 1 (including when returning to it)
       if (currentPage.value === 1) {
         currentStatus.value = data
+        // Seed the live view immediately (SSE keeps it fresh after this).
+        liveResults.value = data.results || []
       }
       
       let processedEvents = []
