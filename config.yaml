@@ -24,13 +24,13 @@ ui:
 endpoints:
   # ---------- Muscle Shoals ----------
   - name: Muscle Shoals
-    group: WAN 1 (ATT Fiber)
-    url: "icmp://45.17.37.185"
+    group: WAN 1 (Comcast Fiber)
+    url: "icmp://50.225.219.73"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
   - name: Muscle Shoals
-    group: WAN 2 (Comcast Coax)
-    url: "icmp://50.225.219.74"
+    group: WAN 2 (ATT)
+    url: "icmp://45.17.37.190"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
@@ -49,43 +49,43 @@ endpoints:
   # ---------- Prattville ----------
   - name: Prattville
     group: WAN 1 (ATT Fiber)
-    url: "icmp://12.247.225.58"
+    url: "icmp://12.247.225.57"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
   - name: Prattville
     group: WAN 2 (WOW)
-    url: "icmp://24.42.189.244"
+    url: "icmp://24.42.189.129"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
   # ---------- Bessemer ----------
   - name: Bessemer
     group: WAN 1 (Spectrum Fiber)
-    url: "icmp://75.114.33.100"
+    url: "icmp://75.114.33.97"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
   - name: Bessemer
     group: WAN 2 (Spectrum Coax)
-    url: "icmp://71.45.253.164"
+    url: "icmp://71.45.253.161"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
   # ---------- Florence ----------
   - name: Florence
     group: WAN 1 (ATT Fiber)
-    url: "icmp://23.119.67.89"
+    url: "icmp://23.119.67.94"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
   - name: Florence
     group: WAN 2 (Comcast Coax)
-    url: "icmp://70.89.72.113"
+    url: "icmp://70.89.72.118"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
   # ---------- Hoover ----------
   - name: Hoover
     group: WAN 1 (ATT Fiber)
-    url: "icmp://162.199.109.193"
+    url: "icmp://162.199.109.198"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
   - name: Hoover
@@ -97,24 +97,24 @@ endpoints:
   # ---------- Tuscumbia ----------
   - name: Tuscumbia
     group: WAN 1 (ATT Fiber)
-    url: "icmp://45.25.124.73"
+    url: "icmp://45.25.124.78"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
   - name: Tuscumbia
     group: WAN 2 (Comcast Coax)
-    url: "icmp://96.82.22.249"
+    url: "icmp://96.82.22.254"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
   # ---------- Alabaster ----------
   - name: Alabaster
     group: WAN 1
-    url: "icmp://12.247.225.94"
+    url: "icmp://12.247.225.93"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
   - name: Alabaster
     group: WAN 2 (Spectrum Coax)
-    url: "icmp://47.48.167.2"
+    url: "icmp://65.5.94.97"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
