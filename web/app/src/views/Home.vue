@@ -103,7 +103,8 @@ import Settings from '@/components/Settings.vue'
 import Loading from '@/components/Loading.vue'
 import AnnouncementBanner from '@/components/AnnouncementBanner.vue'
 import PastAnnouncements from '@/components/PastAnnouncements.vue'
-import { controls } from '@/store'
+import { controls, soundEnabled } from '@/store'
+import { playUp, playDown, playDegraded } from '@/utils/sounds'
 
 const props = defineProps({
   announcements: {
@@ -338,6 +339,44 @@ watch(
   () => [controls.searchQuery, controls.showOnlyFailing, controls.showRecentFailures],
   () => { currentPage.value = 1 }
 )
+
+// --- Audio alerts on site state changes (down / up / degraded) ---
+let prevStatuses = {}
+let statusInitialized = false
+const computeLocationStatuses = () => {
+  const groups = {}
+  for (const ep of endpointStatuses.value) {
+    if (!groups[ep.name]) groups[ep.name] = []
+    groups[ep.name].push(ep)
+  }
+  const out = {}
+  for (const name in groups) {
+    const latest = groups[name]
+      .map(e => (e.results && e.results.length ? e.results[e.results.length - 1] : null))
+      .filter(Boolean)
+    if (!latest.length) { out[name] = 'unknown'; continue }
+    const up = latest.filter(r => r.success).length
+    out[name] = up === 0 ? 'unhealthy' : (up < latest.length ? 'degraded' : 'healthy')
+  }
+  return out
+}
+watch(endpointStatuses, () => {
+  const cur = computeLocationStatuses()
+  // Don't sound on the first load — only on real transitions afterwards.
+  if (statusInitialized && soundEnabled.value) {
+    for (const name in cur) {
+      const before = prevStatuses[name]
+      const after = cur[name]
+      if (before && before !== after && after !== 'unknown') {
+        if (after === 'healthy') playUp()
+        else if (after === 'unhealthy') playDown()
+        else if (after === 'degraded') playDegraded()
+      }
+    }
+  }
+  prevStatuses = cur
+  statusInitialized = true
+}, { deep: true })
 
 onMounted(() => {
   fetchData()     // fast initial paint (and fallback if the live stream is unavailable)

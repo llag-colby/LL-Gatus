@@ -43,6 +43,17 @@
                   variant="ghost"
                   size="icon"
                   class="h-9 w-9"
+                  @click="toggleSound"
+                  :data-tooltip="soundEnabled ? 'Mute alerts' : 'Enable sound alerts'"
+                  data-tip-pos="bottom"
+                >
+                  <Volume2 v-if="soundEnabled" class="h-5 w-5" />
+                  <VolumeX v-else class="h-5 w-5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-9 w-9"
                   @click="toggleFullscreen"
                   :data-tooltip="isFullscreen ? 'Exit full screen' : 'Full screen'"
                   data-tip-pos="bottom"
@@ -145,14 +156,15 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { LogIn, Maximize, Minimize, RefreshCw } from 'lucide-vue-next'
+import { LogIn, Maximize, Minimize, RefreshCw, Volume2, VolumeX } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import SearchBar from './components/SearchBar.vue'
 import Social from './components/Social.vue'
 import Tooltip from './components/Tooltip.vue'
 import Loading from './components/Loading.vue'
-import { requestRefresh } from '@/store'
+import { requestRefresh, soundEnabled, setSoundEnabled } from '@/store'
+import { unlockAudio } from '@/utils/sounds'
 
 const route = useRoute()
 
@@ -166,6 +178,12 @@ const tooltipIsPersistent = ref(false)
 let configInterval = null
 
 const refreshData = () => requestRefresh()
+
+// Sound alerts toggle (the click also unlocks browser audio).
+const toggleSound = () => {
+  unlockAudio()
+  setSoundEnabled(!soundEnabled.value)
+}
 
 // Build version (git SHA baked into the server) so a deploy can be verified.
 const buildVersion = ref('')
@@ -274,6 +292,9 @@ onMounted(() => {
   document.addEventListener('click', handleDocumentClick)
   // Track full-screen state
   document.addEventListener('fullscreenchange', handleFullscreenChange)
+  // Unlock audio on the first user interaction (browsers block autoplay)
+  window.addEventListener('pointerdown', unlockAudio, { once: true })
+  window.addEventListener('keydown', unlockAudio, { once: true })
 })
 
 // Clean up interval on unmount

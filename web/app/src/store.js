@@ -29,6 +29,13 @@ export function requestRefresh() {
   window.dispatchEvent(new CustomEvent('gatus:refresh'))
 }
 
+// Whether to play the audio alerts when a site changes state.
+export const soundEnabled = ref(typeof localStorage === 'undefined' || localStorage.getItem('gatus:sound') !== 'false')
+export function setSoundEnabled(value) {
+  soundEnabled.value = !!value
+  localStorage.setItem('gatus:sound', value ? 'true' : 'false')
+}
+
 // Live clock anchored to the SERVER's time, so every browser computes the same
 // relative "x ago" labels regardless of its own (possibly wrong) local clock.
 let serverOffset = 0
