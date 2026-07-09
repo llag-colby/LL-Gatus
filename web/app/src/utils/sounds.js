@@ -19,7 +19,7 @@ export function unlockAudio() {
   if (c && c.state === 'suspended') c.resume()
 }
 
-function tone(freqs, { duration = 0.16, peak = 0.05, gap = 0.11, type = 'sine' } = {}) {
+function tone(freqs, { duration = 0.22, peak = 0.22, gap = 0.14, type = 'triangle' } = {}) {
   const c = getCtx()
   if (!c) return
   if (c.state === 'suspended') c.resume()
@@ -36,13 +36,13 @@ function tone(freqs, { duration = 0.16, peak = 0.05, gap = 0.11, type = 'sine' }
     osc.connect(gain)
     gain.connect(c.destination)
     osc.start(t)
-    osc.stop(t + duration + 0.03)
+    osc.stop(t + duration + 0.04)
   })
 }
 
-// Recovered / back up — gentle two-note rise (D5 -> G5).
-export const playUp = () => tone([587.33, 783.99])
-// Degraded — small downward dip (C5 -> B4).
-export const playDegraded = () => tone([523.25, 493.88], { gap: 0.1 })
-// Down — soft descending fall (C5 -> G4).
-export const playDown = () => tone([523.25, 392.0], { gap: 0.13, duration: 0.2 })
+// Recovered / back up — clear rising 3-note arpeggio (C5 E5 G5).
+export const playUp = () => tone([523.25, 659.25, 783.99], { gap: 0.13, duration: 0.2, peak: 0.2 })
+// Degraded — noticeable two-note dip (G5 -> D#5).
+export const playDegraded = () => tone([783.99, 622.25], { gap: 0.16, duration: 0.26, peak: 0.22 })
+// Down — attention-grabbing alternating alert (E5 <-> G#4, twice).
+export const playDown = () => tone([659.25, 415.3, 659.25, 415.3], { gap: 0.17, duration: 0.22, peak: 0.26 })
