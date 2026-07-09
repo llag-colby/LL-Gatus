@@ -114,7 +114,7 @@ endpoints:
     conditions: ["[CONNECTED] == true"]
   - name: Alabaster
     group: WAN 2 (Spectrum Coax)
-    url: "icmp://65.5.94.97"
+    url: "icmp://47.48.167.2"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
