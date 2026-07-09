@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/TwiN/gatus/v5/config"
 	"github.com/TwiN/gatus/v5/config/ui"
@@ -62,7 +63,12 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	}
 	// Middlewares
 	app.Use(recover.New())
-	app.Use(compress.New())
+	app.Use(compress.New(compress.Config{
+		// Never compress the live SSE stream — it must stream unbuffered.
+		Next: func(c *fiber.Ctx) bool {
+			return strings.HasPrefix(c.Path(), "/api/v1/live")
+		},
+	}))
 	// Define metrics handler, if necessary
 	if cfg.Metrics {
 		metricsHandler := promhttp.InstrumentMetricHandler(prometheus.DefaultRegisterer, promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
@@ -132,5 +138,8 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	protectedAPIRouter.Get("/v1/endpoints/:key/statuses", EndpointStatus(cfg))
 	protectedAPIRouter.Get("/v1/suites/statuses", SuiteStatuses(cfg))
 	protectedAPIRouter.Get("/v1/suites/:key/statuses", SuiteStatus(cfg))
+	// Live status stream (SSE) — a single broadcaster pushes the same snapshot
+	// to every connected client so all screens stay in sync without refreshing.
+	protectedAPIRouter.Get("/v1/live", newSSEHub().Handler)
 	return app
 }

@@ -302,6 +302,28 @@ const refreshData = () => {
   fetchData()
 }
 
+// Live updates via Server-Sent Events. A single server-side broadcaster pushes
+// the same snapshot to every connected browser, so all screens stay in sync
+// without polling or refreshing. The browser auto-reconnects on drop.
+let eventSource = null
+const connectLive = () => {
+  try {
+    eventSource = new EventSource('/api/v1/live', { withCredentials: true })
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (Array.isArray(data.endpoints)) endpointStatuses.value = data.endpoints
+        suiteStatuses.value = data.suites || []
+        loading.value = false
+      } catch (err) {
+        console.error('[Home][live] Failed to parse live update:', err)
+      }
+    }
+  } catch (err) {
+    console.error('[Home][live] Failed to open live stream:', err)
+  }
+}
+
 const goToPage = (page) => {
   currentPage.value = page
   window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -318,11 +340,16 @@ watch(
 )
 
 onMounted(() => {
-  fetchData()
+  fetchData()     // fast initial paint (and fallback if the live stream is unavailable)
+  connectLive()   // live, synced updates
   window.addEventListener('gatus:refresh', refreshData)
 })
 
 onUnmounted(() => {
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
   window.removeEventListener('gatus:refresh', refreshData)
 })
 </script>
