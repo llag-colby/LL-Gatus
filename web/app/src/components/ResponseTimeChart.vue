@@ -107,6 +107,16 @@ const filteredEvents = computed(() => {
   return unhealthyEvents
 })
 
+// Latency thresholds (ms): green = good, amber = elevated, red = high.
+const LATENCY_GOOD = 100
+const LATENCY_WARN = 250
+const latencyColor = (ms) => {
+  if (ms == null) return 'rgb(148, 163, 184)'
+  if (ms <= LATENCY_GOOD) return '#22c55e'
+  if (ms <= LATENCY_WARN) return '#f59e0b'
+  return '#ef4444'
+}
+
 const chartData = computed(() => {
   if (timestamps.value.length === 0) {
     return {
@@ -115,6 +125,7 @@ const chartData = computed(() => {
     }
   }
   const labels = timestamps.value.map(ts => new Date(ts))
+  const pointColors = values.value.map(latencyColor)
   return {
     labels,
     datasets: [{
@@ -123,8 +134,11 @@ const chartData = computed(() => {
       borderColor: isDark.value ? 'rgb(96, 165, 250)' : 'rgb(59, 130, 246)',
       backgroundColor: isDark.value ? 'rgba(96, 165, 250, 0.1)' : 'rgba(59, 130, 246, 0.1)',
       borderWidth: 2,
-      pointRadius: 2,
-      pointHoverRadius: 4,
+      // Colour each point by its latency so high-latency samples stand out.
+      pointBackgroundColor: pointColors,
+      pointBorderColor: pointColors,
+      pointRadius: 3,
+      pointHoverRadius: 5,
       tension: 0.1,
       fill: true
     }]

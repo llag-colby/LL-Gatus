@@ -89,7 +89,7 @@
         <div class="w-full px-4 sm:px-6 py-6">
           <div class="flex flex-col items-center gap-4">
             <div class="text-sm text-muted-foreground text-center">
-              <span v-if="buildVersion" class="opacity-60 font-mono text-xs">build {{ buildVersion }}</span>
+              <span v-if="buildVersion" class="opacity-60 font-mono text-xs">build #{{ buildVersion }}</span>
             </div>
             <Social />
           </div>

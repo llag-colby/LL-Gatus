@@ -40,11 +40,7 @@
               :class="[
                 'flex-1 h-6 sm:h-8 rounded-sm transition-all',
                 result ? 'cursor-pointer' : '',
-                result ? (
-                  result.success 
-                    ? (selectedResultIndex === index ? 'bg-green-700' : 'bg-green-500 hover:bg-green-700')
-                    : (selectedResultIndex === index ? 'bg-red-700' : 'bg-red-500 hover:bg-red-700')
-                ) : 'bg-gray-200 dark:bg-gray-700'
+                barColorClass(result, selectedResultIndex === index)
               ]"
               @mouseenter="result && handleMouseEnter(result, $event)"
               @mouseleave="result && handleMouseLeave(result, $event)"
@@ -89,6 +85,18 @@ const emit = defineEmits(['showTooltip'])
 
 // Track selected data point
 const selectedResultIndex = ref(null)
+
+// Latency thresholds (ms): a successful-but-slow check still shows as a problem.
+const LATENCY_GOOD = 100
+const LATENCY_WARN = 250
+const barColorClass = (result, isSelected) => {
+  if (!result) return 'bg-gray-200 dark:bg-gray-700'
+  if (!result.success) return isSelected ? 'bg-red-700' : 'bg-red-500 hover:bg-red-700'
+  const ms = result.duration ? result.duration / 1000000 : 0
+  if (ms <= LATENCY_GOOD) return isSelected ? 'bg-green-700' : 'bg-green-500 hover:bg-green-700'
+  if (ms <= LATENCY_WARN) return isSelected ? 'bg-amber-600' : 'bg-amber-500 hover:bg-amber-600'
+  return isSelected ? 'bg-red-700' : 'bg-red-500 hover:bg-red-700'
+}
 
 const latestResult = computed(() => {
   if (!props.endpoint.results || props.endpoint.results.length === 0) {
