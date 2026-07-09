@@ -225,7 +225,7 @@ const chartOptions = computed(() => {
       x: {
         type: 'time',
         time: {
-          unit: props.duration === '24h' ? 'hour' : props.duration === '7d' ? 'day' : 'day',
+          unit: ['1h', '5h', '16h', '24h', '2d'].includes(props.duration) ? 'hour' : 'day',
           displayFormats: {
             hour: 'MMM d, ha',
             day: 'MMM d'

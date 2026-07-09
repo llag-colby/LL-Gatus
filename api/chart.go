@@ -135,10 +135,18 @@ func ResponseTimeHistory(c *fiber.Ctx) error {
 		from = time.Now().Truncate(time.Hour).Add(-30 * 24 * time.Hour)
 	case "7d":
 		from = time.Now().Truncate(time.Hour).Add(-7 * 24 * time.Hour)
+	case "2d":
+		from = time.Now().Truncate(time.Hour).Add(-2 * 24 * time.Hour)
 	case "24h":
 		from = time.Now().Truncate(time.Hour).Add(-24 * time.Hour)
+	case "16h":
+		from = time.Now().Truncate(time.Hour).Add(-16 * time.Hour)
+	case "5h":
+		from = time.Now().Truncate(time.Hour).Add(-5 * time.Hour)
+	case "1h":
+		from = time.Now().Truncate(time.Hour).Add(-1 * time.Hour)
 	default:
-		return c.Status(400).SendString("Durations supported: 30d, 7d, 24h")
+		return c.Status(400).SendString("Durations supported: 30d, 7d, 2d, 24h, 16h, 5h, 1h")
 	}
 	endpointKey, err := url.QueryUnescape(c.Params("key"))
 	if err != nil {

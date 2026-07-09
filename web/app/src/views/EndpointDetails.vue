@@ -41,14 +41,39 @@
               </div>
             </CardContent>
           </Card>
+
           <Card>
-            <CardHeader class="pb-1"><CardTitle class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Avg Response Time</CardTitle></CardHeader>
-            <CardContent><div class="text-2xl font-bold tabular-nums">{{ pageAverageResponseTime }}</div></CardContent>
+            <CardHeader class="pb-1"><CardTitle class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Connection</CardTitle></CardHeader>
+            <CardContent>
+              <div class="space-y-1.5">
+                <div v-if="connectionIP" class="flex items-baseline justify-between gap-2">
+                  <span class="text-xs text-muted-foreground">IP</span>
+                  <span class="font-mono text-base font-semibold truncate">{{ connectionIP }}</span>
+                </div>
+                <div class="flex items-baseline justify-between gap-2">
+                  <span class="text-xs text-muted-foreground">Reachable</span>
+                  <span :class="['text-sm font-semibold', isReachable ? 'text-green-600' : 'text-red-600']">{{ isReachable ? 'Yes' : 'No' }}</span>
+                </div>
+                <div v-if="dnsRcode" class="flex items-baseline justify-between gap-2">
+                  <span class="text-xs text-muted-foreground">DNS</span>
+                  <span class="font-mono text-sm font-semibold">{{ dnsRcode }}</span>
+                </div>
+                <div v-if="httpStatus" class="flex items-baseline justify-between gap-2">
+                  <span class="text-xs text-muted-foreground">HTTP</span>
+                  <span class="font-mono text-sm font-semibold">{{ httpStatus }}</span>
+                </div>
+              </div>
+            </CardContent>
           </Card>
+
           <Card>
-            <CardHeader class="pb-1"><CardTitle class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Response Time Range</CardTitle></CardHeader>
-            <CardContent><div class="text-2xl font-bold tabular-nums">{{ pageResponseTimeRange }}</div></CardContent>
+            <CardHeader class="pb-1"><CardTitle class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Response Time</CardTitle></CardHeader>
+            <CardContent>
+              <div class="text-2xl font-bold tabular-nums">{{ pageAverageResponseTime }}</div>
+              <div class="text-xs text-muted-foreground mt-0.5">{{ pageResponseTimeRange }} range</div>
+            </CardContent>
           </Card>
+
           <Card>
             <CardHeader class="pb-1"><CardTitle class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Check</CardTitle></CardHeader>
             <CardContent><div class="text-2xl font-bold">{{ lastCheckTime }}</div></CardContent>
@@ -65,9 +90,13 @@
                   <CardTitle>Response Time Trend</CardTitle>
                   <select v-model="selectedChartDuration"
                     class="text-sm bg-background border rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-ring">
+                    <option value="1h">1 hour</option>
+                    <option value="5h">5 hours</option>
+                    <option value="16h">16 hours</option>
                     <option value="24h">24 hours</option>
+                    <option value="2d">2 days</option>
                     <option value="7d">7 days</option>
-                    <option value="30d">30 days</option>
+                    <option value="30d">1 month</option>
                   </select>
                 </div>
               </CardHeader>
@@ -85,19 +114,14 @@
             <Card>
               <CardHeader class="pb-2"><CardTitle>Recent Checks</CardTitle></CardHeader>
               <CardContent>
-                <div class="space-y-4">
-                  <EndpointCard
-                    v-if="endpointStatus"
-                    :endpoint="endpointStatus"
-                    :maxResults="resultPageSize"
-                    :showAverageResponseTime="showAverageResponseTime"
-                    @showTooltip="showTooltip"
-                    class="border-0 shadow-none bg-transparent p-0"
-                  />
-                  <div v-if="endpointStatus && endpointStatus.key" class="pt-4 border-t">
-                    <Pagination @page="changePage" :numberOfResultsPerPage="resultPageSize" :currentPageProp="currentPage" />
-                  </div>
-                </div>
+                <EndpointCard
+                  v-if="endpointStatus"
+                  :endpoint="endpointStatus"
+                  :maxResults="resultPageSize"
+                  :showAverageResponseTime="showAverageResponseTime"
+                  @showTooltip="showTooltip"
+                  class="border-0 shadow-none bg-transparent p-0"
+                />
               </CardContent>
             </Card>
           </div>
@@ -114,9 +138,6 @@
                     </p>
                     <img :src="generateUptimeBadgeImageURL(period)" :alt="`${period} uptime`" class="mx-auto" />
                   </div>
-                </div>
-                <div class="mt-4 pt-4 border-t flex items-center justify-center">
-                  <img :src="generateHealthBadgeImageURL()" alt="health badge" />
                 </div>
               </CardContent>
             </Card>
@@ -171,7 +192,6 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import StatusBadge from '@/components/StatusBadge.vue'
 import EndpointCard from '@/components/EndpointCard.vue'
 import Settings from '@/components/Settings.vue'
-import Pagination from '@/components/Pagination.vue'
 import Loading from '@/components/Loading.vue'
 import ResponseTimeChart from '@/components/ResponseTimeChart.vue'
 import { generatePrettyTimeAgo, generatePrettyTimeDifference } from '@/utils/time'
@@ -206,6 +226,12 @@ const currentHealthStatus = computed(() => {
 const hostname = computed(() => {
   return latestResult.value?.hostname || null
 })
+
+// Connection details we can surface from the latest check result.
+const connectionIP = computed(() => latestResult.value?.ip || latestResult.value?.hostname || null)
+const isReachable = computed(() => currentHealthStatus.value === 'healthy')
+const dnsRcode = computed(() => latestResult.value?.dnsRcode || null)
+const httpStatus = computed(() => latestResult.value?.status || latestResult.value?.httpStatus || null)
 
 const toggleShowAverageResponseTime = () => {
   showAverageResponseTime.value = !showAverageResponseTime.value
@@ -336,21 +362,12 @@ const goBack = () => {
   router.push('/')
 }
 
-const changePage = (page) => {
-  currentPage.value = page
-  fetchData()
-}
-
 const showTooltip = (result, event, action = 'hover') => {
   emit('showTooltip', result, event, action)
 }
 
 const prettifyTimestamp = (timestamp) => {
   return new Date(timestamp).toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: true })
-}
-
-const generateHealthBadgeImageURL = () => {
-  return `/api/v1/endpoints/${endpointStatus.value.key}/health/badge.svg`
 }
 
 const generateUptimeBadgeImageURL = (duration) => {
