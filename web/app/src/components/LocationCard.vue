@@ -5,7 +5,8 @@
         <CardTitle class="text-base sm:text-lg truncate">
           <span :data-tooltip="name" class="block truncate">{{ name }}</span>
         </CardTitle>
-        <div class="flex-shrink-0">
+        <div class="flex-shrink-0 flex items-center gap-1">
+          <span v-if="isSimulated" class="text-[9px] font-bold uppercase tracking-wide px-1 py-0.5 rounded bg-amber-500 text-white" data-tooltip="Simulated (not real)">SIM</span>
           <StatusBadge :status="currentStatus" />
         </div>
       </div>
@@ -70,7 +71,7 @@ import { useRouter } from 'vue-router'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { generatePrettyTimeAgo } from '@/utils/time'
-import { now } from '@/store'
+import { now, simulations } from '@/store'
 
 const router = useRouter()
 
@@ -221,8 +222,10 @@ const displayRows = computed(() => {
   return rows
 })
 
-// --- Current status for the badge ---
+// --- Current status for the badge (a simulation overrides the real status) ---
+const isSimulated = computed(() => !!simulations[props.name])
 const currentStatus = computed(() => {
+  if (simulations[props.name]) return simulations[props.name]
   const latest = props.endpoints
     .map((ep) => (ep.results && ep.results.length ? ep.results[ep.results.length - 1] : null))
     .filter(Boolean)

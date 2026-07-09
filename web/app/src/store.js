@@ -36,6 +36,19 @@ export function setSoundEnabled(value) {
   localStorage.setItem('gatus:sound', value ? 'true' : 'false')
 }
 
+// --- Outage simulation (client-side test harness; does NOT affect monitoring) ---
+// Map of location name -> forced status ('unhealthy' | 'degraded' | 'healthy').
+export const simulations = reactive({})
+export function setSimulation(name, status) {
+  if (status) simulations[name] = status
+  else delete simulations[name]
+}
+export function clearSimulations() {
+  Object.keys(simulations).forEach(k => delete simulations[k])
+}
+// Location names known to the dashboard (populated by Home, used by the panel).
+export const knownLocations = ref([])
+
 // Live clock anchored to the SERVER's time, so every browser computes the same
 // relative "x ago" labels regardless of its own (possibly wrong) local clock.
 let serverOffset = 0

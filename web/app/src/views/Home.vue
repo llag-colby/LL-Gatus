@@ -103,7 +103,7 @@ import Settings from '@/components/Settings.vue'
 import Loading from '@/components/Loading.vue'
 import AnnouncementBanner from '@/components/AnnouncementBanner.vue'
 import PastAnnouncements from '@/components/PastAnnouncements.vue'
-import { controls, soundEnabled } from '@/store'
+import { controls, soundEnabled, simulations, knownLocations } from '@/store'
 import { playUp, playDown, playDegraded } from '@/utils/sounds'
 
 const props = defineProps({
@@ -341,9 +341,10 @@ watch(
 )
 
 // --- Audio alerts on site state changes (down / up / degraded) ---
+// Effective status = real ping status, overridden by any active simulation.
 let prevStatuses = {}
 let statusInitialized = false
-const computeLocationStatuses = () => {
+const effectiveStatuses = computed(() => {
   const groups = {}
   for (const ep of endpointStatuses.value) {
     if (!groups[ep.name]) groups[ep.name] = []
@@ -358,10 +359,12 @@ const computeLocationStatuses = () => {
     const up = latest.filter(r => r.success).length
     out[name] = up === 0 ? 'unhealthy' : (up < latest.length ? 'degraded' : 'healthy')
   }
+  // Apply simulations on top of the real statuses.
+  for (const name in simulations) out[name] = simulations[name]
   return out
-}
-watch(endpointStatuses, () => {
-  const cur = computeLocationStatuses()
+})
+watch(effectiveStatuses, (cur) => {
+  knownLocations.value = Object.keys(cur).sort()
   // Don't sound on the first load — only on real transitions afterwards.
   if (statusInitialized && soundEnabled.value) {
     for (const name in cur) {
@@ -374,9 +377,9 @@ watch(endpointStatuses, () => {
       }
     }
   }
-  prevStatuses = cur
+  prevStatuses = { ...cur }
   statusInitialized = true
-}, { deep: true })
+}, { immediate: true })
 
 onMounted(() => {
   fetchData()     // fast initial paint (and fallback if the live stream is unavailable)

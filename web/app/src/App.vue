@@ -39,6 +39,7 @@
               <SearchBar />
 
               <div class="flex items-center gap-1">
+                <SimulatePanel />
                 <Button
                   variant="ghost"
                   size="icon"
@@ -160,6 +161,7 @@ import { LogIn, Maximize, Minimize, RefreshCw, Volume2, VolumeX } from 'lucide-v
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import SearchBar from './components/SearchBar.vue'
+import SimulatePanel from './components/SimulatePanel.vue'
 import Social from './components/Social.vue'
 import Tooltip from './components/Tooltip.vue'
 import Loading from './components/Loading.vue'
