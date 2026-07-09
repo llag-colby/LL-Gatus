@@ -42,7 +42,7 @@ endpoints:
     conditions: ["[CONNECTED] == true"]
   - name: Ivory Tower
     group: WAN 2 (Comcast)
-    url: "icmp://162.17.79.209"
+    url: "icmp://162.17.79.210"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
