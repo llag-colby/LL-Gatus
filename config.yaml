@@ -24,13 +24,13 @@ ui:
 endpoints:
   # ---------- Muscle Shoals ----------
   - name: Muscle Shoals
-    group: WAN 1 (Comcast Fiber)
-    url: "icmp://50.225.219.74"
+    group: WAN 1 (ATT Fiber)
+    url: "icmp://45.17.37.185"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
   - name: Muscle Shoals
-    group: WAN 2 (ATT Backup)
-    url: "icmp://45.17.37.185"
+    group: WAN 2 (Comcast Coax)
+    url: "icmp://50.225.219.74"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
@@ -72,22 +72,37 @@ endpoints:
 
   # ---------- Florence ----------
   - name: Florence
-    group: WAN 1
+    group: WAN 1 (ATT Fiber)
     url: "icmp://23.119.67.89"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+  - name: Florence
+    group: WAN 2 (Comcast Coax)
+    url: "icmp://70.89.72.113"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
   # ---------- Hoover ----------
   - name: Hoover
-    group: WAN 1
+    group: WAN 1 (ATT Fiber)
     url: "icmp://162.199.109.193"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+  - name: Hoover
+    group: WAN 2 (Comcast Coax)
+    url: "icmp://24.197.59.162"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
   # ---------- Tuscumbia ----------
   - name: Tuscumbia
-    group: WAN 1
+    group: WAN 1 (ATT Fiber)
     url: "icmp://45.25.124.73"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+  - name: Tuscumbia
+    group: WAN 2 (Comcast Coax)
+    url: "icmp://96.82.22.249"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
@@ -100,7 +115,12 @@ endpoints:
 
   # ---------- Cullman ----------
   - name: Cullman
-    group: WAN 1
+    group: WAN 1 (ATT Fiber)
     url: "icmp://12.77.92.2"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+  - name: Cullman
+    group: WAN 2 (Spectrum Coax)
+    url: "icmp://71.8.47.125"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
