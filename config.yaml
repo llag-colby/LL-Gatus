@@ -121,11 +121,11 @@ endpoints:
   # ---------- Cullman ----------
   - name: Cullman
     group: WAN 1 (ATT Fiber)
-    url: "icmp://12.77.92.2"
+    url: "icmp://12.77.92.1"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
   - name: Cullman
     group: WAN 2 (Spectrum Coax)
-    url: "icmp://71.8.47.125"
+    url: "icmp://71.8.47.121"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
