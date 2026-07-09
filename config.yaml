@@ -112,6 +112,11 @@ endpoints:
     url: "icmp://12.247.225.94"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
+  - name: Alabaster
+    group: WAN 2 (Spectrum Coax)
+    url: "icmp://47.48.167.2"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
 
   # ---------- Cullman ----------
   - name: Cullman
