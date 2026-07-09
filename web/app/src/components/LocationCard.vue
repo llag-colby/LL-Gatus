@@ -15,18 +15,25 @@
       <div class="loc-rows space-y-2">
         <div v-for="(row, rowIdx) in displayRows" :key="row.key" class="loc-row flex items-center gap-2">
           <!-- Row label -->
-          <component
-            :is="row.endpointKey ? 'a' : 'span'"
-            :href="row.endpointKey ? `/endpoints/${row.endpointKey}` : undefined"
-            @click="row.endpointKey && navigate($event, row.endpointKey)"
-            :data-tooltip="row.tooltip"
-            :class="[
-              'w-16 sm:w-[68px] shrink-0 text-[11px] sm:text-xs font-medium truncate',
-              row.isOverall ? 'text-foreground' : (row.endpointKey ? 'text-muted-foreground hover:text-primary cursor-pointer' : 'text-muted-foreground/40')
-            ]"
-          >
-            {{ row.label }}
-          </component>
+          <div class="loc-rowlabel w-16 sm:w-[68px] shrink-0">
+            <component
+              :is="row.endpointKey ? 'a' : 'span'"
+              :href="row.endpointKey ? `/endpoints/${row.endpointKey}` : undefined"
+              @click="row.endpointKey && navigate($event, row.endpointKey)"
+              :data-tooltip="row.tooltip"
+              :class="[
+                'block truncate text-[11px] sm:text-xs font-medium',
+                row.isOverall ? 'text-foreground' : (row.endpointKey ? 'text-muted-foreground hover:text-primary cursor-pointer' : 'text-muted-foreground/40')
+              ]"
+            >
+              {{ row.label }}
+            </component>
+            <!-- ISP + IP (shown only in fullscreen) -->
+            <div v-if="!row.isOverall && (row.isp || row.ip)" class="loc-meta leading-tight mt-0.5">
+              <div v-if="row.isp" class="truncate text-[11px] text-muted-foreground">{{ row.isp }}</div>
+              <div v-if="row.ip" class="truncate text-[11px] font-mono text-muted-foreground/70">{{ row.ip }}</div>
+            </div>
+          </div>
 
           <!-- Status bars -->
           <div class="loc-bars flex-1 flex gap-0.5">
@@ -50,7 +57,7 @@
       </div>
 
       <!-- Data-age label (updates live) -->
-      <div class="text-[11px] text-muted-foreground mt-2 pl-[72px] sm:pl-[76px]">
+      <div class="loc-age text-[11px] text-muted-foreground mt-2 pl-[72px] sm:pl-[76px]">
         <span>{{ oldestResultTime }}</span>
       </div>
     </CardContent>
@@ -88,6 +95,19 @@ const classify = (group) => {
   if (/wan\s*2|backup|secondary/.test(g)) return 'wan2'
   if (/phone|voip|sip/.test(g)) return 'phones'
   return 'other'
+}
+
+// ISP name is the text in parentheses of the group, e.g. "WAN 1 (Comcast Fiber)".
+const ispFromGroup = (group) => {
+  const m = (group || '').match(/\(([^)]+)\)/)
+  return m ? m[1].trim() : ''
+}
+
+// IP is the ping/target host from the most recent result.
+const ipOf = (endpoint) => {
+  if (!endpoint || !endpoint.results || endpoint.results.length === 0) return ''
+  const r = endpoint.results[endpoint.results.length - 1]
+  return r && r.hostname ? r.hostname : ''
 }
 
 const shortLabel = (group) => {
@@ -170,6 +190,8 @@ const displayRows = computed(() => {
       label,
       endpointKey: endpoint ? endpoint.key : null,
       tooltip: endpoint ? (endpoint.group || endpoint.name) : `${label}: no data`,
+      isp: endpoint ? ispFromGroup(endpoint.group) : '',
+      ip: ipOf(endpoint),
       cells: endpoint ? endpointRowCells(endpoint) : Array.from({ length: props.maxResults }, () => ({ token: 'none', result: null })),
       isOverall: false,
     })
@@ -220,11 +242,10 @@ const primaryEndpoint = computed(() => {
 })
 
 const oldestResultTime = computed(() => {
-  now.value // depend on the live clock so this re-evaluates every second
   const ep = primaryEndpoint.value
   if (!ep || !ep.results || ep.results.length === 0) return ''
   const idx = Math.max(0, ep.results.length - props.maxResults)
-  return generatePrettyTimeAgo(ep.results[idx].timestamp)
+  return generatePrettyTimeAgo(ep.results[idx].timestamp, now.value)
 })
 
 // --- Cell styling ---

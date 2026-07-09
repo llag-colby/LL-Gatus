@@ -89,8 +89,7 @@
         <div class="w-full px-4 sm:px-6 py-6">
           <div class="flex flex-col items-center gap-4">
             <div class="text-sm text-muted-foreground text-center">
-              Powered by <a href="https://gatus.io" target="_blank" class="font-medium text-emerald-800 hover:text-emerald-600">Gatus</a>
-              <span v-if="buildVersion" class="ml-2 opacity-60 font-mono text-xs">· build {{ buildVersion }}</span>
+              <span v-if="buildVersion" class="opacity-60 font-mono text-xs">build {{ buildVersion }}</span>
             </div>
             <Social />
           </div>

@@ -29,7 +29,23 @@ export function requestRefresh() {
   window.dispatchEvent(new CustomEvent('gatus:refresh'))
 }
 
-// Live clock (ticks every second) so relative "x ago" labels update on their
-// own between data refreshes instead of sitting frozen.
+// Live clock anchored to the SERVER's time, so every browser computes the same
+// relative "x ago" labels regardless of its own (possibly wrong) local clock.
+let serverOffset = 0
 export const now = ref(Date.now())
-setInterval(() => { now.value = Date.now() }, 1000)
+setInterval(() => { now.value = Date.now() + serverOffset }, 1000)
+
+async function syncServerTime() {
+  try {
+    const response = await fetch('/api/v1/time', { cache: 'no-store' })
+    if (response.ok) {
+      const data = await response.json()
+      serverOffset = data.time - Date.now()
+      now.value = Date.now() + serverOffset
+    }
+  } catch (e) {
+    // non-fatal — fall back to local clock
+  }
+}
+syncServerTime()
+setInterval(syncServerTime, 60000)

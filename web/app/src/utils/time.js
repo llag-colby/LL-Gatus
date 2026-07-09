@@ -3,8 +3,9 @@
  * @param {string|Date} timestamp - The timestamp to convert
  * @returns {string} Relative time string
  */
-export const generatePrettyTimeAgo = (timestamp) => {
-  let differenceInMs = new Date().getTime() - new Date(timestamp).getTime();
+export const generatePrettyTimeAgo = (timestamp, nowMs) => {
+  const reference = nowMs != null ? nowMs : new Date().getTime();
+  let differenceInMs = reference - new Date(timestamp).getTime();
   if (differenceInMs < 500) {
     return "now";
   }

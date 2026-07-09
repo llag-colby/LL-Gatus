@@ -215,6 +215,19 @@
 .fs-active .loc-bars > div {
     height: 2rem !important;
 }
+/* ISP + IP under each WAN row — shown only in fullscreen, where there's room. */
+.loc-meta {
+    display: none;
+}
+.fs-active .loc-meta {
+    display: block;
+}
+.fs-active .loc-rowlabel {
+    width: 10rem !important;
+}
+.fs-active .loc-age {
+    padding-left: 10.5rem !important;
+}
 
 
 html {
