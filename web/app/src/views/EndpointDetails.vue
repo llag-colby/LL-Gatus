@@ -1,92 +1,110 @@
 <template>
-  <div class="dashboard-container bg-background">
-    <div class="container mx-auto px-4 py-8 max-w-7xl">
-      <div class="mb-6">
-        <Button variant="ghost" class="mb-4" @click="goBack">
-          <ArrowLeft class="h-4 w-4 mr-2" />
-          Back to Dashboard
-        </Button>
-        
-        <div v-if="endpointStatus && endpointStatus.name" class="space-y-6">
-          <div class="flex items-start justify-between">
-            <div>
-              <h1 class="text-4xl font-bold tracking-tight">{{ endpointStatus.name }}</h1>
-              <div class="flex items-center gap-3 text-muted-foreground mt-2">
-                <span v-if="endpointStatus.group">Group: {{ endpointStatus.group }}</span>
-                <span v-if="endpointStatus.group && hostname">•</span>
-                <span v-if="hostname">{{ hostname }}</span>
-              </div>
+  <div class="dashboard-container bg-background min-h-screen">
+    <div class="w-full px-4 sm:px-6 py-5">
+      <div v-if="!endpointStatus || !endpointStatus.name" class="flex items-center justify-center py-20">
+        <Loading size="lg" />
+      </div>
+
+      <div v-else class="space-y-5">
+        <!-- Header bar -->
+        <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <Button variant="ghost" size="sm" @click="goBack" data-tooltip="Back to dashboard">
+            <ArrowLeft class="h-4 w-4 mr-2" /> Back
+          </Button>
+          <div class="min-w-0">
+            <h1 class="text-2xl sm:text-3xl font-bold tracking-tight leading-tight truncate">{{ endpointStatus.name }}</h1>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground mt-1">
+              <span v-if="endpointStatus.group">{{ endpointStatus.group }}</span>
+              <span v-if="endpointStatus.group && hostname" class="opacity-40">•</span>
+              <span v-if="hostname" class="font-mono">{{ hostname }}</span>
             </div>
+          </div>
+          <div class="ml-auto flex items-center gap-2">
             <StatusBadge :status="currentHealthStatus" />
+            <Button variant="ghost" size="icon" class="h-9 w-9" @click="toggleShowAverageResponseTime"
+              :data-tooltip="showAverageResponseTime ? 'Showing average response time' : 'Showing min–max response time'">
+              <Activity v-if="showAverageResponseTime" class="h-5 w-5" /><Timer v-else class="h-5 w-5" />
+            </Button>
+            <Button variant="ghost" size="icon" class="h-9 w-9" @click="fetchData" :disabled="isRefreshing" data-tooltip="Refresh data">
+              <RefreshCw :class="['h-4 w-4', isRefreshing && 'animate-spin']" />
+            </Button>
           </div>
+        </div>
 
-          <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader class="pb-2">
-                <CardTitle class="text-sm font-medium text-muted-foreground">Current Status</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div class="text-2xl font-bold">{{ currentHealthStatus === 'healthy' ? 'Operational' : 'Issues Detected' }}</div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader class="pb-2">
-                <CardTitle class="text-sm font-medium text-muted-foreground">Avg Response Time</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div class="text-2xl font-bold">{{ pageAverageResponseTime }}</div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader class="pb-2">
-                <CardTitle class="text-sm font-medium text-muted-foreground">Response Time Range</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div class="text-2xl font-bold">{{ pageResponseTimeRange }}</div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader class="pb-2">
-                <CardTitle class="text-sm font-medium text-muted-foreground">Last Check</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div class="text-2xl font-bold">{{ lastCheckTime }}</div>
-              </CardContent>
-            </Card>
-          </div>
-
+        <!-- KPI strip -->
+        <div class="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <Card>
-            <CardHeader>
+            <CardHeader class="pb-1"><CardTitle class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Current Status</CardTitle></CardHeader>
+            <CardContent>
+              <div :class="['text-2xl font-bold', currentHealthStatus === 'healthy' ? 'text-green-600' : currentHealthStatus === 'unhealthy' ? 'text-red-600' : '']">
+                {{ currentHealthStatus === 'healthy' ? 'Operational' : currentHealthStatus === 'unhealthy' ? 'Issues Detected' : 'Unknown' }}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader class="pb-1"><CardTitle class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Avg Response Time</CardTitle></CardHeader>
+            <CardContent><div class="text-2xl font-bold tabular-nums">{{ pageAverageResponseTime }}</div></CardContent>
+          </Card>
+          <Card>
+            <CardHeader class="pb-1"><CardTitle class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Response Time Range</CardTitle></CardHeader>
+            <CardContent><div class="text-2xl font-bold tabular-nums">{{ pageResponseTimeRange }}</div></CardContent>
+          </Card>
+          <Card>
+            <CardHeader class="pb-1"><CardTitle class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Check</CardTitle></CardHeader>
+            <CardContent><div class="text-2xl font-bold">{{ lastCheckTime }}</div></CardContent>
+          </Card>
+        </div>
+
+        <!-- Main content: chart + sidebar, checks + badges — full width, side by side -->
+        <div class="grid gap-5 grid-cols-1 xl:grid-cols-3">
+          <!-- Response Time Trend (wide) -->
+          <Card v-if="showResponseTimeChartAndBadges" class="xl:col-span-2">
+            <CardHeader class="pb-2">
               <div class="flex items-center justify-between">
-                <CardTitle>Recent Checks</CardTitle>
-                <div class="flex items-center gap-2">
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    @click="toggleShowAverageResponseTime"
-                    :title="showAverageResponseTime ? 'Show min-max response time' : 'Show average response time'"
-                  >
-                    <Activity v-if="showAverageResponseTime" class="h-5 w-5" />
-                    <Timer v-else class="h-5 w-5" />
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    @click="fetchData"
-                    title="Refresh data"
-                    :disabled="isRefreshing"
-                  >
-                    <RefreshCw :class="['h-4 w-4', isRefreshing && 'animate-spin']" />
-                  </Button>
-                </div>
+                <CardTitle>Response Time Trend</CardTitle>
+                <select v-model="selectedChartDuration"
+                  class="text-sm bg-background border rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-ring">
+                  <option value="24h">24 hours</option>
+                  <option value="7d">7 days</option>
+                  <option value="30d">30 days</option>
+                </select>
               </div>
             </CardHeader>
             <CardContent>
+              <ResponseTimeChart
+                v-if="endpointStatus && endpointStatus.key"
+                :endpointKey="endpointStatus.key"
+                :duration="selectedChartDuration"
+                :serverUrl="serverUrl"
+                :events="endpointStatus.events || []"
+              />
+            </CardContent>
+          </Card>
+
+          <!-- Uptime + Current Health (sidebar) -->
+          <Card :class="showResponseTimeChartAndBadges ? 'xl:col-span-1' : 'xl:col-span-3'">
+            <CardHeader class="pb-2"><CardTitle>Uptime</CardTitle></CardHeader>
+            <CardContent>
+              <div class="grid grid-cols-2 gap-x-4 gap-y-3">
+                <div v-for="period in ['30d', '7d', '24h', '1h']" :key="period" class="text-center">
+                  <p class="text-xs text-muted-foreground mb-1">
+                    {{ period === '30d' ? 'Last 30 days' : period === '7d' ? 'Last 7 days' : period === '24h' ? 'Last 24 hours' : 'Last hour' }}
+                  </p>
+                  <img :src="generateUptimeBadgeImageURL(period)" :alt="`${period} uptime`" class="mx-auto" />
+                </div>
+              </div>
+              <div class="mt-4 pt-4 border-t flex items-center justify-center">
+                <img :src="generateHealthBadgeImageURL()" alt="health badge" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <!-- Recent Checks (wide) -->
+          <Card class="xl:col-span-2">
+            <CardHeader class="pb-2"><CardTitle>Recent Checks</CardTitle></CardHeader>
+            <CardContent>
               <div class="space-y-4">
-                <EndpointCard 
+                <EndpointCard
                   v-if="endpointStatus"
                   :endpoint="endpointStatus"
                   :maxResults="resultPageSize"
@@ -101,98 +119,41 @@
             </CardContent>
           </Card>
 
-          <div v-if="showResponseTimeChartAndBadges" class="space-y-6">
-            <Card>
-              <CardHeader>
-                <div class="flex items-center justify-between">
-                  <CardTitle>Response Time Trend</CardTitle>
-                  <select 
-                    v-model="selectedChartDuration"
-                    class="text-sm bg-background border rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    <option value="24h">24 hours</option>
-                    <option value="7d">7 days</option>
-                    <option value="30d">30 days</option>
-                  </select>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <ResponseTimeChart
-                  v-if="endpointStatus && endpointStatus.key"
-                  :endpointKey="endpointStatus.key"
-                  :duration="selectedChartDuration"
-                  :serverUrl="serverUrl"
-                  :events="endpointStatus.events || []"
-                />
-              </CardContent>
-            </Card>
-
-            <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <Card v-for="period in ['30d', '7d', '24h', '1h']" :key="period">
-                <CardHeader class="pb-2">
-                  <CardTitle class="text-sm font-medium text-muted-foreground text-center">
-                    {{ period === '30d' ? 'Last 30 days' : period === '7d' ? 'Last 7 days' : period === '24h' ? 'Last 24 hours' : 'Last hour' }}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <img :src="generateResponseTimeBadgeImageURL(period)" :alt="`${period} response time`" class="mx-auto mt-2" />
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Uptime Statistics</CardTitle>
-            </CardHeader>
+          <!-- Response time badges (sidebar) -->
+          <Card v-if="showResponseTimeChartAndBadges" class="xl:col-span-1">
+            <CardHeader class="pb-2"><CardTitle>Response Time</CardTitle></CardHeader>
             <CardContent>
-              <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div class="grid grid-cols-2 gap-x-4 gap-y-3">
                 <div v-for="period in ['30d', '7d', '24h', '1h']" :key="period" class="text-center">
-                  <p class="text-sm text-muted-foreground mb-2">
+                  <p class="text-xs text-muted-foreground mb-1">
                     {{ period === '30d' ? 'Last 30 days' : period === '7d' ? 'Last 7 days' : period === '24h' ? 'Last 24 hours' : 'Last hour' }}
                   </p>
-                  <img :src="generateUptimeBadgeImageURL(period)" :alt="`${period} uptime`" class="mx-auto" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Current Health</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div class="text-center">
-                <img :src="generateHealthBadgeImageURL()" alt="health badge" class="mx-auto" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card v-if="events && events.length > 0">
-            <CardHeader>
-              <CardTitle>Events</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div class="space-y-4">
-                <div v-for="event in events" :key="event.timestamp" class="flex items-start gap-4 pb-4 border-b last:border-0">
-                  <div class="mt-1">
-                    <ArrowUpCircle v-if="event.type === 'HEALTHY'" class="h-5 w-5 text-green-500" />
-                    <ArrowDownCircle v-else-if="event.type === 'UNHEALTHY'" class="h-5 w-5 text-red-500" />
-                    <PlayCircle v-else class="h-5 w-5 text-muted-foreground" />
-                  </div>
-                  <div class="flex-1">
-                    <p class="font-medium">{{ event.fancyText }}</p>
-                    <p class="text-sm text-muted-foreground">{{ prettifyTimestamp(event.timestamp) }} • {{ event.fancyTimeAgo }}</p>
-                  </div>
+                  <img :src="generateResponseTimeBadgeImageURL(period)" :alt="`${period} response time`" class="mx-auto" />
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        <div v-else class="flex items-center justify-center py-20">
-          <Loading size="lg" />
-        </div>
+        <!-- Events (full width, spread horizontally) -->
+        <Card v-if="events && events.length > 0">
+          <CardHeader class="pb-2"><CardTitle>Events</CardTitle></CardHeader>
+          <CardContent>
+            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div v-for="event in events" :key="event.timestamp" class="flex items-start gap-3 p-3 rounded-lg border bg-card">
+                <div class="mt-0.5 shrink-0">
+                  <ArrowUpCircle v-if="event.type === 'HEALTHY'" class="h-5 w-5 text-green-500" />
+                  <ArrowDownCircle v-else-if="event.type === 'UNHEALTHY'" class="h-5 w-5 text-red-500" />
+                  <PlayCircle v-else class="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div class="min-w-0">
+                  <p class="font-medium text-sm">{{ event.fancyText }}</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">{{ prettifyTimestamp(event.timestamp) }} • {{ event.fancyTimeAgo }}</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
 
