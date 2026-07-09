@@ -41,7 +41,7 @@
             <div
               v-for="(cell, cellIdx) in row.cells"
               :key="cellIdx"
-              :class="cellClass(cell.token, `${rowIdx}:${cellIdx}` === selectedKey)"
+              :class="cellClass(effectiveToken(cell.token), `${rowIdx}:${cellIdx}` === selectedKey)"
               @mouseenter="cell.result && handleMouseEnter(cell.result, $event)"
               @mouseleave="cell.result && handleMouseLeave($event)"
               @click.stop="cell.result && handleClick(cell.result, $event, rowIdx, cellIdx)"
@@ -250,6 +250,14 @@ const oldestResultTime = computed(() => {
   const idx = Math.max(0, ep.results.length - props.maxResults)
   return generatePrettyTimeAgo(ep.results[idx].timestamp, now.value)
 })
+
+// When a location is simulated, recolor its (real) bars to match the forced
+// status so the outage is fully visible. Empty slots stay grey.
+const effectiveToken = (token) => {
+  if (!isSimulated.value || token === 'none') return token
+  const map = { unhealthy: 'red', degraded: 'amber', healthy: 'green' }
+  return map[simulations[props.name]] || token
+}
 
 // --- Cell styling ---
 const cellClass = (token, selected) => {
