@@ -23,3 +23,6 @@ config.yaml
 *.tar
 gatus-local.tar
 scratch_*
+
+# Runtime data (sqlite history) — never track or clean
+/data/

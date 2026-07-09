@@ -90,6 +90,7 @@
           <div class="flex flex-col items-center gap-4">
             <div class="text-sm text-muted-foreground text-center">
               Powered by <a href="https://gatus.io" target="_blank" class="font-medium text-emerald-800 hover:text-emerald-600">Gatus</a>
+              <span v-if="buildVersion" class="ml-2 opacity-60 font-mono text-xs">· build {{ buildVersion }}</span>
             </div>
             <Social />
           </div>
@@ -166,6 +167,20 @@ const tooltipIsPersistent = ref(false)
 let configInterval = null
 
 const refreshData = () => requestRefresh()
+
+// Build version (git SHA baked into the server) so a deploy can be verified.
+const buildVersion = ref('')
+const fetchVersion = async () => {
+  try {
+    const response = await fetch('/api/v1/version', { cache: 'no-store' })
+    if (response.ok) {
+      const data = await response.json()
+      buildVersion.value = data.version
+    }
+  } catch (e) {
+    // non-fatal
+  }
+}
 
 // Full-screen toggle — fullscreen the app container (not the document root) so
 // it becomes its own scroll context (drilled-in detail pages can scroll).
@@ -253,6 +268,7 @@ const handleDocumentClick = (event) => {
 // Fetch config on mount and set up interval
 onMounted(() => {
   fetchConfig()
+  fetchVersion()
   // Refresh config every 10 minutes for announcements
   configInterval = setInterval(fetchConfig, 600000)
   // Add click listener for closing persistent tooltips

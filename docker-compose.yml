@@ -1,6 +1,9 @@
 services:
   gatus:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}   # stamped into the build; shown at /api/v1/version
     image: ll-gatus:local
     container_name: gatus
     restart: always
