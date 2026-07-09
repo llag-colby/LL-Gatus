@@ -48,7 +48,7 @@ endpoints:
 
   # ---------- Prattville ----------
   - name: Prattville
-    group: WAN 1 (ATT F1)
+    group: WAN 1 (ATT Fiber)
     url: "icmp://12.247.225.58"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
