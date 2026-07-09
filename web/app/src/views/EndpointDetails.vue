@@ -1,11 +1,11 @@
 <template>
-  <div class="dashboard-container bg-background min-h-screen">
-    <div class="w-full px-4 sm:px-6 py-5">
+  <div class="dashboard-container detail-page bg-background">
+    <div class="w-full px-4 sm:px-6 py-3">
       <div v-if="!endpointStatus || !endpointStatus.name" class="flex items-center justify-center py-20">
         <Loading size="lg" />
       </div>
 
-      <div v-else class="space-y-4">
+      <div v-else class="space-y-3">
         <!-- Header bar -->
         <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
           <Button variant="ghost" size="sm" @click="goBack" data-tooltip="Back to dashboard">
@@ -32,7 +32,7 @@
         </div>
 
         <!-- KPI strip -->
-        <div class="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <div class="grid gap-3 grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader class="pb-1"><CardTitle class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Current Status</CardTitle></CardHeader>
             <CardContent>
@@ -81,9 +81,9 @@
         </div>
 
         <!-- Main: left = chart + recent checks; right = uptime + response time + events -->
-        <div class="flex flex-col xl:flex-row gap-4 items-start">
+        <div class="flex flex-col xl:flex-row gap-3 items-start">
           <!-- Left column (primary visuals) -->
-          <div class="w-full xl:flex-1 min-w-0 space-y-4">
+          <div class="w-full xl:flex-1 min-w-0 space-y-3">
             <Card v-if="showResponseTimeChartAndBadges">
               <CardHeader class="pb-2">
                 <div class="flex items-center justify-between">
@@ -127,7 +127,7 @@
           </div>
 
           <!-- Right column (uptime + response time + events) -->
-          <div class="w-full xl:w-80 2xl:w-96 shrink-0 space-y-4">
+          <div class="w-full xl:w-80 2xl:w-96 shrink-0 space-y-3">
             <Card>
               <CardHeader class="pb-2"><CardTitle>Uptime</CardTitle></CardHeader>
               <CardContent>
@@ -382,3 +382,13 @@ onMounted(() => {
   fetchData()
 })
 </script>
+
+<style scoped>
+/* Compact all card padding on the detail page so it fits without scrolling. */
+.detail-page :deep(.p-6) {
+  padding: 0.8rem 1rem;
+}
+.detail-page :deep(.p-6.pt-0) {
+  padding-top: 0;
+}
+</style>

@@ -1,5 +1,5 @@
 <template>
-  <div class="relative w-full" style="height: 300px;">
+  <div class="relative w-full" style="height: 200px;">
     <div v-if="loading" class="absolute inset-0 flex items-center justify-center bg-background/50">
       <Loading />
     </div>
