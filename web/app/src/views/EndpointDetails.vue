@@ -5,7 +5,7 @@
         <Loading size="lg" />
       </div>
 
-      <div v-else class="space-y-5">
+      <div v-else class="space-y-4">
         <!-- Header bar -->
         <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
           <Button variant="ghost" size="sm" @click="goBack" data-tooltip="Back to dashboard">
@@ -55,105 +55,106 @@
           </Card>
         </div>
 
-        <!-- Main content: chart + sidebar, checks + badges — full width, side by side -->
-        <div class="grid gap-5 grid-cols-1 xl:grid-cols-3">
-          <!-- Response Time Trend (wide) -->
-          <Card v-if="showResponseTimeChartAndBadges" class="xl:col-span-2">
-            <CardHeader class="pb-2">
-              <div class="flex items-center justify-between">
-                <CardTitle>Response Time Trend</CardTitle>
-                <select v-model="selectedChartDuration"
-                  class="text-sm bg-background border rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-ring">
-                  <option value="24h">24 hours</option>
-                  <option value="7d">7 days</option>
-                  <option value="30d">30 days</option>
-                </select>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <ResponseTimeChart
-                v-if="endpointStatus && endpointStatus.key"
-                :endpointKey="endpointStatus.key"
-                :duration="selectedChartDuration"
-                :serverUrl="serverUrl"
-                :events="endpointStatus.events || []"
-              />
-            </CardContent>
-          </Card>
-
-          <!-- Uptime + Current Health (sidebar) -->
-          <Card :class="showResponseTimeChartAndBadges ? 'xl:col-span-1' : 'xl:col-span-3'">
-            <CardHeader class="pb-2"><CardTitle>Uptime</CardTitle></CardHeader>
-            <CardContent>
-              <div class="grid grid-cols-2 gap-x-4 gap-y-3">
-                <div v-for="period in ['30d', '7d', '24h', '1h']" :key="period" class="text-center">
-                  <p class="text-xs text-muted-foreground mb-1">
-                    {{ period === '30d' ? 'Last 30 days' : period === '7d' ? 'Last 7 days' : period === '24h' ? 'Last 24 hours' : 'Last hour' }}
-                  </p>
-                  <img :src="generateUptimeBadgeImageURL(period)" :alt="`${period} uptime`" class="mx-auto" />
+        <!-- Main: left = chart + recent checks; right = uptime + response time + events -->
+        <div class="flex flex-col xl:flex-row gap-4 items-start">
+          <!-- Left column (primary visuals) -->
+          <div class="w-full xl:flex-1 min-w-0 space-y-4">
+            <Card v-if="showResponseTimeChartAndBadges">
+              <CardHeader class="pb-2">
+                <div class="flex items-center justify-between">
+                  <CardTitle>Response Time Trend</CardTitle>
+                  <select v-model="selectedChartDuration"
+                    class="text-sm bg-background border rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-ring">
+                    <option value="24h">24 hours</option>
+                    <option value="7d">7 days</option>
+                    <option value="30d">30 days</option>
+                  </select>
                 </div>
-              </div>
-              <div class="mt-4 pt-4 border-t flex items-center justify-center">
-                <img :src="generateHealthBadgeImageURL()" alt="health badge" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <!-- Recent Checks (wide) -->
-          <Card class="xl:col-span-2">
-            <CardHeader class="pb-2"><CardTitle>Recent Checks</CardTitle></CardHeader>
-            <CardContent>
-              <div class="space-y-4">
-                <EndpointCard
-                  v-if="endpointStatus"
-                  :endpoint="endpointStatus"
-                  :maxResults="resultPageSize"
-                  :showAverageResponseTime="showAverageResponseTime"
-                  @showTooltip="showTooltip"
-                  class="border-0 shadow-none bg-transparent p-0"
+              </CardHeader>
+              <CardContent>
+                <ResponseTimeChart
+                  v-if="endpointStatus && endpointStatus.key"
+                  :endpointKey="endpointStatus.key"
+                  :duration="selectedChartDuration"
+                  :serverUrl="serverUrl"
+                  :events="endpointStatus.events || []"
                 />
-                <div v-if="endpointStatus && endpointStatus.key" class="pt-4 border-t">
-                  <Pagination @page="changePage" :numberOfResultsPerPage="resultPageSize" :currentPageProp="currentPage" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          <!-- Response time badges (sidebar) -->
-          <Card v-if="showResponseTimeChartAndBadges" class="xl:col-span-1">
-            <CardHeader class="pb-2"><CardTitle>Response Time</CardTitle></CardHeader>
-            <CardContent>
-              <div class="grid grid-cols-2 gap-x-4 gap-y-3">
-                <div v-for="period in ['30d', '7d', '24h', '1h']" :key="period" class="text-center">
-                  <p class="text-xs text-muted-foreground mb-1">
-                    {{ period === '30d' ? 'Last 30 days' : period === '7d' ? 'Last 7 days' : period === '24h' ? 'Last 24 hours' : 'Last hour' }}
-                  </p>
-                  <img :src="generateResponseTimeBadgeImageURL(period)" :alt="`${period} response time`" class="mx-auto" />
+            <Card>
+              <CardHeader class="pb-2"><CardTitle>Recent Checks</CardTitle></CardHeader>
+              <CardContent>
+                <div class="space-y-4">
+                  <EndpointCard
+                    v-if="endpointStatus"
+                    :endpoint="endpointStatus"
+                    :maxResults="resultPageSize"
+                    :showAverageResponseTime="showAverageResponseTime"
+                    @showTooltip="showTooltip"
+                    class="border-0 shadow-none bg-transparent p-0"
+                  />
+                  <div v-if="endpointStatus && endpointStatus.key" class="pt-4 border-t">
+                    <Pagination @page="changePage" :numberOfResultsPerPage="resultPageSize" :currentPageProp="currentPage" />
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
+
+          <!-- Right column (uptime + response time + events) -->
+          <div class="w-full xl:w-80 2xl:w-96 shrink-0 space-y-4">
+            <Card>
+              <CardHeader class="pb-2"><CardTitle>Uptime</CardTitle></CardHeader>
+              <CardContent>
+                <div class="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <div v-for="period in ['30d', '7d', '24h', '1h']" :key="period" class="text-center">
+                    <p class="text-xs text-muted-foreground mb-1">
+                      {{ period === '30d' ? 'Last 30 days' : period === '7d' ? 'Last 7 days' : period === '24h' ? 'Last 24 hours' : 'Last hour' }}
+                    </p>
+                    <img :src="generateUptimeBadgeImageURL(period)" :alt="`${period} uptime`" class="mx-auto" />
+                  </div>
+                </div>
+                <div class="mt-4 pt-4 border-t flex items-center justify-center">
+                  <img :src="generateHealthBadgeImageURL()" alt="health badge" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card v-if="showResponseTimeChartAndBadges">
+              <CardHeader class="pb-2"><CardTitle>Response Time</CardTitle></CardHeader>
+              <CardContent>
+                <div class="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <div v-for="period in ['30d', '7d', '24h', '1h']" :key="period" class="text-center">
+                    <p class="text-xs text-muted-foreground mb-1">
+                      {{ period === '30d' ? 'Last 30 days' : period === '7d' ? 'Last 7 days' : period === '24h' ? 'Last 24 hours' : 'Last hour' }}
+                    </p>
+                    <img :src="generateResponseTimeBadgeImageURL(period)" :alt="`${period} response time`" class="mx-auto" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card v-if="events && events.length > 0">
+              <CardHeader class="pb-2"><CardTitle>Events</CardTitle></CardHeader>
+              <CardContent>
+                <div class="space-y-2">
+                  <div v-for="event in events" :key="event.timestamp" class="flex items-start gap-3 p-2.5 rounded-lg border bg-card">
+                    <div class="mt-0.5 shrink-0">
+                      <ArrowUpCircle v-if="event.type === 'HEALTHY'" class="h-5 w-5 text-green-500" />
+                      <ArrowDownCircle v-else-if="event.type === 'UNHEALTHY'" class="h-5 w-5 text-red-500" />
+                      <PlayCircle v-else class="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div class="min-w-0">
+                      <p class="font-medium text-sm">{{ event.fancyText }}</p>
+                      <p class="text-xs text-muted-foreground mt-0.5">{{ prettifyTimestamp(event.timestamp) }} • {{ event.fancyTimeAgo }}</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-
-        <!-- Events (full width, spread horizontally) -->
-        <Card v-if="events && events.length > 0">
-          <CardHeader class="pb-2"><CardTitle>Events</CardTitle></CardHeader>
-          <CardContent>
-            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <div v-for="event in events" :key="event.timestamp" class="flex items-start gap-3 p-3 rounded-lg border bg-card">
-                <div class="mt-0.5 shrink-0">
-                  <ArrowUpCircle v-if="event.type === 'HEALTHY'" class="h-5 w-5 text-green-500" />
-                  <ArrowDownCircle v-else-if="event.type === 'UNHEALTHY'" class="h-5 w-5 text-red-500" />
-                  <PlayCircle v-else class="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div class="min-w-0">
-                  <p class="font-medium text-sm">{{ event.fancyText }}</p>
-                  <p class="text-xs text-muted-foreground mt-0.5">{{ prettifyTimestamp(event.timestamp) }} • {{ event.fancyTimeAgo }}</p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
 
