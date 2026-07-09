@@ -204,7 +204,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ArrowLeft, RefreshCw, ArrowUpCircle, ArrowDownCircle, PlayCircle, Activity, Timer, ChevronLeft, ChevronRight, Download } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
@@ -227,7 +227,8 @@ const currentPage = ref(1)
 const resultPageSize = 50
 const showResponseTimeChartAndBadges = ref(false)
 const showAverageResponseTime = ref(localStorage.getItem('gatus:show-average-response-time') !== 'false')
-const selectedChartDuration = ref('24h')
+const selectedChartDuration = ref(localStorage.getItem('gatus:chart-duration') || '24h')
+watch(selectedChartDuration, (value) => localStorage.setItem('gatus:chart-duration', value))
 const isRefreshing = ref(false)
 const liveResults = ref([])
 const eventsPage = ref(0)
