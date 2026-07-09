@@ -37,7 +37,7 @@ endpoints:
   # ---------- Ivory Tower ----------
   - name: Ivory Tower
     group: WAN 1 (ATT Fiber)
-    url: "icmp://99.28.23.1"
+    url: "icmp://99.28.23.6"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
   - name: Ivory Tower
