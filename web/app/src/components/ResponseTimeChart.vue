@@ -28,14 +28,18 @@ const props = defineProps({
   },
   duration: {
     type: String,
-    required: true,
-    validator: (value) => ['24h', '7d', '30d'].includes(value)
+    required: true
   },
   serverUrl: {
     type: String,
     default: '..'
   },
   events: {
+    type: Array,
+    default: () => []
+  },
+  // Raw check results, used for the "live" (last 10 minutes) view.
+  results: {
     type: Array,
     default: () => []
   }
@@ -221,7 +225,7 @@ const chartOptions = computed(() => {
             },
             label: {
               display: () => hoveredEventIndex.value === index,
-              content: [event.isOngoing ? `Status: ONGOING` : `Status: RESOLVED`, `Unhealthy for ${event.duration}`, `Started at ${new Date(event.timestamp).toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: true })}`],
+              content: [event.isOngoing ? `Status: ONGOING` : `Status: RESOLVED`, `Unhealthy for ~${event.duration}`, `Started at ${new Date(event.timestamp).toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: true })}`],
               backgroundColor: getEventColor(),
               color: '#ffffff',
               font: {
@@ -239,8 +243,9 @@ const chartOptions = computed(() => {
       x: {
         type: 'time',
         time: {
-          unit: ['1h', '5h', '16h', '24h', '2d'].includes(props.duration) ? 'hour' : 'day',
+          unit: props.duration === 'live' ? 'minute' : (['1h', '5h', '16h', '24h', '2d'].includes(props.duration) ? 'hour' : 'day'),
           displayFormats: {
+            minute: 'h:mm a',
             hour: 'MMM d, ha',
             day: 'MMM d'
           }
@@ -270,7 +275,24 @@ const chartOptions = computed(() => {
   }
 })
 
+// Live view: plot the raw pings from the last 10 minutes (per-ping resolution).
+const buildLiveData = () => {
+  const cutoff = Date.now() - 10 * 60 * 1000
+  const points = (props.results || [])
+    .filter(r => r && r.timestamp && new Date(r.timestamp).getTime() >= cutoff)
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+  timestamps.value = points.map(r => new Date(r.timestamp).getTime())
+  // Failed pings become gaps (null) rather than a fake 10s timeout spike.
+  values.value = points.map(r => (r.success && r.duration ? Math.round(r.duration / 1000000) : null))
+  loading.value = false
+  error.value = null
+}
+
 const fetchData = async () => {
+  if (props.duration === 'live') {
+    buildLiveData()
+    return
+  }
   loading.value = true
   error.value = null
   try {
@@ -296,6 +318,11 @@ const fetchData = async () => {
 watch(() => props.duration, () => {
   fetchData()
 })
+
+// In live mode, re-plot whenever new results arrive.
+watch(() => props.results, () => {
+  if (props.duration === 'live') buildLiveData()
+}, { deep: true })
 
 onMounted(() => {
   fetchData()

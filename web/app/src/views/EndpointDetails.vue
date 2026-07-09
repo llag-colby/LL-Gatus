@@ -21,6 +21,9 @@
           </div>
           <div class="ml-auto flex items-center gap-2">
             <StatusBadge :status="currentHealthStatus" />
+            <Button variant="ghost" size="icon" class="h-9 w-9" @click="exportCSV" data-tooltip="Export as CSV">
+              <Download class="h-5 w-5" />
+            </Button>
             <Button variant="ghost" size="icon" class="h-9 w-9" @click="toggleShowAverageResponseTime"
               :data-tooltip="showAverageResponseTime ? 'Showing average response time' : 'Showing min–max response time'">
               <Activity v-if="showAverageResponseTime" class="h-5 w-5" /><Timer v-else class="h-5 w-5" />
@@ -81,15 +84,16 @@
         </div>
 
         <!-- Main: left = chart + recent checks; right = uptime + response time + events -->
-        <div class="flex flex-col xl:flex-row gap-3 items-start">
+        <div class="flex flex-col xl:flex-row gap-3 items-stretch">
           <!-- Left column (primary visuals) -->
-          <div class="w-full xl:flex-1 min-w-0 space-y-3">
+          <div class="w-full xl:flex-1 min-w-0 flex flex-col gap-3">
             <Card v-if="showResponseTimeChartAndBadges">
               <CardHeader class="pb-2">
                 <div class="flex items-center justify-between">
                   <CardTitle>Response Time Trend</CardTitle>
                   <select v-model="selectedChartDuration"
                     class="text-sm bg-background border rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-ring">
+                    <option value="live">Live</option>
                     <option value="1h">1 hour</option>
                     <option value="5h">5 hours</option>
                     <option value="16h">16 hours</option>
@@ -107,11 +111,12 @@
                   :duration="selectedChartDuration"
                   :serverUrl="serverUrl"
                   :events="endpointStatus.events || []"
+                  :results="liveResults"
                 />
               </CardContent>
             </Card>
 
-            <Card>
+            <Card class="flex-1">
               <CardHeader class="pb-2"><CardTitle>Recent Checks</CardTitle></CardHeader>
               <CardContent>
                 <EndpointCard
@@ -127,7 +132,7 @@
           </div>
 
           <!-- Right column (uptime + response time + events) -->
-          <div class="w-full xl:w-80 2xl:w-96 shrink-0 space-y-3">
+          <div class="w-full xl:w-80 2xl:w-96 shrink-0 flex flex-col gap-3">
             <Card>
               <CardHeader class="pb-2"><CardTitle>Uptime</CardTitle></CardHeader>
               <CardContent>
@@ -156,11 +161,26 @@
               </CardContent>
             </Card>
 
-            <Card v-if="events && events.length > 0">
-              <CardHeader class="pb-2"><CardTitle>Events</CardTitle></CardHeader>
+            <Card v-if="events && events.length > 0" class="flex-1">
+              <CardHeader class="pb-2">
+                <div class="flex items-center justify-between">
+                  <CardTitle>Events</CardTitle>
+                  <div v-if="totalEventPages > 1" class="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" class="h-7 w-7" :disabled="eventsPage === 0"
+                      @click="eventsPage = Math.max(0, eventsPage - 1)" data-tooltip="Newer">
+                      <ChevronLeft class="h-4 w-4" />
+                    </Button>
+                    <span class="text-xs text-muted-foreground tabular-nums">{{ eventsPage + 1 }}/{{ totalEventPages }}</span>
+                    <Button variant="ghost" size="icon" class="h-7 w-7" :disabled="eventsPage >= totalEventPages - 1"
+                      @click="eventsPage = Math.min(totalEventPages - 1, eventsPage + 1)" data-tooltip="Older">
+                      <ChevronRight class="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
               <CardContent>
                 <div class="space-y-2">
-                  <div v-for="event in events" :key="event.timestamp" class="flex items-start gap-3 p-2.5 rounded-lg border bg-card">
+                  <div v-for="event in pagedEvents" :key="event.timestamp" class="flex items-start gap-3 p-2.5 rounded-lg border bg-card">
                     <div class="mt-0.5 shrink-0">
                       <ArrowUpCircle v-if="event.type === 'HEALTHY'" class="h-5 w-5 text-green-500" />
                       <ArrowDownCircle v-else-if="event.type === 'UNHEALTHY'" class="h-5 w-5 text-red-500" />
@@ -184,9 +204,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ArrowLeft, RefreshCw, ArrowUpCircle, ArrowDownCircle, PlayCircle, Activity, Timer } from 'lucide-vue-next'
+import { ArrowLeft, RefreshCw, ArrowUpCircle, ArrowDownCircle, PlayCircle, Activity, Timer, ChevronLeft, ChevronRight, Download } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -209,6 +229,12 @@ const showResponseTimeChartAndBadges = ref(false)
 const showAverageResponseTime = ref(localStorage.getItem('gatus:show-average-response-time') !== 'false')
 const selectedChartDuration = ref('24h')
 const isRefreshing = ref(false)
+const liveResults = ref([])
+const eventsPage = ref(0)
+
+// Events paged 3 at a time (newest first).
+const totalEventPages = computed(() => Math.max(1, Math.ceil(events.value.length / 3)))
+const pagedEvents = computed(() => events.value.slice(eventsPage.value * 3, eventsPage.value * 3 + 3))
 
 const latestResult = computed(() => {
   // Use currentStatus for the actual latest result
@@ -246,7 +272,7 @@ const pageAverageResponseTime = computed(() => {
   let total = 0
   let count = 0
   for (const result of endpointStatus.value.results) {
-    if (result.duration) {
+    if (result.success && result.duration) {
       total += result.duration
       count++
     }
@@ -263,10 +289,10 @@ const pageResponseTimeRange = computed(() => {
   let min = Infinity
   let max = 0
   let hasData = false
-  
+
   for (const result of endpointStatus.value.results) {
     const duration = result.duration
-    if (duration) {
+    if (result.success && duration) {
       min = Math.min(min, duration)
       max = Math.max(max, duration)
       hasData = true
@@ -326,7 +352,7 @@ const fetchData = async () => {
               event.fancyText = 'Endpoint became healthy'
             } else if (event.type === 'UNHEALTHY') {
               if (nextEvent) {
-                event.fancyText = 'Endpoint was unhealthy for ' + generatePrettyTimeDifference(nextEvent.timestamp, event.timestamp)
+                event.fancyText = 'Endpoint was unhealthy for ~' + generatePrettyTimeDifference(nextEvent.timestamp, event.timestamp)
               } else {
                 event.fancyText = 'Endpoint became unhealthy'
               }
@@ -378,8 +404,54 @@ const generateResponseTimeBadgeImageURL = (duration) => {
   return `/api/v1/endpoints/${endpointStatus.value.key}/response-times/${duration}/badge.svg`
 }
 
+const exportCSV = () => {
+  const rows = (currentStatus.value && currentStatus.value.results) || (endpointStatus.value && endpointStatus.value.results) || []
+  if (!rows.length) return
+  const lines = ['Timestamp (CST),Response Time (ms),Status,IP']
+  for (const r of rows) {
+    const ts = new Date(r.timestamp).toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: true })
+    const ms = r.duration ? Math.round(r.duration / 1000000) : ''
+    const status = r.success ? 'Success' : 'Fail'
+    const ip = r.hostname || ''
+    lines.push(`"${ts}",${ms},${status},${ip}`)
+  }
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  const name = (endpointStatus.value && endpointStatus.value.name) || 'endpoint'
+  a.download = `${name}_${route.params.key}.csv`.replace(/[^a-z0-9._-]/gi, '_')
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// Live results (last pings) via SSE, used by the chart's "Live" view.
+let liveES = null
+const connectLive = () => {
+  try {
+    liveES = new EventSource('/api/v1/live', { withCredentials: true })
+    liveES.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data)
+        const ep = (data.endpoints || []).find(x => x.key === route.params.key)
+        if (ep && Array.isArray(ep.results)) liveResults.value = ep.results
+      } catch (err) { /* ignore */ }
+    }
+  } catch (err) { /* ignore */ }
+}
+
 onMounted(() => {
   fetchData()
+  connectLive()
+})
+
+onUnmounted(() => {
+  if (liveES) {
+    liveES.close()
+    liveES = null
+  }
 })
 </script>
 

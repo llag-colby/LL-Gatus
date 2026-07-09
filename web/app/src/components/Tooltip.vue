@@ -21,15 +21,10 @@
         </span>
       </div>
 
-      <!-- Status (for endpoint results) -->
+      <!-- Status (for endpoint results) — reflects latency, matching the bar colour -->
       <div v-else class="flex items-center gap-2">
-        <span :class="[
-          'inline-block w-2 h-2 rounded-full',
-          result.success ? 'bg-green-500' : 'bg-red-500'
-        ]"></span>
-        <span class="text-xs font-semibold">
-          {{ result.success ? 'Healthy' : 'Unhealthy' }}
-        </span>
+        <span :class="['inline-block w-2 h-2 rounded-full', endpointState.dot]"></span>
+        <span class="text-xs font-semibold">{{ endpointState.label }}</span>
       </div>
 
       <!-- Timestamp -->
@@ -71,22 +66,7 @@
           {{ isSuiteResult ? 'Total Duration' : 'Response Time' }}
         </div>
         <div class="font-mono text-xs">
-          {{ Math.trunc(result.duration / 1000000) }}ms
-        </div>
-      </div>
-      
-      <!-- Failed checks only (for endpoint results) -->
-      <div v-if="!isSuiteResult && failedConditions.length">
-        <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Failed checks</div>
-        <div class="font-mono text-xs space-y-0.5">
-          <div
-            v-for="(conditionResult, index) in failedConditions"
-            :key="index"
-            class="flex items-start gap-1"
-          >
-            <span class="text-red-500">✗</span>
-            <span class="break-all">{{ conditionResult.condition }}</span>
-          </div>
+          {{ (!isSuiteResult && !result.success) ? '—' : Math.trunc(result.duration / 1000000) + 'ms' }}
         </div>
       </div>
       
@@ -137,6 +117,17 @@ const isSuiteResult = computed(() => {
   return props.result && props.result.endpointResults !== undefined
 })
 
+// Latency-aware status so the dot/label match the coloured bar (green/amber/red).
+const endpointState = computed(() => {
+  const r = props.result
+  if (!r) return { dot: 'bg-gray-400', label: 'Unknown' }
+  if (!r.success) return { dot: 'bg-red-500', label: 'Unhealthy' }
+  const ms = r.duration ? r.duration / 1000000 : 0
+  if (ms <= 100) return { dot: 'bg-green-500', label: 'Healthy' }
+  if (ms <= 250) return { dot: 'bg-amber-500', label: 'Elevated latency' }
+  return { dot: 'bg-red-500', label: 'High latency' }
+})
+
 const endpointCount = computed(() => {
   if (!isSuiteResult.value || !props.result.endpointResults) return 0
   return props.result.endpointResults.length
@@ -145,12 +136,6 @@ const endpointCount = computed(() => {
 const successCount = computed(() => {
   if (!isSuiteResult.value || !props.result.endpointResults) return 0
   return props.result.endpointResults.filter(e => e.success).length
-})
-
-// Only surface conditions that failed — passing ones just add noise.
-const failedConditions = computed(() => {
-  if (!props.result || !props.result.conditionResults) return []
-  return props.result.conditionResults.filter(c => !c.success)
 })
 
 // Methods are imported from utils/time

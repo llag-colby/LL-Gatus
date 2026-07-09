@@ -133,7 +133,8 @@ const formattedResponseTime = computed(() => {
   let max = 0
   
   for (const result of props.endpoint.results) {
-    if (result.duration) {
+    // Skip failed checks — their duration is just the timeout, not a real response time.
+    if (result.success && result.duration) {
       const durationMs = result.duration / 1000000
       total += durationMs
       count++
@@ -141,7 +142,7 @@ const formattedResponseTime = computed(() => {
       max = Math.max(max, durationMs)
     }
   }
-  
+
   if (count === 0) return 'N/A'
   
   if (props.showAverageResponseTime) {
