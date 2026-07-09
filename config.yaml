@@ -90,7 +90,7 @@ endpoints:
     conditions: ["[CONNECTED] == true"]
   - name: Hoover
     group: WAN 2 (Comcast Coax)
-    url: "icmp://24.197.59.162"
+    url: "icmp://24.197.59.161"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
