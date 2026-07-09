@@ -41,7 +41,7 @@
             <div
               v-for="(cell, cellIdx) in row.cells"
               :key="cellIdx"
-              :class="cellClass(effectiveToken(cell.token), `${rowIdx}:${cellIdx}` === selectedKey)"
+              :class="cellClass(effectiveToken(cell.token, rowIdx, cellIdx), `${rowIdx}:${cellIdx}` === selectedKey)"
               @mouseenter="cell.result && handleMouseEnter(cell.result, $event)"
               @mouseleave="cell.result && handleMouseLeave($event)"
               @click.stop="cell.result && handleClick(cell.result, $event, rowIdx, cellIdx)"
@@ -251,12 +251,30 @@ const oldestResultTime = computed(() => {
   return generatePrettyTimeAgo(ep.results[idx].timestamp, now.value)
 })
 
-// When a location is simulated, recolor its (real) bars to match the forced
-// status so the outage is fully visible. Empty slots stay grey.
-const effectiveToken = (token) => {
+// Stable pseudo-random 0..1 so the simulated pattern doesn't flicker on re-render.
+const hash01 = (n) => {
+  const x = Math.sin(n * 12.9898) * 43758.5453
+  return x - Math.floor(x)
+}
+
+// When a location is simulated, recolor a REALISTIC fraction of its bars — like
+// a flapping/degraded connection — not every bar the same colour. Empty slots
+// stay grey. Recent bars (right side) skew worse for a "down" site.
+const effectiveToken = (token, rowIdx, cellIdx) => {
   if (!isSimulated.value || token === 'none') return token
-  const map = { unhealthy: 'red', degraded: 'amber', healthy: 'green' }
-  return map[simulations[props.name]] || token
+  const status = simulations[props.name]
+  if (status === 'healthy') return 'green'
+  const n = props.maxResults || 20
+  const r = hash01(props.name.length * 7 + rowIdx * 131 + cellIdx * 17 + 1)
+  if (status === 'unhealthy') {
+    // Mostly red over the recent ~2/3, with occasional drops earlier.
+    const recent = cellIdx >= n * 0.35
+    return r < (recent ? 0.82 : 0.2) ? 'red' : 'green'
+  }
+  // Degraded — flapping mix of green / amber / red.
+  if (r < 0.15) return 'red'
+  if (r < 0.45) return 'amber'
+  return 'green'
 }
 
 // --- Cell styling ---
