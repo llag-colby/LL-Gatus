@@ -165,7 +165,7 @@ import SimulatePanel from './components/SimulatePanel.vue'
 import Social from './components/Social.vue'
 import Tooltip from './components/Tooltip.vue'
 import Loading from './components/Loading.vue'
-import { requestRefresh, soundEnabled, setSoundEnabled } from '@/store'
+import { requestRefresh, soundEnabled, setSoundEnabled, applyStatusColors } from '@/store'
 import { unlockAudio } from '@/utils/sounds'
 
 const route = useRoute()
@@ -286,6 +286,7 @@ const handleDocumentClick = (event) => {
 
 // Fetch config on mount and set up interval
 onMounted(() => {
+  applyStatusColors()   // push saved custom colors into CSS vars before first paint
   fetchConfig()
   fetchVersion()
   // Refresh config every 10 minutes for announcements

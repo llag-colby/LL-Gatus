@@ -36,6 +36,38 @@ export function setSoundEnabled(value) {
   localStorage.setItem('gatus:sound', value ? 'true' : 'false')
 }
 
+// --- Customizable status colors (up / degraded / down) ---
+// Drives the CSS variables --status-up/-degraded/-down, which every status bar,
+// dot, badge and KPI reads. Persisted to localStorage so it survives refresh.
+export const STATUS_COLOR_DEFAULTS = { up: '#22c55e', degraded: '#f59e0b', down: '#ef4444' }
+function loadStatusColors() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('gatus:colors') || '{}')
+    return { ...STATUS_COLOR_DEFAULTS, ...saved }
+  } catch (e) {
+    return { ...STATUS_COLOR_DEFAULTS }
+  }
+}
+export const statusColors = reactive(loadStatusColors())
+export function applyStatusColors() {
+  if (typeof document === 'undefined') return
+  const r = document.documentElement
+  r.style.setProperty('--status-up', statusColors.up)
+  r.style.setProperty('--status-degraded', statusColors.degraded)
+  r.style.setProperty('--status-down', statusColors.down)
+}
+export function setStatusColor(key, value) {
+  if (!(key in statusColors)) return
+  statusColors[key] = value
+  localStorage.setItem('gatus:colors', JSON.stringify({ ...statusColors }))
+  applyStatusColors()
+}
+export function resetStatusColors() {
+  Object.assign(statusColors, STATUS_COLOR_DEFAULTS)
+  localStorage.setItem('gatus:colors', JSON.stringify({ ...statusColors }))
+  applyStatusColors()
+}
+
 // --- Outage simulation (client-side test harness; does NOT affect monitoring) ---
 // Map of location name -> forced status ('unhealthy' | 'degraded' | 'healthy').
 export const simulations = reactive({})

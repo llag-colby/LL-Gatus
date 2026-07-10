@@ -63,6 +63,33 @@
 }
 
 /* ------------------------------------------------------------------ */
+/*  Customizable status colors. Defaults here; overridden at runtime   */
+/*  by the palette picker (store.js applyStatusColors sets these on     */
+/*  :root). Everything status-colored reads these variables.           */
+/* ------------------------------------------------------------------ */
+:root {
+    --status-up: #22c55e;
+    --status-degraded: #f59e0b;
+    --status-down: #ef4444;
+}
+
+/* Status bars (ping cells). Hover/selected = a darker shade of the same hue. */
+.stbar-up   { background-color: var(--status-up); }
+.stbar-degraded { background-color: var(--status-degraded); }
+.stbar-down { background-color: var(--status-down); }
+.stbar-up:hover,       .stbar-up.sel       { background-color: color-mix(in srgb, var(--status-up) 72%, #000); }
+.stbar-degraded:hover, .stbar-degraded.sel { background-color: color-mix(in srgb, var(--status-degraded) 78%, #000); }
+.stbar-down:hover,     .stbar-down.sel     { background-color: color-mix(in srgb, var(--status-down) 72%, #000); }
+
+/* Status text (KPIs, event icons, badges). */
+.st-text-up   { color: var(--status-up) !important; }
+.st-text-degraded { color: var(--status-degraded) !important; }
+.st-text-down { color: var(--status-down) !important; }
+.st-bg-up   { background-color: var(--status-up) !important; }
+.st-bg-degraded { background-color: var(--status-degraded) !important; }
+.st-bg-down { background-color: var(--status-down) !important; }
+
+/* ------------------------------------------------------------------ */
 /*  Classy tooltips: any element with [data-tooltip="..."] gets one.  */
 /*  Add data-tip-pos="bottom" to make it appear below (e.g. header).  */
 /* ------------------------------------------------------------------ */

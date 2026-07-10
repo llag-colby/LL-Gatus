@@ -22,10 +22,10 @@ const badgeVariants = cva(
       variant: {
         default: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/80',
         secondary: 'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        destructive: 'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80',
+        destructive: 'border-transparent st-bg-down text-white',
         outline: 'text-foreground',
-        success: 'border-transparent bg-green-500 text-white',
-        warning: 'border-transparent bg-yellow-500 text-white',
+        success: 'border-transparent st-bg-up text-white',
+        warning: 'border-transparent st-bg-degraded text-white',
       },
     },
     defaultVariants: {

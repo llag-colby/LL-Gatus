@@ -35,10 +35,36 @@ if [ "$BEFORE" = "$BUILD" ]; then
 fi
 
 sub
-echo "  Rebuilding + recreating container (cached layers make this quick)"
+echo "  Pre-flight checks"
+sub
+# Secrets live in .env (gitignored — never on GitHub). It must exist on THIS box
+# or phones fail (empty token) and Gatus may crash-loop. git clean -fd above does
+# NOT delete it (it's ignored), so create it once and it survives every update.
+if [ ! -f .env ]; then
+  echo "  !! .env NOT FOUND — phones will fail (missing PHONES_* tokens)."
+  echo "     Create it once (it is gitignored and persists across updates):"
+  echo "       cp .env.example .env && nano .env"
+else
+  echo "  .env present ✔"
+fi
+# If gatus/phone-collector exist but were NOT created by compose (e.g. started
+# from Docker Desktop's Run button), compose can't recreate them and the update
+# silently no-ops. Remove any such non-compose orphan so compose owns it.
+for c in gatus phone-collector; do
+  if docker inspect "$c" >/dev/null 2>&1; then
+    proj="$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' "$c" 2>/dev/null || true)"
+    if [ -z "$proj" ]; then
+      echo "  removing non-compose container: $c"
+      docker rm -f "$c" >/dev/null 2>&1 || true
+    fi
+  fi
+done
+
+sub
+echo "  Rebuilding + recreating containers (cached layers make this quick)"
 sub
 export GIT_SHA="$BUILD"
-docker compose up -d --build --force-recreate
+docker compose up -d --build --force-recreate --remove-orphans
 
 sub
 echo "  Waiting for Gatus to come up..."

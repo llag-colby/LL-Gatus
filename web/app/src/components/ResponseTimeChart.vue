@@ -17,6 +17,7 @@ import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement
 import annotationPlugin from 'chartjs-plugin-annotation'
 import 'chartjs-adapter-date-fns'
 import { generatePrettyTimeDifference } from '@/utils/time'
+import { statusColors } from '@/store'
 import Loading from './Loading.vue'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler, TimeScale, annotationPlugin)
@@ -54,8 +55,8 @@ const hoveredEventIndex = ref(null)
 
 // Helper function to get color for unhealthy events
 const getEventColor = () => {
-  // Only UNHEALTHY events are displayed on the chart
-  return 'rgba(239, 68, 68, 0.8)' // Red
+  // Only UNHEALTHY events are displayed on the chart — use the customizable down color.
+  return statusColors.down
 }
 
 // Filter events based on selected duration and calculate durations
@@ -116,9 +117,9 @@ const LATENCY_GOOD = 100
 const LATENCY_WARN = 250
 const latencyColor = (ms) => {
   if (ms == null) return 'rgb(148, 163, 184)'
-  if (ms <= LATENCY_GOOD) return '#22c55e'
-  if (ms <= LATENCY_WARN) return '#f59e0b'
-  return '#ef4444'
+  if (ms <= LATENCY_GOOD) return statusColors.up
+  if (ms <= LATENCY_WARN) return statusColors.degraded
+  return statusColors.down
 }
 
 const chartData = computed(() => {

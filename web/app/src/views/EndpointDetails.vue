@@ -39,7 +39,7 @@
           <Card>
             <CardHeader class="pb-1"><CardTitle class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Current Status</CardTitle></CardHeader>
             <CardContent>
-              <div :class="['text-2xl font-bold', currentHealthStatus === 'healthy' ? 'text-green-600' : currentHealthStatus === 'unhealthy' ? 'text-red-600' : '']">
+              <div :class="['text-2xl font-bold', currentHealthStatus === 'healthy' ? 'st-text-up' : currentHealthStatus === 'unhealthy' ? 'st-text-down' : '']">
                 {{ currentHealthStatus === 'healthy' ? 'Operational' : currentHealthStatus === 'unhealthy' ? 'Issues Detected' : 'Unknown' }}
               </div>
             </CardContent>
@@ -55,7 +55,7 @@
                 </div>
                 <div class="flex items-baseline justify-between gap-2">
                   <span class="text-xs text-muted-foreground">Reachable</span>
-                  <span :class="['text-sm font-semibold', isReachable ? 'text-green-600' : 'text-red-600']">{{ isReachable ? 'Yes' : 'No' }}</span>
+                  <span :class="['text-sm font-semibold', isReachable ? 'st-text-up' : 'st-text-down']">{{ isReachable ? 'Yes' : 'No' }}</span>
                 </div>
                 <div v-if="dnsRcode" class="flex items-baseline justify-between gap-2">
                   <span class="text-xs text-muted-foreground">DNS</span>
@@ -182,8 +182,8 @@
                 <div class="space-y-2">
                   <div v-for="event in pagedEvents" :key="event.timestamp" class="flex items-start gap-3 p-2.5 rounded-lg border bg-card">
                     <div class="mt-0.5 shrink-0">
-                      <ArrowUpCircle v-if="event.type === 'HEALTHY'" class="h-5 w-5 text-green-500" />
-                      <ArrowDownCircle v-else-if="event.type === 'UNHEALTHY'" class="h-5 w-5 text-red-500" />
+                      <ArrowUpCircle v-if="event.type === 'HEALTHY'" class="h-5 w-5 st-text-up" />
+                      <ArrowDownCircle v-else-if="event.type === 'UNHEALTHY'" class="h-5 w-5 st-text-down" />
                       <PlayCircle v-else class="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div class="min-w-0">

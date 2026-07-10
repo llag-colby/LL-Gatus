@@ -13,5 +13,27 @@ services:
       - ./data:/data
     environment:
       - TZ=America/Chicago
+    env_file:
+      - .env   # injects PHONES_PUSH_TOKEN etc. so Gatus can expand ${...} in config.yaml
     cap_add:
       - NET_RAW   # required for ICMP (WAN ping) checks
+
+  # Phone collector: queries the Wildix PBX and pushes inventory + pass/fail to
+  # gatus. Runs on a 15-45s jittered loop. No Python needed on the host.
+  phone-collector:
+    image: python:3-slim
+    container_name: phone-collector
+    restart: always
+    depends_on:
+      - gatus
+    env_file:
+      - .env   # PHONES_IVORY_TOWER_TOKEN (PBX) + PHONES_PUSH_TOKEN (push)
+    environment:
+      - LOOP=1
+      - GATUS_PUSH_BASE=http://gatus:8080   # reach gatus over the compose network
+      - PYTHONUNBUFFERED=1
+      - TZ=America/Chicago
+    volumes:
+      - ./collector:/collector
+    working_dir: /collector
+    command: ["python", "phone_collector.py"]

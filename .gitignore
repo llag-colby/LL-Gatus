@@ -31,3 +31,6 @@ scratch_*
 .env
 .env.*
 !.env.example
+
+# Collector runtime state (learned phone baseline)
+collector/.phones_state.json

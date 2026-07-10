@@ -1,6 +1,6 @@
 import {createRouter, createWebHistory} from 'vue-router'
 import Home from '@/views/Home'
-import EndpointDetails from "@/views/EndpointDetails";
+import EndpointDetailRouter from "@/views/EndpointDetailRouter";
 import SuiteDetails from '@/views/SuiteDetails';
 
 const routes = [
@@ -12,7 +12,7 @@ const routes = [
     {
         path: '/endpoints/:key',
         name: 'EndpointDetails',
-        component: EndpointDetails,
+        component: EndpointDetailRouter,
     },
     {
         path: '/suites/:key',

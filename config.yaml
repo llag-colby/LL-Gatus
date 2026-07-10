@@ -129,3 +129,17 @@ endpoints:
     url: "icmp://71.8.47.121"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
+
+# Push-based receivers. Gatus does NOT call these — an external collector
+# (collector/phone_collector.py, run by cron) does the PBX check and POSTs a
+# pass/fail here.
+#
+# Orientation matters: the dashboard groups CARDS by endpoint `name` (Home.vue),
+# and LocationCard puts any phone-ish `group` into the "Phones" row. So to land
+# inside the Ivory Tower card's Phones row we need name=Ivory Tower / group=Phones.
+# Key = slug(group)_slug(name) => "phones_ivory-tower" (the collector pushes there).
+# NOTE: external-endpoints only (re)load on `docker compose down && up -d`.
+external-endpoints:
+  - name: Ivory Tower
+    group: Phones
+    token: "${PHONES_PUSH_TOKEN}"

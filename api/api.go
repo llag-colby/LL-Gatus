@@ -95,6 +95,10 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	unprotectedAPIRouter.Get("/v1/endpoints/:key/response-times/:duration/history", ResponseTimeHistory)
 	// This endpoint requires authz with bearer token, so technically it is protected
 	unprotectedAPIRouter.Post("/v1/endpoints/:key/external", CreateExternalEndpointResult(cfg))
+	// Phones inventory side-channel: collector POSTs the rich per-phone table
+	// (token-auth'd like /external); the phones drill-in GETs it.
+	unprotectedAPIRouter.Post("/v1/phones/:key", SetPhonesInventory(cfg))
+	unprotectedAPIRouter.Get("/v1/phones/:key", GetPhonesInventory)
 	// SPA
 	app.Get("/", SinglePageApplication(cfg.UI))
 	app.Get("/endpoints/:key", SinglePageApplication(cfg.UI))

@@ -282,10 +282,11 @@ const cellClass = (token, selected) => {
   const base = 'flex-1 h-6 sm:h-8 rounded-sm transition-all'
   if (token === 'none') return `${base} bg-gray-200 dark:bg-gray-700`
   const cursor = ' cursor-pointer'
+  const sel = selected ? ' sel' : ''
   switch (token) {
-    case 'green': return `${base}${cursor} ${selected ? 'bg-green-700' : 'bg-green-500 hover:bg-green-700'}`
-    case 'red': return `${base}${cursor} ${selected ? 'bg-red-700' : 'bg-red-500 hover:bg-red-700'}`
-    case 'amber': return `${base}${cursor} ${selected ? 'bg-amber-600' : 'bg-amber-500 hover:bg-amber-600'}`
+    case 'green': return `${base}${cursor} stbar-up${sel}`
+    case 'red': return `${base}${cursor} stbar-down${sel}`
+    case 'amber': return `${base}${cursor} stbar-degraded${sel}`
     default: return `${base} bg-gray-200 dark:bg-gray-700`
   }
 }
