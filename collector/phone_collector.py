@@ -173,8 +173,20 @@ def fetch_exclusions(base, key):
     return set()
 
 
-def evaluate_health(phones, pbx_reachable):
-    """Return (status, counts) applying the tolerance to MONITORED phones."""
+def fetch_thresholds(base, key):
+    """Effective (degraded_at, down_at) thresholds — global or per-site override."""
+    try:
+        code, body = http(f"{base}/api/v1/phones/{key}/settings")
+        if code == 200:
+            e = json.loads(body).get("effective", {})
+            return int(e.get("degradedAt", DEGRADED_AT)), int(e.get("downAt", 10))
+    except (urllib.error.URLError, OSError, ValueError):
+        pass
+    return DEGRADED_AT, 10  # fallback defaults
+
+
+def evaluate_health(phones, pbx_reachable, degraded_at, down_at):
+    """Return (status, counts) applying the thresholds to MONITORED phones."""
     monitored = [p for p in phones if not p["excluded"]]
     online = sum(1 for p in monitored if p["online"])
     offline = len(monitored) - online
@@ -189,7 +201,9 @@ def evaluate_health(phones, pbx_reachable):
         status = "down"
     elif monitored and online == 0:
         status = "down"
-    elif offline >= DEGRADED_AT:
+    elif offline >= down_at:
+        status = "down"
+    elif offline >= degraded_at:
         status = "degraded"
     else:
         status = "healthy"
@@ -216,14 +230,19 @@ def run_location(loc, push_token, base):
     if not token:
         print(f"ERROR: {loc['token_env']} not set; skipping {key}", file=sys.stderr)
         return
-    started = time.monotonic()
     error, phones, pbx_reachable = None, [], True
 
+    # Response time = ONLY the PBX API reachability call (how responsive the phone
+    # system is). The registrations/Colleagues fetches below are data-gathering
+    # overhead (the Colleagues directory is ~800 records) and must NOT inflate it.
+    reach_start = time.monotonic()
     try:
         code, _ = http(f"{loc['pbx']}/api/v1/PBX/version/", token)
+        duration_ms = (time.monotonic() - reach_start) * 1000.0
         if code != 200:
             error, pbx_reachable = f"PBX API unreachable (HTTP {code})", False
     except (urllib.error.URLError, OSError) as exc:
+        duration_ms = (time.monotonic() - reach_start) * 1000.0
         error, pbx_reachable = f"PBX API unreachable ({exc})", False
 
     if pbx_reachable:
@@ -236,8 +255,8 @@ def run_location(loc, push_token, base):
         except (urllib.error.URLError, OSError, ValueError) as exc:
             error, pbx_reachable = f"registrations error ({exc})", False
 
-    duration_ms = (time.monotonic() - started) * 1000.0
-    status, counts = evaluate_health(phones, pbx_reachable)
+    degraded_at, down_at = fetch_thresholds(base, key)
+    status, counts = evaluate_health(phones, pbx_reachable, degraded_at, down_at)
 
     # 'degraded' is NOT a hard failure (no red alarm); only 'down' fails the check.
     success = status != "down"

@@ -23,6 +23,57 @@
           </span>
           <input v-model="search" type="text" placeholder="filter ext / name / ip / dept"
             class="text-sm font-mono bg-background border rounded-md px-3 py-1.5 w-48 focus:outline-none focus:ring-2 focus:ring-ring" />
+
+          <!-- Health thresholds editor -->
+          <div class="relative">
+            <Button variant="ghost" size="icon" class="h-9 w-9" @click="toggleSettings"
+              data-tooltip="Health thresholds" data-tip-pos="bottom">
+              <SlidersHorizontal class="h-5 w-5" />
+            </Button>
+            <div v-if="settingsOpen" class="fixed inset-0 z-40" @click="settingsOpen = false"></div>
+            <div v-if="settingsOpen" class="absolute right-0 mt-2 w-72 rounded-lg border bg-popover text-popover-foreground shadow-xl p-3 z-50 space-y-3 text-left">
+              <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Health thresholds</div>
+              <div class="flex gap-1">
+                <button class="flex-1 text-xs py-1 rounded-md border transition-colors"
+                  :class="scope === 'site' ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'" @click="setScope('site')">
+                  {{ locationName }}
+                </button>
+                <button class="flex-1 text-xs py-1 rounded-md border transition-colors"
+                  :class="scope === 'global' ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'" @click="setScope('global')">
+                  Global default
+                </button>
+              </div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm">Degraded when ≥</span>
+                <div class="flex items-center gap-1.5">
+                  <input type="number" min="1" v-model.number="form.degradedAt"
+                    class="w-14 text-sm text-right bg-background border rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-ring" />
+                  <span class="text-xs text-muted-foreground">offline</span>
+                </div>
+              </div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm">Down when ≥</span>
+                <div class="flex items-center gap-1.5">
+                  <input type="number" min="1" v-model.number="form.downAt"
+                    class="w-14 text-sm text-right bg-background border rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-ring" />
+                  <span class="text-xs text-muted-foreground">offline</span>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <Button size="sm" class="flex-1" @click="saveSettings">Save</Button>
+                <Button v-if="scope === 'site' && settingsData && settingsData.override" size="sm" variant="ghost"
+                  class="text-muted-foreground" @click="useGlobal">Use global</Button>
+              </div>
+              <div class="text-[11px] text-muted-foreground">
+                <template v-if="scope === 'site'">
+                  <span v-if="settingsData && settingsData.override">Site override active — overrides the global default.</span>
+                  <span v-else>Using the global default. Save here to create a site override.</span>
+                </template>
+                <template v-else>Applies to every site without its own override.</template>
+              </div>
+            </div>
+          </div>
+
           <Button variant="ghost" size="icon" class="h-9 w-9" @click="fetchInventory"
             data-tooltip="Refresh" data-tip-pos="bottom">
             <RefreshCw class="h-5 w-5" :class="{ 'animate-spin': loading }" />
@@ -100,7 +151,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowLeft, RefreshCw } from 'lucide-vue-next'
+import { ArrowLeft, RefreshCw, SlidersHorizontal } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { generatePrettyTimeAgo } from '@/utils/time'
 import { addToast } from '@/store'
@@ -222,6 +273,55 @@ const toggleExclude = async (p) => {
     p.excluded = !next // revert on failure
     addToast(`Couldn't update ${p.ext} — try again`, 'error')
   }
+}
+
+// --- Live-editable health thresholds (global default + per-site override) ---
+const settingsOpen = ref(false)
+const scope = ref('site')
+const settingsData = ref(null)
+const form = ref({ degradedAt: 2, downAt: 10 })
+
+const applyFormFromScope = () => {
+  if (!settingsData.value) return
+  const src = scope.value === 'global'
+    ? settingsData.value.global
+    : (settingsData.value.override || settingsData.value.global)
+  form.value = { degradedAt: src.degradedAt, downAt: src.downAt }
+}
+const fetchSettings = async () => {
+  try {
+    const res = await fetch(`/api/v1/phones/${route.params.key}/settings`, { cache: 'no-store' })
+    if (res.ok) { settingsData.value = await res.json(); applyFormFromScope() }
+  } catch (e) { /* non-fatal */ }
+}
+const toggleSettings = () => {
+  settingsOpen.value = !settingsOpen.value
+  if (settingsOpen.value) fetchSettings()
+}
+const setScope = (s) => { scope.value = s; applyFormFromScope() }
+const saveSettings = async () => {
+  try {
+    const res = await fetch(`/api/v1/phones/${route.params.key}/settings`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope: scope.value, degradedAt: form.value.degradedAt, downAt: form.value.downAt }),
+    })
+    if (!res.ok) throw new Error()
+    settingsData.value = await res.json()
+    applyFormFromScope()
+    addToast(scope.value === 'global' ? 'Global thresholds saved' : `${locationName.value} thresholds saved`, 'success')
+  } catch (e) { addToast('Couldn’t save thresholds — try again', 'error') }
+}
+const useGlobal = async () => {
+  try {
+    const res = await fetch(`/api/v1/phones/${route.params.key}/settings`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope: 'site', clear: true }),
+    })
+    if (!res.ok) throw new Error()
+    settingsData.value = await res.json()
+    applyFormFromScope()
+    addToast(`${locationName.value} now uses the global default`, 'success')
+  } catch (e) { addToast('Couldn’t reset — try again', 'error') }
 }
 
 // Format a DID like +12562516110 -> +1-256-251-6110.

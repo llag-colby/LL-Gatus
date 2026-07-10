@@ -101,6 +101,8 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	unprotectedAPIRouter.Get("/v1/phones/:key", GetPhonesInventory)
 	unprotectedAPIRouter.Get("/v1/phones/:key/exclusions", GetPhonesExclusions)
 	unprotectedAPIRouter.Post("/v1/phones/:key/exclusions", SetPhonesExclusion)
+	unprotectedAPIRouter.Get("/v1/phones/:key/settings", GetPhonesSettings)
+	unprotectedAPIRouter.Post("/v1/phones/:key/settings", SetPhonesSettings)
 	// SPA
 	app.Get("/", SinglePageApplication(cfg.UI))
 	app.Get("/endpoints/:key", SinglePageApplication(cfg.UI))
