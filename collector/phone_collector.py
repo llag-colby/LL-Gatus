@@ -31,7 +31,6 @@ PHONES_STATE_FILE, VERIFY_TLS=0, LOOP=1, SWEEP_MIN/SWEEP_MAX (seconds).
 """
 
 import json
-import math
 import os
 import random
 import re
@@ -50,7 +49,10 @@ LOCATIONS = [
     },
 ]
 
-THRESHOLD = 0.90
+# Health tolerance: >= this many MONITORED phones offline -> degraded.
+# (Excluded phones never count.) Down = PBX unreachable or every monitored
+# phone offline. Tunable via env.
+DEGRADED_AT = int(os.environ.get("PHONES_DEGRADED_AT", "2"))
 HTTP_TIMEOUT = 12
 CONTACT_IP_RE = re.compile(r"@([0-9]{1,3}(?:\.[0-9]{1,3}){3}):")
 MAC_RE = re.compile(r"^[0-9a-fA-F]{12}$")
@@ -126,7 +128,7 @@ def fetch_directory(pbx, token):
     return info
 
 
-def build_inventory(reg_result, directory):
+def build_inventory(reg_result, directory, excluded):
     """Turn the registrations dict into a normalized desk-phone list."""
     phones = []
     for ext, entry in sorted(reg_result.items()):
@@ -155,13 +157,48 @@ def build_inventory(reg_result, directory):
             "sipStatus": "registered" if online else "unregistered",
             "online": online,
             "reachable": online,   # PBX registration is the liveness signal
+            "excluded": ext in excluded,
         })
     return phones
 
 
+def fetch_exclusions(base, key):
+    """Excluded extensions for this endpoint (persisted server-side)."""
+    try:
+        code, body = http(f"{base}/api/v1/phones/{key}/exclusions")
+        if code == 200:
+            return set(str(e) for e in json.loads(body).get("excluded", []))
+    except (urllib.error.URLError, OSError, ValueError):
+        pass
+    return set()
+
+
+def evaluate_health(phones, pbx_reachable):
+    """Return (status, counts) applying the tolerance to MONITORED phones."""
+    monitored = [p for p in phones if not p["excluded"]]
+    online = sum(1 for p in monitored if p["online"])
+    offline = len(monitored) - online
+    counts = {
+        "total": len(phones),
+        "monitored": len(monitored),
+        "online": online,
+        "offline": offline,
+        "excluded": sum(1 for p in phones if p["excluded"]),
+    }
+    if not pbx_reachable:
+        status = "down"
+    elif monitored and online == 0:
+        status = "down"
+    elif offline >= DEGRADED_AT:
+        status = "degraded"
+    else:
+        status = "healthy"
+    return status, counts
+
+
 # --------------------------------------------------------------------------- #
-def push_inventory(base, key, phones, push_token):
-    body = json.dumps({"phones": phones})
+def push_inventory(base, key, phones, status, counts, push_token):
+    body = json.dumps({"phones": phones, "status": status, "counts": counts})
     http(f"{base}/api/v1/phones/{key}", push_token, method="POST", body=body)
 
 
@@ -173,78 +210,53 @@ def push_result(base, key, success, error, duration_ms, push_token):
     http(f"{base}/api/v1/endpoints/{key}/external?{urlencode(q)}", push_token, method="POST")
 
 
-def state_path():
-    return os.environ.get("PHONES_STATE_FILE",
-                          os.path.join(os.path.dirname(os.path.abspath(__file__)), ".phones_state.json"))
-
-
-def load_state():
-    try:
-        with open(state_path(), "r", encoding="utf-8") as fh:
-            return json.load(fh)
-    except (OSError, ValueError):
-        return {}
-
-
-def save_state(state):
-    try:
-        with open(state_path(), "w", encoding="utf-8") as fh:
-            json.dump(state, fh)
-    except OSError:
-        pass
-
-
 # --------------------------------------------------------------------------- #
-def run_location(loc, state, push_token, base):
+def run_location(loc, push_token, base):
     key, token = loc["key"], os.environ.get(loc["token_env"], "")
     if not token:
         print(f"ERROR: {loc['token_env']} not set; skipping {key}", file=sys.stderr)
         return
     started = time.monotonic()
-    error, phones = None, []
+    error, phones, pbx_reachable = None, [], True
 
     try:
         code, _ = http(f"{loc['pbx']}/api/v1/PBX/version/", token)
         if code != 200:
-            error = f"PBX API unreachable (HTTP {code})"
+            error, pbx_reachable = f"PBX API unreachable (HTTP {code})", False
     except (urllib.error.URLError, OSError) as exc:
-        error = f"PBX API unreachable ({exc})"
+        error, pbx_reachable = f"PBX API unreachable ({exc})", False
 
-    if error is None:
+    if pbx_reachable:
         try:
             code, body = http(f"{loc['pbx']}/api/v1/PBX/Users/Sip/Registrations", token)
             reg_result = json.loads(body).get("result", {}) if code == 200 else {}
             directory = fetch_directory(loc["pbx"], token)
-            phones = build_inventory(reg_result, directory)
+            excluded = fetch_exclusions(base, key)
+            phones = build_inventory(reg_result, directory, excluded)
         except (urllib.error.URLError, OSError, ValueError) as exc:
-            error = f"registrations error ({exc})"
+            error, pbx_reachable = f"registrations error ({exc})", False
 
     duration_ms = (time.monotonic() - started) * 1000.0
-    online = sum(1 for p in phones if p["online"])
+    status, counts = evaluate_health(phones, pbx_reachable)
 
-    success = False
-    if error is None:
-        baseline = max(int(state.get(key, {}).get("baseline", 0)), online)
-        state[key] = {"baseline": baseline, "last": online}
-        if baseline == 0:
-            success = True
-        else:
-            need = math.ceil(THRESHOLD * baseline)
-            success = online >= need
-            if not success:
-                error = f"{online}/{baseline} desk phones online (need >={need})"
+    # 'degraded' is NOT a hard failure (no red alarm); only 'down' fails the check.
+    success = status != "down"
+    reason = None
+    if status == "down":
+        reason = error or "all monitored phones offline"
+    elif status == "degraded":
+        reason = f"{counts['offline']} of {counts['monitored']} desk phones offline"
 
-    print(f"{key}: success={success} desk_phones={len(phones)} online={online} "
-          f"dur={int(duration_ms)}ms err={error or '-'}")
+    print(f"{key}: status={status} online={counts['online']} offline={counts['offline']} "
+          f"excluded={counts['excluded']} dur={int(duration_ms)}ms")
 
-    # Inventory first (so the drill-in has data even while the pass/fail updates).
     try:
         if phones:
-            push_inventory(base, key, phones, push_token)
+            push_inventory(base, key, phones, status, counts, push_token)
     except (urllib.error.URLError, OSError) as exc:
         print(f"WARN: inventory push failed for {key}: {exc}", file=sys.stderr)
     try:
-        push_result(base, key, success, error, duration_ms, push_token)
+        push_result(base, key, success, reason, duration_ms, push_token)
     except (urllib.error.URLError, OSError) as exc:
         print(f"WARN: result push failed for {key}: {exc}", file=sys.stderr)
 
@@ -255,13 +267,11 @@ def sweep_once():
     if not push_token:
         print("ERROR: PHONES_PUSH_TOKEN not set", file=sys.stderr)
         sys.exit(1)
-    state = load_state()
     for loc in LOCATIONS:
         try:
-            run_location(loc, state, push_token, base)
+            run_location(loc, push_token, base)
         except Exception as exc:  # never let one site kill the run
             print(f"ERROR running {loc['key']}: {exc}", file=sys.stderr)
-    save_state(state)
 
 
 def main():

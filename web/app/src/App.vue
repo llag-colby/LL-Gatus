@@ -151,6 +151,9 @@
 
     <!-- Tooltip -->
     <Tooltip :result="tooltip.result" :event="tooltip.event" :isPersistent="tooltipIsPersistent" />
+
+    <!-- Global toast notifications (bottom-right) -->
+    <ToastContainer />
   </div>
 </template>
 
@@ -162,6 +165,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import SearchBar from './components/SearchBar.vue'
 import SimulatePanel from './components/SimulatePanel.vue'
+import ToastContainer from './components/ToastContainer.vue'
 import Social from './components/Social.vue'
 import Tooltip from './components/Tooltip.vue'
 import Loading from './components/Loading.vue'

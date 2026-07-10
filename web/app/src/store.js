@@ -29,6 +29,20 @@ export function requestRefresh() {
   window.dispatchEvent(new CustomEvent('gatus:refresh'))
 }
 
+// --- Toast notifications (bottom-right; rendered by ToastContainer) ---
+export const toasts = reactive([])
+let toastSeq = 0
+export function addToast(message, type = 'info', timeout = 3200) {
+  const id = ++toastSeq
+  toasts.push({ id, message, type })
+  if (timeout) setTimeout(() => removeToast(id), timeout)
+  return id
+}
+export function removeToast(id) {
+  const i = toasts.findIndex(t => t.id === id)
+  if (i !== -1) toasts.splice(i, 1)
+}
+
 // Whether to play the audio alerts when a site changes state.
 export const soundEnabled = ref(typeof localStorage === 'undefined' || localStorage.getItem('gatus:sound') !== 'false')
 export function setSoundEnabled(value) {

@@ -30,6 +30,20 @@
         </div>
       </div>
 
+      <!-- Status band -->
+      <div v-if="phones.length" class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <span class="status-pill" :class="statusMeta.cls">{{ statusMeta.label }}</span>
+          <span v-if="counts" class="text-sm text-muted-foreground font-mono">
+            {{ counts.online }} online · {{ counts.offline }} offline<template v-if="counts.excluded"> · {{ counts.excluded }} excluded</template>
+          </span>
+        </div>
+        <label class="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+          <input type="checkbox" v-model="showExcluded" />
+          show excluded
+        </label>
+      </div>
+
       <!-- Empty state: no inventory reported yet -->
       <div v-if="loaded && phones.length === 0" class="empty-state">
         <div class="text-base font-semibold mb-1">No phones reported yet</div>
@@ -45,25 +59,19 @@
           <table class="w-full text-sm directory">
             <thead>
               <tr>
-                <th></th>
-                <th>Ext</th>
-                <th>Name</th>
-                <th>Direct #</th>
-                <th>Department</th>
-                <th>Model</th>
-                <th>Firmware</th>
-                <th>IP address</th>
-                <th>MAC</th>
-                <th>SIP</th>
-                <th>Reach</th>
+                <th v-for="col in COLUMNS" :key="col.key" @click="sortBy(col.key)"
+                  :class="['sortable', { active: sortKey === col.key }]">
+                  <span class="th-inner">{{ col.label }}<span class="arrow">{{ arrow(col.key) }}</span></span>
+                </th>
+                <th class="th-center">Monitor</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="p in filteredPhones" :key="'row-' + p.ext + p.mac">
+              <tr v-for="p in sortedPhones" :key="'row-' + p.ext + p.mac" :class="{ 'row-excluded': p.excluded }">
                 <td><span class="lamp-dot" :class="p.online ? 'up' : 'down'"></span></td>
                 <td class="mono strong">{{ p.ext || '—' }}</td>
                 <td>{{ p.name || 'unassigned' }}</td>
-                <td class="mono dim">{{ p.did || '—' }}</td>
+                <td class="mono dim">{{ formatPhone(p.did) }}</td>
                 <td class="dim">{{ p.department || '—' }}</td>
                 <td class="dim">{{ p.model || '—' }}</td>
                 <td class="mono dim">{{ p.firmware || '—' }}</td>
@@ -73,9 +81,13 @@
                   <span class="pill" :class="p.sipStatus === 'registered' ? 'pill-on' : 'pill-off'">{{ p.sipStatus || 'unknown' }}</span>
                 </td>
                 <td><span :class="p.reachable ? 'st-text-up' : 'st-text-down'">{{ p.reachable ? 'yes' : 'no' }}</span></td>
+                <td class="center">
+                  <input type="checkbox" :checked="!p.excluded" @change="toggleExclude(p)" class="cursor-pointer"
+                    :title="p.excluded ? 'Excluded — click to monitor' : 'Monitored — click to exclude'" />
+                </td>
               </tr>
-              <tr v-if="filteredPhones.length === 0">
-                <td colspan="11" class="py-10 text-center text-muted-foreground">No lines match “{{ search }}”.</td>
+              <tr v-if="sortedPhones.length === 0">
+                <td colspan="12" class="py-10 text-center text-muted-foreground">No lines match “{{ search }}”.</td>
               </tr>
             </tbody>
           </table>
@@ -91,6 +103,7 @@ import { useRoute } from 'vue-router'
 import { ArrowLeft, RefreshCw } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { generatePrettyTimeAgo } from '@/utils/time'
+import { addToast } from '@/store'
 
 const route = useRoute()
 
@@ -104,12 +117,61 @@ const loaded = ref(false)
 const search = ref('')
 const updatedAt = ref(null)
 const phones = ref([])
+const status = ref('')
+const counts = ref(null)
+const showExcluded = ref(true)
+
+const STATUS_META = {
+  healthy:  { label: 'Healthy',  cls: 'st-up' },
+  degraded: { label: 'Degraded', cls: 'st-degraded' },
+  down:     { label: 'Down',     cls: 'st-down' },
+}
+const statusMeta = computed(() => STATUS_META[status.value] || { label: '—', cls: 'st-none' })
+
+const COLUMNS = [
+  { key: 'online', label: 'Status' },
+  { key: 'ext', label: 'Ext' },
+  { key: 'name', label: 'Name' },
+  { key: 'did', label: 'Direct #' },
+  { key: 'department', label: 'Department' },
+  { key: 'model', label: 'Model' },
+  { key: 'firmware', label: 'Firmware' },
+  { key: 'ip', label: 'IP address' },
+  { key: 'mac', label: 'MAC' },
+  { key: 'sipStatus', label: 'SIP' },
+  { key: 'reachable', label: 'Reach' },
+]
 
 const filteredPhones = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return phones.value
-  return phones.value.filter(p =>
+  let list = phones.value
+  if (!showExcluded.value) list = list.filter(p => !p.excluded)
+  if (!q) return list
+  return list.filter(p =>
     [p.ext, p.name, p.did, p.department, p.ip, p.mac, p.model].some(v => (v || '').toString().toLowerCase().includes(q)))
+})
+
+// --- Column sorting (click a header to toggle asc/desc) ---
+const sortKey = ref('ext')
+const sortDir = ref('asc')
+const sortBy = (key) => {
+  if (sortKey.value === key) sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  else { sortKey.value = key; sortDir.value = 'asc' }
+}
+const arrow = (key) => (sortKey.value !== key ? '' : sortDir.value === 'asc' ? '▲' : '▼')
+
+const sortedPhones = computed(() => {
+  const list = [...filteredPhones.value]
+  const k = sortKey.value
+  const dir = sortDir.value === 'asc' ? 1 : -1
+  return list.sort((a, b) => {
+    let av = a[k], bv = b[k]
+    if (typeof av === 'boolean' || typeof bv === 'boolean') { av = av ? 1 : 0; bv = bv ? 1 : 0 }
+    if (av == null) av = ''
+    if (bv == null) bv = ''
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
+    return String(av).localeCompare(String(bv), undefined, { numeric: true }) * dir
+  })
 })
 
 const updatedLabel = computed(() => {
@@ -125,9 +187,13 @@ const fetchInventory = async () => {
       const data = await res.json()
       phones.value = Array.isArray(data.phones) ? data.phones : []
       updatedAt.value = data.updatedAt || null
+      status.value = data.status || ''
+      counts.value = data.counts || null
     } else {
       phones.value = []
       updatedAt.value = null
+      status.value = ''
+      counts.value = null
     }
   } catch (e) {
     phones.value = []
@@ -136,6 +202,35 @@ const fetchInventory = async () => {
     loading.value = false
     loaded.value = true
   }
+}
+
+// Toggle a phone in/out of the exclusion list (persisted server-side; the
+// collector picks it up next sweep). Optimistic local update for instant feedback.
+const toggleExclude = async (p) => {
+  const next = !p.excluded
+  p.excluded = next
+  const who = `${p.ext}${p.name ? ' · ' + p.name : ''}`
+  try {
+    const res = await fetch(`/api/v1/phones/${route.params.key}/exclusions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ext: p.ext, excluded: next }),
+    })
+    if (!res.ok) throw new Error('save failed')
+    addToast(next ? `Excluded ${who}` : `Now monitoring ${who}`, 'success')
+  } catch (e) {
+    p.excluded = !next // revert on failure
+    addToast(`Couldn't update ${p.ext} — try again`, 'error')
+  }
+}
+
+// Format a DID like +12562516110 -> +1-256-251-6110.
+const formatPhone = (v) => {
+  if (!v) return '—'
+  const d = String(v).replace(/\D/g, '')
+  const ten = d.length === 11 && d[0] === '1' ? d.slice(1) : d
+  if (ten.length === 10) return `+1-${ten.slice(0, 3)}-${ten.slice(3, 6)}-${ten.slice(6)}`
+  return v
 }
 
 let poll = null
@@ -180,7 +275,13 @@ onUnmounted(() => { if (poll) clearInterval(poll) })
   text-align: left; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
   color: hsl(var(--muted-foreground)); font-weight: 600; padding: 0.6rem 0.75rem;
   border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--muted) / 0.4);
+  white-space: nowrap;
 }
+.directory thead th.sortable { cursor: pointer; user-select: none; }
+.directory thead th.sortable:hover { color: hsl(var(--foreground)); background: hsl(var(--muted) / 0.7); }
+.directory thead th.active { color: hsl(var(--foreground)); }
+.directory .th-inner { display: inline-flex; align-items: center; gap: 0.3rem; }
+.directory .arrow { font-size: 8px; line-height: 1; }
 .directory tbody td { padding: 0.5rem 0.75rem; border-bottom: 1px solid hsl(var(--border) / 0.6); }
 .directory tbody tr:last-child td { border-bottom: 0; }
 .directory tbody tr:hover td { background: hsl(var(--accent) / 0.4); }
@@ -191,5 +292,16 @@ onUnmounted(() => { if (poll) clearInterval(poll) })
 .pill { font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; padding: 0.1rem 0.4rem; border-radius: 5px; font-weight: 600; }
 .pill-on { background: var(--status-up); color: #fff; }
 .pill-off { background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); }
+
+/* Overall status pill in the band */
+.status-pill { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 0.2rem 0.65rem; border-radius: 6px; color: #fff; }
+.status-pill.st-up { background: var(--status-up); }
+.status-pill.st-degraded { background: var(--status-degraded); }
+.status-pill.st-down { background: var(--status-down); }
+.status-pill.st-none { background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); }
+
+/* Monitor column + excluded rows */
+.directory th.th-center, .directory td.center { text-align: center; }
+.directory tr.row-excluded td:not(.center) { opacity: 0.4; }
 
 </style>
