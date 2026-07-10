@@ -74,6 +74,10 @@
             </div>
           </div>
 
+          <Button variant="ghost" size="icon" class="h-9 w-9" @click="exportCSV"
+            data-tooltip="Export CSV" data-tip-pos="bottom">
+            <Download class="h-5 w-5" />
+          </Button>
           <Button variant="ghost" size="icon" class="h-9 w-9" @click="fetchInventory"
             data-tooltip="Refresh" data-tip-pos="bottom">
             <RefreshCw class="h-5 w-5" :class="{ 'animate-spin': loading }" />
@@ -133,8 +137,11 @@
                 </td>
                 <td><span :class="p.reachable ? 'st-text-up' : 'st-text-down'">{{ p.reachable ? 'yes' : 'no' }}</span></td>
                 <td class="center">
-                  <input type="checkbox" :checked="!p.excluded" @change="toggleExclude(p)" class="cursor-pointer"
-                    :title="p.excluded ? 'Excluded — click to monitor' : 'Monitored — click to exclude'" />
+                  <button type="button" class="switch" :class="{ on: !p.excluded }" role="switch"
+                    :aria-checked="!p.excluded" @click="toggleExclude(p)"
+                    :title="p.excluded ? 'Excluded — click to monitor' : 'Monitored — click to exclude'">
+                    <span class="knob"></span>
+                  </button>
                 </td>
               </tr>
               <tr v-if="sortedPhones.length === 0">
@@ -151,7 +158,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowLeft, RefreshCw, SlidersHorizontal } from 'lucide-vue-next'
+import { ArrowLeft, RefreshCw, SlidersHorizontal, Download } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { generatePrettyTimeAgo } from '@/utils/time'
 import { addToast } from '@/store'
@@ -333,6 +340,34 @@ const formatPhone = (v) => {
   return v
 }
 
+// Export the current (filtered + sorted) view as CSV.
+const exportCSV = () => {
+  const cols = [
+    ['ext', 'Ext'], ['name', 'Name'], ['did', 'Direct #'], ['department', 'Department'],
+    ['model', 'Model'], ['firmware', 'Firmware'], ['ip', 'IP'], ['mac', 'MAC'],
+    ['sipStatus', 'SIP'], ['online', 'Online'], ['reachable', 'Reachable'], ['excluded', 'Excluded'],
+  ]
+  const esc = (val) => {
+    const s = val == null ? '' : String(val)
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
+  }
+  const cell = (p, k) => {
+    if (k === 'did') return formatPhone(p.did) === '—' ? '' : formatPhone(p.did)
+    const v = p[k]
+    return typeof v === 'boolean' ? (v ? 'yes' : 'no') : v
+  }
+  const lines = [cols.map(c => c[1]).join(',')]
+  for (const p of sortedPhones.value) lines.push(cols.map(([k]) => esc(cell(p, k))).join(','))
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${route.params.key}_phones.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+  addToast(`Exported ${sortedPhones.value.length} phones`, 'success')
+}
+
 let poll = null
 onMounted(() => {
   fetchInventory()
@@ -403,5 +438,21 @@ onUnmounted(() => { if (poll) clearInterval(poll) })
 /* Monitor column + excluded rows */
 .directory th.th-center, .directory td.center { text-align: center; }
 .directory tr.row-excluded td:not(.center) { opacity: 0.4; }
+
+/* Clean toggle switch (monitor on/off) */
+.switch {
+  display: inline-block; position: relative; width: 34px; height: 18px; padding: 0;
+  border-radius: 999px; border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted)); cursor: pointer; vertical-align: middle;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.switch .knob {
+  position: absolute; top: 1px; left: 1px; width: 14px; height: 14px; border-radius: 999px;
+  background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.35); transition: transform 0.15s ease;
+}
+.switch.on { background: var(--status-up); border-color: var(--status-up); }
+.switch.on .knob { transform: translateX(16px); }
+.switch:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .switch, .switch .knob { transition: none; } }
 
 </style>
