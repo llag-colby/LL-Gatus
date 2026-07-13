@@ -1,6 +1,12 @@
 storage:
   type: sqlite
   path: /data/data.db
+  # Retain enough raw per-check results to plot every ping on the detail chart
+  # for windows up to 2 days (at a 60s interval, 2d = 2880 checks). The response
+  # time trend reads these raw points for 1h..2d; 7d/30d fall back to hourly
+  # averages. Accrues over time — older raw data beyond the previous limit is
+  # already pruned, so longer windows fill in going forward.
+  maximum-number-of-results: 3000
 
 ui:
   title: "Long Lewis Status"

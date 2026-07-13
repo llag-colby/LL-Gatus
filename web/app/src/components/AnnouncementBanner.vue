@@ -32,9 +32,10 @@
       </div>
 
       <!-- Timeline Content -->
-      <div 
+      <transition name="expand">
+      <div
         v-if="!isCollapsed"
-        class="announcement-content p-4 transition-all duration-200 rounded-b-lg"
+        class="announcement-content p-4 rounded-b-lg"
       >
         <div class="relative">
           <!-- Announcements -->
@@ -124,6 +125,7 @@
           </div>
         </div>
       </div>
+      </transition>
     </div>
   </div>
 </template>

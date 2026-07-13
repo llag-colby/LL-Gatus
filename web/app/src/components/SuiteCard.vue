@@ -1,5 +1,5 @@
 <template>
-  <Card class="suite h-full flex flex-col transition hover:shadow-lg hover:scale-[1.01] dark:hover:border-gray-700">
+  <Card class="suite h-full flex flex-col transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg dark:hover:border-gray-700">
     <CardHeader class="suite-header px-3 sm:px-6 pt-3 sm:pt-6 pb-2 space-y-0">
       <div class="flex items-start justify-between gap-2 sm:gap-3">
         <div class="flex-1 min-w-0 overflow-hidden">
@@ -38,7 +38,7 @@
               v-for="(result, index) in displayResults"
               :key="index"
               :class="[
-                'flex-1 h-6 sm:h-8 rounded-sm transition-all',
+                'flex-1 h-6 sm:h-8 rounded-sm ping-cell bar-appear',
                 result ? 'cursor-pointer' : '',
                 result ? (
                   result.success
@@ -46,6 +46,7 @@
                     : (selectedResultIndex === index ? 'bg-red-700' : 'bg-red-500 hover:bg-red-700')
                 ) : 'bg-gray-200 dark:bg-gray-700'
               ]"
+              :style="{ '--i': index }"
               @mouseenter="result && handleMouseEnter(result, $event)"
               @mouseleave="result && handleMouseLeave(result, $event)"
               @click.stop="result && handleClick(result, $event, index)"
@@ -188,14 +189,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.suite {
-  transition: all 0.2s ease;
-}
-
-.suite:hover {
-  transform: translateY(-2px);
-}
-
+/* Hover lift + shadow are handled by utilities on the root (transform/box-shadow).
+   Scoped styles here only carry the header hairline. */
 .suite-header {
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
 }

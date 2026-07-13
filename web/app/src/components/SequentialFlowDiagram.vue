@@ -27,6 +27,8 @@
         :index="index"
         :is-last="index === flowSteps.length - 1"
         :previous-step="index > 0 ? flowSteps[index - 1] : null"
+        class="motion-rise"
+        :style="{ '--d': Math.min(index, 12) * 45 + 'ms' }"
         @step-click="$emit('step-selected', step, index)"
       />
     </div>

@@ -24,10 +24,12 @@
           <h2 class="text-lg font-semibold text-foreground mb-3">Suites</h2>
           <div class="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             <SuiteCard
-              v-for="suite in paginatedSuites"
+              v-for="(suite, index) in paginatedSuites"
               :key="suite.key"
               :suite="suite"
               :maxResults="resultPageSize"
+              class="motion-rise"
+              :style="{ '--d': Math.min(index, 14) * 40 + 'ms' }"
               @showTooltip="showTooltip"
             />
           </div>
@@ -38,11 +40,13 @@
           <h2 v-if="filteredSuites.length > 0" class="text-lg font-semibold text-foreground mb-3">Locations</h2>
           <div class="dashboard-grid grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5" :style="{ '--fs-cols': fsCols }">
             <LocationCard
-              v-for="location in paginatedLocations"
+              v-for="(location, index) in paginatedLocations"
               :key="location.name"
               :name="location.name"
               :endpoints="location.endpoints"
               :maxResults="barsToShow"
+              class="motion-rise"
+              :style="{ '--d': Math.min(index, 14) * 40 + 'ms' }"
               @showTooltip="showTooltip"
             />
           </div>

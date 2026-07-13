@@ -53,6 +53,20 @@ const values = ref([])
 const isDark = ref(document.documentElement.classList.contains('dark'))
 const hoveredEventIndex = ref(null)
 
+// Entrance choreography. The first paint — and each time the duration changes —
+// plays a left-to-right "draw" that rises from the baseline. Every live SSE tick
+// after that uses a short, gentle tween so new readings flow in smoothly without
+// replaying the full draw. `hasDrawnOnce` is intentionally non-reactive: flipping
+// it in onComplete must NOT retrigger a recompute mid-animation.
+let hasDrawnOnce = false
+const ENTRANCE_TOTAL = 1200
+// Skip rebuilding the live series when an SSE broadcast carries no new sample.
+let lastLiveSig = ''
+// Chart.js doesn't honour prefers-reduced-motion on its own — gate it here.
+const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia
+  ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  : false
+
 // Helper function to get color for unhealthy events
 const getEventColor = () => {
   // Only UNHEALTHY events are displayed on the chart — use the customizable down color.
@@ -131,20 +145,37 @@ const chartData = computed(() => {
   }
   const labels = timestamps.value.map(ts => new Date(ts))
   const pointColors = values.value.map(latencyColor)
+  const line = isDark.value ? 'rgb(96, 165, 250)' : 'rgb(59, 130, 246)'
+  const n = values.value.length
   return {
     labels,
     datasets: [{
       label: 'Response Time (ms)',
       data: values.value,
-      borderColor: isDark.value ? 'rgb(96, 165, 250)' : 'rgb(59, 130, 246)',
-      backgroundColor: isDark.value ? 'rgba(96, 165, 250, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+      borderColor: line,
+      // Vertical gradient fill for depth; flat tint until the layout is measured.
+      backgroundColor: (ctx) => {
+        const chart = ctx.chart
+        const { ctx: c, chartArea } = chart
+        if (!chartArea) return isDark.value ? 'rgba(96,165,250,0.12)' : 'rgba(59,130,246,0.10)'
+        const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
+        g.addColorStop(0, isDark.value ? 'rgba(96,165,250,0.30)' : 'rgba(59,130,246,0.24)')
+        g.addColorStop(1, isDark.value ? 'rgba(96,165,250,0)' : 'rgba(59,130,246,0)')
+        return g
+      },
       borderWidth: 2,
       // Colour each point by its latency so high-latency samples stand out.
       pointBackgroundColor: pointColors,
       pointBorderColor: pointColors,
-      pointRadius: 3,
+      // Declutter dense ranges, keep points on short ones, emphasise the newest.
+      pointRadius: (ctx) => ctx.dataIndex === n - 1 ? 4 : (n > 60 ? 0 : 2.5),
       pointHoverRadius: 5,
-      tension: 0.1,
+      // Smooth, non-overshooting curve for sparse series. On dense raw ranges
+      // (hundreds of points) drop the spline: straight segments are crisper and
+      // far cheaper than recomputing a monotone curve every frame.
+      cubicInterpolationMode: n > 200 ? 'default' : 'monotone',
+      tension: n > 200 ? 0 : 0.35,
+      borderJoinStyle: 'round',
       fill: true
     }]
   }
@@ -158,10 +189,32 @@ const chartOptions = computed(() => {
   // Calculate max Y value for positioning annotations
   const maxY = values.value.length > 0 ? Math.max(...values.value) : 0
   const midY = maxY / 2
+  const pointCount = values.value.length
+
+  // --- Motion: one smooth entrance, then stable updates ---------------------
+  // Entrance rises the WHOLE line up from the baseline together over a slow,
+  // decelerating curve. No point-by-point "draw" — revealing points one at a
+  // time makes the monotone spline recompute on every frame, which is the
+  // jittery, jumpy look. Rising the finished curve as a single body is smooth.
+  const entranceAnimation = {
+    duration: ENTRANCE_TOTAL,
+    easing: 'easeOutQuart',
+    onComplete: () => { hasDrawnOnce = true },
+    y: { from: (ctx) => ctx.chart.scales.y.getPixelForValue(0) }
+  }
+  // Live / refresh updates: NO re-tween. The live window is redrawn wholesale
+  // each tick and Chart.js matches points by index, not timestamp — so a tween
+  // warps every point toward its neighbour and stutters when the next tick
+  // interrupts it. An instant, clean redraw of the shifted window is what
+  // actually reads as smooth for a streaming series.
+  const liveAnimation = { duration: 0 }
 
   return {
     responsive: true,
     maintainAspectRatio: false,
+    // Dense raw ranges render instantly — animating hundreds of points (and the
+    // fill/spline recompute per frame) is exactly what looks janky.
+    animation: (prefersReducedMotion || pointCount > 200) ? { duration: 0 } : (hasDrawnOnce ? liveAnimation : entranceAnimation),
     interaction: {
       mode: 'index',
       intersect: false
@@ -286,6 +339,11 @@ const buildLiveData = () => {
   const newest = all.length ? new Date(all[all.length - 1].timestamp).getTime() : Date.now()
   const cutoff = newest - 10 * 60 * 1000
   const points = all.filter(r => new Date(r.timestamp).getTime() >= cutoff)
+  // Only touch the reactive arrays when the window actually moved. SSE can
+  // re-broadcast the same snapshot; redrawing it just adds flicker.
+  const sig = points.length + ':' + (points.length ? points[points.length - 1].timestamp : '')
+  if (sig === lastLiveSig) { loading.value = false; return }
+  lastLiveSig = sig
   timestamps.value = points.map(r => new Date(r.timestamp).getTime())
   // Failed pings become gaps (null) rather than a fake 10s timeout spike.
   values.value = points.map(r => (r.success && r.duration ? Math.round(r.duration / 1000000) : null))
@@ -321,6 +379,7 @@ const fetchData = async () => {
 }
 
 watch(() => props.duration, () => {
+  hasDrawnOnce = false   // replay the draw-in for the newly selected range
   fetchData()
 })
 

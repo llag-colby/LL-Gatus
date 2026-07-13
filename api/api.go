@@ -64,9 +64,10 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	// Middlewares
 	app.Use(recover.New())
 	app.Use(compress.New(compress.Config{
-		// Never compress the live SSE stream — it must stream unbuffered.
+		// Never compress the live SSE streams — they must stream unbuffered.
 		Next: func(c *fiber.Ctx) bool {
-			return strings.HasPrefix(c.Path(), "/api/v1/live")
+			p := c.Path()
+			return strings.HasPrefix(p, "/api/v1/live") || p == "/api/v1/jira/live"
 		},
 	}))
 	// Define metrics handler, if necessary
@@ -103,10 +104,17 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	unprotectedAPIRouter.Post("/v1/phones/:key/exclusions", SetPhonesExclusion)
 	unprotectedAPIRouter.Get("/v1/phones/:key/settings", GetPhonesSettings)
 	unprotectedAPIRouter.Post("/v1/phones/:key/settings", SetPhonesSettings)
+	// Jira service-desk metrics, refreshed by the background jira poller.
+	unprotectedAPIRouter.Get("/v1/jira/metrics", GetJiraMetrics)
+	// Jira ticket drill-down: fetches one issue's detail on demand.
+	unprotectedAPIRouter.Get("/v1/jira/issue/:key", GetJiraIssue)
+	// Jira live stream (SSE): pushes a fresh snapshot on every poll.
+	unprotectedAPIRouter.Get("/v1/jira/live", JiraLive)
 	// SPA
 	app.Get("/", SinglePageApplication(cfg.UI))
 	app.Get("/endpoints/:key", SinglePageApplication(cfg.UI))
 	app.Get("/suites/:key", SinglePageApplication(cfg.UI))
+	app.Get("/jira", SinglePageApplication(cfg.UI))
 	// Health endpoint
 	healthHandler := health.Handler().WithJSON(true)
 	app.Get("/health", func(c *fiber.Ctx) error {

@@ -1,5 +1,5 @@
 <template>
-  <div class="flex items-start gap-4 relative group hover:bg-accent/30 rounded-lg p-2 -m-2 transition-colors cursor-pointer"
+  <div class="flex items-start gap-4 relative group hover:bg-accent/30 hover:translate-x-0.5 rounded-lg p-2 -m-2 transition duration-200 ease-out cursor-pointer"
        @click="$emit('step-click')">
     <!-- Step circle with status icon -->
     <div class="relative flex-shrink-0">

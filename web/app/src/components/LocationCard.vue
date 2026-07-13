@@ -1,5 +1,5 @@
 <template>
-  <Card class="location h-full flex flex-col transition hover:shadow-lg dark:hover:border-gray-700">
+  <Card class="location h-full flex flex-col transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg dark:hover:border-gray-700">
     <CardHeader class="px-3 sm:px-5 pt-3 sm:pt-4 pb-2 space-y-0">
       <div class="flex items-start justify-between gap-2">
         <CardTitle class="text-base sm:text-lg truncate">
@@ -41,7 +41,8 @@
             <div
               v-for="(cell, cellIdx) in row.cells"
               :key="cellIdx"
-              :class="cellClass(effectiveToken(cell.token, rowIdx, cellIdx), `${rowIdx}:${cellIdx}` === selectedKey)"
+              :class="[cellClass(effectiveToken(cell.token, rowIdx, cellIdx), `${rowIdx}:${cellIdx}` === selectedKey), 'ping-cell bar-appear']"
+              :style="{ '--i': cellIdx }"
               @mouseenter="cell.result && handleMouseEnter(cell.result, $event)"
               @mouseleave="cell.result && handleMouseLeave($event)"
               @click.stop="cell.result && handleClick(cell.result, $event, rowIdx, cellIdx)"

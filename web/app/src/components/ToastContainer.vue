@@ -33,10 +33,13 @@ const iconFor = (type) => (type === 'success' ? CheckCircle2 : type === 'error' 
 .toast-error   { border-left: 3px solid var(--status-down); }
 .toast-info    { border-left: 3px solid hsl(var(--muted-foreground)); }
 
-.toast-enter-active, .toast-leave-active { transition: opacity .22s ease, transform .22s ease; }
-.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(14px); }
+.toast-enter-active { transition: opacity var(--dur-3, .26s) var(--ease-out-quart), transform var(--dur-3, .26s) var(--ease-out-quart); }
+.toast-leave-active { transition: opacity var(--dur-2, .18s) ease, transform var(--dur-2, .18s) ease; position: absolute; right: 0; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(16px) scale(0.96); }
+/* When one toast dismisses, the rest glide into their new positions. */
+.toast-move { transition: transform var(--dur-3, .26s) var(--ease-out-quart); }
 
 @media (prefers-reduced-motion: reduce) {
-  .toast-enter-active, .toast-leave-active { transition: none; }
+  .toast-enter-active, .toast-leave-active, .toast-move { transition: none; }
 }
 </style>

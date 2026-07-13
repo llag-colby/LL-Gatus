@@ -3,9 +3,9 @@
     id="tooltip"
     ref="tooltip"
     :class="[
-      'absolute z-50 px-3 py-2 text-sm rounded-md shadow-lg border transition-all duration-200',
+      'rich-tip absolute z-50 px-3 py-2 text-sm rounded-md shadow-lg border',
       'bg-popover text-popover-foreground border-border',
-      hidden ? 'invisible opacity-0' : 'visible opacity-100'
+      hidden ? 'invisible opacity-0 translate-y-1 scale-[0.98] pointer-events-none' : 'visible opacity-100 translate-y-0 scale-100'
     ]"
     :style="`top: ${top}px; left: ${left}px;`"
   >
@@ -271,3 +271,14 @@ watch(() => route.path, () => {
   targetElement.value = null
 })
 </script>
+
+<style scoped>
+/* Animate only opacity + transform. Position (top/left) snaps so the tooltip
+   never flies across the screen when it hops between data points. */
+#tooltip {
+  transition: opacity var(--dur-2, .18s) var(--ease-out-quart, ease),
+              transform var(--dur-2, .18s) var(--ease-out-quart, ease);
+  transform-origin: top left;
+  will-change: opacity, transform;
+}
+</style>

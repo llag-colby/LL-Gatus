@@ -72,6 +72,19 @@
                 >
                   <RefreshCw class="h-5 w-5" />
                 </Button>
+                <router-link
+                  to="/jira"
+                  class="inline-flex items-center justify-center h-9 w-9 rounded-md hover:bg-accent transition-colors"
+                  data-tooltip="Jira monitor"
+                  data-tip-pos="bottom"
+                  aria-label="Jira monitor"
+                >
+                  <!-- Rendered as a background-image span (not an <img>) so the
+                       header's custom-css rule for the wordmark logo
+                       (`header img { filter: brightness(0) invert(1) }`) doesn't
+                       repaint this icon into a solid white box. -->
+                  <span class="jira-ico" :style="{ backgroundImage: `url(${jiraIcon})` }"></span>
+                </router-link>
               </div>
 
               <!-- Optional configured navigation buttons -->
@@ -93,7 +106,11 @@
 
       <!-- Main Content -->
       <main class="relative">
-        <router-view @showTooltip="showTooltip" :announcements="announcements" />
+        <router-view v-slot="{ Component }">
+          <transition name="route" mode="out-in">
+            <component :is="Component" @showTooltip="showTooltip" :announcements="announcements" />
+          </transition>
+        </router-view>
       </main>
 
       <!-- Footer -->
@@ -169,6 +186,7 @@ import ToastContainer from './components/ToastContainer.vue'
 import Social from './components/Social.vue'
 import Tooltip from './components/Tooltip.vue'
 import Loading from './components/Loading.vue'
+import jiraIcon from '@/assets/jira.png'
 import { requestRefresh, soundEnabled, setSoundEnabled, applyStatusColors } from '@/store'
 import { unlockAudio } from '@/utils/sounds'
 
@@ -315,3 +333,17 @@ onUnmounted(() => {
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
 })
 </script>
+
+<style scoped>
+/* Jira header icon: a background-image span, deliberately NOT an <img>, so the
+   wordmark-logo custom CSS (`header img { ... filter: brightness(0) invert(1) }`)
+   can't force it to 38px or repaint it solid white. */
+.jira-ico {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+</style>

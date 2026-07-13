@@ -1,0 +1,84 @@
+
+============================================================
+SCIENCE RESP STARTED - 2026-07-12 18:46:48
+============================================================
+
+[!] PaddleOCR not available - vision-only mode
+=== INITIALIZING CAPTURE ===
+  Scanning all backends (DSHOW, MSMF, ANY) at indices 0-7...
+[!] No video devices found on any backend
+[!] No capture cards found - using screen capture
+===================================
+Image: 1920x1080 (longest=1920px)
+PNG 0.85MB (native 1920x1080)
+>> Claude + Gemini + GPT in parallel... [mc=False]
+[Claude] attempt 1...
+[Gemini] attempt 1...
+[GPT] attempt 1...
+[Gemini] status 200
+[1st] Gemini: Balance 1350 EC
+[Claude] status 200
+[2nd] Claude: Peplink Balance 1350 EC
+[GPT] status 200
+[3rd] GPT: Peplink Balance 1350 EC
+[CONSENSUS] PEPLINK BALANCE 1350 EC (2/3, 92%)
+Image: 1920x1080 (longest=1920px)
+PNG 0.32MB (native 1920x1080)
+>> Claude + Gemini + GPT in parallel... [mc=False]
+[Claude] attempt 1...
+[Gemini] attempt 1...
+[GPT] attempt 1...
+[Gemini] status 200
+[1st] Gemini: H2O
+[GPT] status 200
+[2nd] GPT: H2O
+[Claude] status 200
+[3rd] Claude: H2O
+[CONSENSUS] H2O (3/3, 100%)
+[shutdown] window closed, releasing resources...
+
+============================================================
+SCIENCE RESP STARTED - 2026-07-12 18:58:21
+============================================================
+
+[!] PaddleOCR not available - vision-only mode
+=== INITIALIZING CAPTURE ===
+  Scanning all backends (DSHOW, MSMF, ANY) at indices 0-7...
+[!] No video devices found on any backend
+[!] No capture cards found - using screen capture
+===================================
+Image: 1920x1080 (longest=1920px)
+PNG 0.28MB (native 1920x1080)
+>> Claude + Gemini + GPT in parallel... [mc=False]
+[Claude] attempt 1...
+[Gemini] attempt 1...
+[GPT] attempt 1...
+[Gemini] status 200
+[1st] Gemini: 1) deoxyribonucleic acid; 2) 2
+[Claude] status 200
+[2nd] Claude: 1) Deoxyribonucleic Acid; 2) 2
+[GPT] status 200
+[3rd] GPT: 1) Deoxyribonucleic acid; 2) 2
+[shutdown] window closed, releasing resources...
+
+============================================================
+SCIENCE RESP STARTED - 2026-07-12 19:02:21
+============================================================
+
+[!] PaddleOCR not available - vision-only mode
+=== INITIALIZING CAPTURE ===
+  Scanning all backends (DSHOW, MSMF, ANY) at indices 0-7...
+[!] No video devices found on any backend
+[!] No capture cards found - using screen capture
+===================================
+Image: 1920x1080 (longest=1920px)
+PNG 0.27MB (native 1920x1080)
+>> Claude + Gemini + GPT in parallel... [mc=False]
+[Claude] attempt 1...
+[Gemini] attempt 1...
+[GPT] attempt 1...
+[Gemini] status 200
+[1st] Gemini: 23) Cheetah; 24) 2; 25) Light 
+[Claude] status 200
+[2nd] Claude: 23) cheetah; 24) 2; 25) Light 
+[shutdown] window closed, releasing resources...

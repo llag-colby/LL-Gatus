@@ -15,7 +15,7 @@
     <div
       v-if="isOpen"
       role="listbox"
-      class="absolute top-full left-0 z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+      class="pop-in absolute top-full left-0 z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md"
     >
       <div class="p-1">
         <div

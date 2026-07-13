@@ -89,6 +89,83 @@
 .st-bg-degraded { background-color: var(--status-degraded) !important; }
 .st-bg-down { background-color: var(--status-down) !important; }
 
+/* ================================================================== */
+/*  MOTION SYSTEM                                                       */
+/*  Central easing + timing tokens and reusable entrance/feedback       */
+/*  animations. Product-register motion: smooth ease-out, 120–420ms,    */
+/*  no bounce. Everything collapses to static under reduced-motion.     */
+/* ================================================================== */
+:root {
+    --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+    --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
+    --dur-1: 120ms;   /* instant feedback (press) */
+    --dur-2: 180ms;   /* hover / small state changes */
+    --dur-3: 260ms;   /* reveals, dropdowns */
+    --dur-4: 420ms;   /* larger entrances */
+}
+
+@keyframes il-rise {
+    from { opacity: 0; transform: translateY(10px) scale(.985); }
+    to   { opacity: 1; transform: none; }
+}
+@keyframes il-bar-grow {
+    from { opacity: 0; transform: translateY(6px) scaleY(.55); }
+    to   { opacity: 1; transform: none; }
+}
+@keyframes il-pop {
+    from { opacity: 0; transform: scale(.96) translateY(-4px); }
+    to   { opacity: 1; transform: none; }
+}
+@keyframes il-pop-up {
+    from { opacity: 0; transform: scale(.96) translateY(4px); }
+    to   { opacity: 1; transform: none; }
+}
+@keyframes il-backdrop {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+@keyframes il-modal {
+    from { opacity: 0; transform: translateY(12px) scale(.97); }
+    to   { opacity: 1; transform: none; }
+}
+/* Entrance helpers — fill:backwards so post-entrance :hover transforms still work */
+.motion-rise { animation: il-rise var(--dur-4) var(--ease-out-quart) backwards; animation-delay: var(--d, 0ms); }
+
+.pop-in    { animation: il-pop var(--dur-2) var(--ease-out-quart); transform-origin: top; }
+.pop-in-up { animation: il-pop-up var(--dur-2) var(--ease-out-quart); transform-origin: bottom; }
+
+.il-backdrop-in { animation: il-backdrop var(--dur-2) ease; }
+.il-modal-in    { animation: il-modal var(--dur-3) var(--ease-out-quart); }
+
+/* Status ping cells — smooth colour changes + subtle hover emphasis.
+   Shared by LocationCard / EndpointCard / SuiteCard. */
+.ping-cell {
+    position: relative;
+    transform-origin: bottom;
+    transition: background-color var(--dur-3) var(--ease-out-quart),
+                transform var(--dur-2) var(--ease-out-quart),
+                box-shadow var(--dur-2) var(--ease-out-quart);
+}
+.ping-cell:hover {
+    transform: scaleY(1.14);
+    box-shadow: 0 2px 8px -2px rgb(0 0 0 / .25);
+    z-index: 1;
+}
+.bar-appear { animation: il-bar-grow var(--dur-3) var(--ease-out-quart) backwards; animation-delay: calc(var(--i, 0) * 9ms); }
+
+/* Router-view crossfade (global — App.vue's scoped styles can't reach child roots) */
+.route-enter-active { transition: opacity var(--dur-3) var(--ease-out-quart), transform var(--dur-3) var(--ease-out-quart); }
+.route-leave-active { transition: opacity var(--dur-1) ease, transform var(--dur-1) ease; }
+.route-enter-from   { opacity: 0; transform: translateY(8px); }
+.route-leave-to     { opacity: 0; transform: translateY(-6px); }
+
+/* Expand / collapse (announcement banner and similar) */
+.expand-enter-active { transition: opacity var(--dur-3) var(--ease-out-quart), max-height var(--dur-3) var(--ease-out-quart); overflow: hidden; }
+.expand-leave-active { transition: opacity var(--dur-2) ease, max-height var(--dur-2) ease; overflow: hidden; }
+.expand-enter-from, .expand-leave-to   { opacity: 0; max-height: 0; }
+.expand-enter-to, .expand-leave-from   { opacity: 1; max-height: 1200px; }
+
 /* ------------------------------------------------------------------ */
 /*  Classy tooltips: any element with [data-tooltip="..."] gets one.  */
 /*  Add data-tip-pos="bottom" to make it appear below (e.g. header).  */
@@ -104,7 +181,7 @@
     opacity: 0;
     pointer-events: none;
     z-index: 70;
-    transition: opacity .16s ease, transform .16s ease;
+    transition: opacity var(--dur-2, .18s) var(--ease-out-expo, ease), transform var(--dur-2, .18s) var(--ease-out-expo, ease);
     will-change: opacity, transform;
 }
 
@@ -269,5 +346,18 @@ body {
     body {
         padding-top: 0;
         padding-bottom: 0;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Accessibility: honour prefers-reduced-motion. Collapse all motion  */
+/*  to near-instant.                                                    */
+/* ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+        scroll-behavior: auto !important;
     }
 }

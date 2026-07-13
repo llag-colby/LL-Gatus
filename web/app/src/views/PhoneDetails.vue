@@ -31,7 +31,7 @@
               <SlidersHorizontal class="h-5 w-5" />
             </Button>
             <div v-if="settingsOpen" class="fixed inset-0 z-40" @click="settingsOpen = false"></div>
-            <div v-if="settingsOpen" class="absolute right-0 mt-2 w-72 rounded-lg border bg-popover text-popover-foreground shadow-xl p-3 z-50 space-y-3 text-left">
+            <div v-if="settingsOpen" class="pop-in absolute right-0 mt-2 w-72 rounded-lg border bg-popover text-popover-foreground shadow-xl p-3 z-50 space-y-3 text-left" style="transform-origin: top right;">
               <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Health thresholds</div>
               <div class="flex gap-1">
                 <button class="flex-1 text-xs py-1 rounded-md border transition-colors"

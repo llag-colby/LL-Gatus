@@ -1,5 +1,5 @@
 <template>
-  <Card class="endpoint h-full flex flex-col transition hover:shadow-lg hover:scale-[1.01] dark:hover:border-gray-700">
+  <Card class="endpoint h-full flex flex-col transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg dark:hover:border-gray-700">
     <CardHeader class="endpoint-header px-3 sm:px-6 pt-3 sm:pt-6 pb-2 space-y-0">
       <div class="flex items-start justify-between gap-2 sm:gap-3">
         <div class="flex-1 min-w-0 overflow-hidden">
@@ -38,10 +38,11 @@
               v-for="(result, index) in displayResults"
               :key="index"
               :class="[
-                'flex-1 h-6 sm:h-8 rounded-sm transition-all',
+                'flex-1 h-6 sm:h-8 rounded-sm ping-cell bar-appear',
                 result ? 'cursor-pointer' : '',
                 barColorClass(result, selectedResultIndex === index)
               ]"
+              :style="{ '--i': index }"
               @mouseenter="result && handleMouseEnter(result, $event)"
               @mouseleave="result && handleMouseLeave(result, $event)"
               @click.stop="result && handleClick(result, $event, index)"

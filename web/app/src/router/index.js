@@ -2,6 +2,7 @@ import {createRouter, createWebHistory} from 'vue-router'
 import Home from '@/views/Home'
 import EndpointDetailRouter from "@/views/EndpointDetailRouter";
 import SuiteDetails from '@/views/SuiteDetails';
+import JiraDetails from '@/views/JiraDetails';
 
 const routes = [
     {
@@ -18,6 +19,11 @@ const routes = [
         path: '/suites/:key',
         name: 'SuiteDetails',
         component: SuiteDetails
+    },
+    {
+        path: '/jira',
+        name: 'Jira',
+        component: JiraDetails
     }
 ];
 

@@ -1,8 +1,8 @@
 <template>
   <!-- Modal backdrop -->
-  <div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50" @click="$emit('close')">
+  <div class="il-backdrop-in fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50" @click="$emit('close')">
     <!-- Modal content -->
-    <div class="bg-background border rounded-lg shadow-lg max-w-2xl w-full max-h-[80vh] overflow-hidden" @click.stop>
+    <div class="il-modal-in bg-background border rounded-lg shadow-lg max-w-2xl w-full max-h-[80vh] overflow-hidden" @click.stop>
       <!-- Header -->
       <div class="flex items-center justify-between p-4 border-b">
         <div>

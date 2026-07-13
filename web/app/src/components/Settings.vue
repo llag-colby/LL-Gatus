@@ -12,10 +12,10 @@
         <span class="text-xs font-medium">{{ formatRefreshInterval(refreshIntervalValue) }}</span>
         
         <!-- Refresh Rate Dropdown -->
-        <div 
+        <div
           v-if="showRefreshMenu"
           @click.stop
-          class="absolute bottom-full left-0 mb-2 bg-popover border rounded-lg shadow-lg overflow-hidden"
+          class="pop-in-up absolute bottom-full left-0 mb-2 bg-popover border rounded-lg shadow-lg overflow-hidden"
         >
           <button
             v-for="interval in REFRESH_INTERVALS"

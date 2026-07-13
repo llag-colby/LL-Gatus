@@ -8,7 +8,7 @@
     <!-- click-away backdrop -->
     <div v-if="open" class="fixed inset-0 z-40" @click="open = false"></div>
 
-    <div v-if="open" class="absolute right-0 mt-2 w-72 rounded-lg border bg-popover text-popover-foreground shadow-xl p-3 z-50 space-y-3.5">
+    <div v-if="open" class="pop-in absolute right-0 mt-2 w-72 rounded-lg border bg-popover text-popover-foreground shadow-xl p-3 z-50 space-y-3.5" style="transform-origin: top right;">
 
       <!-- Status colors -->
       <div>
