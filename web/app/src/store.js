@@ -95,6 +95,11 @@ export function clearSimulations() {
 // Location names known to the dashboard (populated by Home, used by the panel).
 export const knownLocations = ref([])
 
+// Whether the app is in fullscreen wall-display mode. Set by App.vue on
+// fullscreenchange; read by Home.vue to render fewer, thicker status bars
+// (a wall reads better with chunky bars than a wall of thin ticks).
+export const isFullscreen = ref(false)
+
 // Live clock anchored to the SERVER's time, so every browser computes the same
 // relative "x ago" labels regardless of its own (possibly wrong) local clock.
 let serverOffset = 0

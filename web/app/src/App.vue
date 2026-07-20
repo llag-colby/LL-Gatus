@@ -187,7 +187,7 @@ import Social from './components/Social.vue'
 import Tooltip from './components/Tooltip.vue'
 import Loading from './components/Loading.vue'
 import jiraIcon from '@/assets/jira.png'
-import { requestRefresh, soundEnabled, setSoundEnabled, applyStatusColors } from '@/store'
+import { requestRefresh, soundEnabled, setSoundEnabled, applyStatusColors, isFullscreen } from '@/store'
 import { unlockAudio } from '@/utils/sounds'
 
 const route = useRoute()
@@ -226,7 +226,7 @@ const fetchVersion = async () => {
 // Full-screen toggle — fullscreen the app container (not the document root) so
 // it becomes its own scroll context (drilled-in detail pages can scroll).
 const globalEl = ref(null)
-const isFullscreen = ref(false)
+// isFullscreen lives in the store (shared with Home.vue for the bar count).
 const toggleFullscreen = () => {
   if (!document.fullscreenElement) {
     globalEl.value?.requestFullscreen?.()

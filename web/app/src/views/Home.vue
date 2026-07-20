@@ -107,7 +107,7 @@ import Settings from '@/components/Settings.vue'
 import Loading from '@/components/Loading.vue'
 import AnnouncementBanner from '@/components/AnnouncementBanner.vue'
 import PastAnnouncements from '@/components/PastAnnouncements.vue'
-import { controls, soundEnabled, simulations, knownLocations } from '@/store'
+import { controls, soundEnabled, simulations, knownLocations, isFullscreen } from '@/store'
 import { playUp, playDown, playDegraded } from '@/utils/sounds'
 
 const props = defineProps({
@@ -133,8 +133,9 @@ const loading = ref(false)
 const currentPage = ref(1)
 const itemsPerPage = 96
 const resultPageSize = 50
-// Bars shown per row. Kept low so a 4-row card reads calmly rather than as a wall of ticks.
-const barsToShow = 20
+// Bars shown per row. Fewer on the fullscreen wall so each bar is thick and
+// readable from a distance; more in the normal grid where cards are smaller.
+const barsToShow = computed(() => isFullscreen.value ? 10 : 20)
 
 // --- helpers ---
 const latestFailed = (ep) => {

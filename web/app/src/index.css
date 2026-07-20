@@ -290,34 +290,63 @@
     display: none;
 }
 /* Balanced grid (columns computed from card count) that fills the whole screen */
+/* Cards fill the whole screen (computed columns, rows stretched to fill the
+   height). The spare height is consumed by ENLARGING the content — tall status
+   bars, evenly spaced — so each card reads as a dense, glanceable block from
+   across a room, with no big empty gaps or margins. */
 .fs-active .dashboard-grid {
     height: calc(100vh - 28px);
     grid-template-columns: repeat(var(--fs-cols, 3), 1fr) !important;
     grid-auto-rows: 1fr;
-    gap: 14px;
+    gap: 16px;
 }
-/* Each card fills its grid cell; its content is vertically centered with
-   fixed-height bars, so nothing stretches. */
 .fs-active .location {
     height: 100%;
 }
 .fs-active .loc-content {
     display: flex;
     flex-direction: column;
+    justify-content: center;
 }
-/* Spread the WAN/Overall rows evenly down the card so the extra height is used
-   cleanly — the gaps grow, the bars stay a fixed height (no stretching). */
 .fs-active .loc-rows {
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
-    justify-content: space-evenly;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
 }
 .fs-active .loc-rows > * {
     margin-top: 0 !important;
 }
+/* Big bars so status is readable at wall-display distance. */
 .fs-active .loc-bars > div {
-    height: 2rem !important;
+    height: 3.75rem !important;
+}
+.fs-active .loc-bars {
+    gap: 6px;
+}
+/* Scale the typography up so every card reads from across the room. */
+.fs-active .location h3 {                 /* card title (location name) */
+    font-size: 2rem !important;
+    line-height: 1.1 !important;
+}
+.fs-active .rounded-full {                 /* status badge (Healthy / Down) */
+    font-size: 1rem !important;
+    padding: 0.28rem 0.85rem !important;
+}
+.fs-active .loc-rowlabel {                 /* WAN 1 / WAN 2 / Phones / Overall */
+    width: 8.5rem !important;
+}
+.fs-active .loc-rowlabel > a,
+.fs-active .loc-rowlabel > span {
+    font-size: 1.3rem !important;
+    line-height: 1.15 !important;
+}
+.fs-active .tabular-nums {                 /* trailing latency value */
+    font-size: 1.35rem !important;
+    width: auto !important;
+    padding-left: 0.5rem;
 }
 /* ISP + IP under each WAN row — shown only in fullscreen, where there's room. */
 .loc-meta {
@@ -326,11 +355,14 @@
 .fs-active .loc-meta {
     display: block;
 }
-.fs-active .loc-rowlabel {
-    width: 10rem !important;
+.fs-active .loc-meta div {
+    font-size: 0.95rem !important;
 }
 .fs-active .loc-age {
-    padding-left: 10.5rem !important;
+    margin-top: 0.5rem !important;
+    padding-left: 9rem !important;
+    font-size: 1.1rem !important;
+    white-space: nowrap;
 }
 
 

@@ -72,7 +72,7 @@ import { useRouter } from 'vue-router'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { generatePrettyTimeAgo } from '@/utils/time'
-import { now, simulations } from '@/store'
+import { now, simulations, isFullscreen } from '@/store'
 
 const router = useRouter()
 
@@ -172,6 +172,14 @@ const overallCells = computed(() => {
   return cells
 })
 
+// The Overall row also carries the trailing latency label, which eats into its
+// bar width. In fullscreen, drop 2 bars from this row so its bars stay exactly
+// as THICK as the WAN/Phones rows above it (rather than looking pinched).
+const overallDisplayCells = computed(() => {
+  const cells = overallCells.value
+  return isFullscreen.value ? cells.slice(2) : cells
+})
+
 const currentLatencyLabel = computed(() => {
   for (let i = overallCells.value.length - 1; i >= 0; i--) {
     const c = overallCells.value[i]
@@ -215,7 +223,7 @@ const displayRows = computed(() => {
     label: 'Overall',
     endpointKey: null,
     tooltip: 'Overall Health — best latency across WANs',
-    cells: overallCells.value,
+    cells: overallDisplayCells.value,
     isOverall: true,
     latencyLabel: currentLatencyLabel.value,
   })
