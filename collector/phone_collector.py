@@ -47,6 +47,54 @@ LOCATIONS = [
         "pbx": "https://longlewiscorporate.wildixin.com",
         "token_env": "PHONES_IVORY_TOWER_TOKEN",
     },
+    {
+        "key": "phones_alabaster",         # slug(group=Phones)_slug(name=Alabaster)
+        "label": "Alabaster",
+        "pbx": "https://longlewisab.wildixin.com",
+        "token_env": "PHONES_ALABASTER_TOKEN",
+    },
+    {
+        "key": "phones_bessemer",          # slug(group=Phones)_slug(name=Bessemer)
+        "label": "Bessemer",
+        "pbx": "https://longlewisbe.wildixin.com",
+        "token_env": "PHONES_BESSEMER_TOKEN",
+    },
+    {
+        "key": "phones_cullman",           # slug(group=Phones)_slug(name=Cullman)
+        "label": "Cullman",
+        "pbx": "https://longlewiscl.wildixin.com",
+        "token_env": "PHONES_CULLMAN_TOKEN",
+    },
+    {
+        "key": "phones_florence",          # slug(group=Phones)_slug(name=Florence)
+        "label": "Florence",
+        "pbx": "https://longlewisfl.wildixin.com",
+        "token_env": "PHONES_FLORENCE_TOKEN",
+    },
+    {
+        "key": "phones_hoover",            # slug(group=Phones)_slug(name=Hoover)
+        "label": "Hoover",
+        "pbx": "https://longlewishv.wildixin.com",
+        "token_env": "PHONES_HOOVER_TOKEN",
+    },
+    {
+        "key": "phones_muscle-shoals",     # slug(group=Phones)_slug(name=Muscle Shoals)
+        "label": "Muscle Shoals",
+        "pbx": "https://longlewisms.wildixin.com",
+        "token_env": "PHONES_MUSCLE_SHOALS_TOKEN",
+    },
+    {
+        "key": "phones_prattville",        # slug(group=Phones)_slug(name=Prattville)
+        "label": "Prattville",
+        "pbx": "https://longlewispr.wildixin.com",
+        "token_env": "PHONES_PRATTVILLE_TOKEN",
+    },
+    {
+        "key": "phones_tuscumbia",         # slug(group=Phones)_slug(name=Tuscumbia)
+        "label": "Tuscumbia",
+        "pbx": "https://longlewistu.wildixin.com",
+        "token_env": "PHONES_TUSCUMBIA_TOKEN",
+    },
 ]
 
 # Health tolerance: >= this many MONITORED phones offline -> degraded.
@@ -249,6 +297,11 @@ def run_location(loc, push_token, base):
         try:
             code, body = http(f"{loc['pbx']}/api/v1/PBX/Users/Sip/Registrations", token)
             reg_result = json.loads(body).get("result", {}) if code == 200 else {}
+            # Wildix (PHP json_encode) serializes an EMPTY registrations map as a
+            # JSON array [] rather than {} — a PBX with zero registered phones.
+            # Coerce any non-dict (i.e. []) to {} so build_inventory doesn't crash.
+            if not isinstance(reg_result, dict):
+                reg_result = {}
             directory = fetch_directory(loc["pbx"], token)
             excluded = fetch_exclusions(base, key)
             phones = build_inventory(reg_result, directory, excluded)
@@ -270,8 +323,10 @@ def run_location(loc, push_token, base):
           f"excluded={counts['excluded']} dur={int(duration_ms)}ms")
 
     try:
-        if phones:
-            push_inventory(base, key, phones, status, counts, push_token)
+        # Always push inventory — even an empty list — so the drill-in can show
+        # "PBX healthy, 0 phones registered" instead of a misleading "collector
+        # hasn't reported" placeholder.
+        push_inventory(base, key, phones, status, counts, push_token)
     except (urllib.error.URLError, OSError) as exc:
         print(f"WARN: inventory push failed for {key}: {exc}", file=sys.stderr)
     try:
@@ -293,14 +348,35 @@ def sweep_once():
             print(f"ERROR running {loc['key']}: {exc}", file=sys.stderr)
 
 
+def sweep_requested(base):
+    """Claim any pending force-sweep requests the UI POSTed. Returns True if a
+    sweep was requested (the GET clears the pending set server-side)."""
+    try:
+        code, body = http(f"{base}/api/v1/phones/sweep-pending")
+        if code == 200:
+            return bool(json.loads(body).get("pending"))
+    except (urllib.error.URLError, OSError, ValueError):
+        pass
+    return False
+
+
 def main():
     load_dotenv()
     if os.environ.get("LOOP") == "1":
         lo = int(os.environ.get("SWEEP_MIN", "15"))
         hi = int(os.environ.get("SWEEP_MAX", "45"))
+        base = os.environ.get("GATUS_PUSH_BASE", "http://localhost:8080")
+        poll = float(os.environ.get("SWEEP_POLL", "2"))   # force-sweep responsiveness
         while True:
             sweep_once()
-            time.sleep(random.uniform(lo, hi))   # staggered to respect API limits
+            # Interruptible wait: sleep the jittered interval in short chunks,
+            # breaking early to sweep now if the UI asked for a force-sweep.
+            wait, waited = random.uniform(lo, hi), 0.0
+            while waited < wait:
+                time.sleep(poll)
+                waited += poll
+                if sweep_requested(base):
+                    break
     else:
         sweep_once()
 

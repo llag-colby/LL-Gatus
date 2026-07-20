@@ -136,6 +136,13 @@ endpoints:
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
+  # ---------- Decatur GMC ----------
+  - name: Decatur GMC
+    group: WAN 1 (Spectrum Fiber)
+    url: "icmp://71.86.70.190"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+
 # Push-based receivers. Gatus does NOT call these — an external collector
 # (collector/phone_collector.py, run by cron) does the PBX check and POSTs a
 # pass/fail here.
@@ -147,5 +154,29 @@ endpoints:
 # NOTE: external-endpoints only (re)load on `docker compose down && up -d`.
 external-endpoints:
   - name: Ivory Tower
+    group: Phones
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Alabaster
+    group: Phones
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Bessemer
+    group: Phones
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Cullman
+    group: Phones
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Florence
+    group: Phones
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Hoover
+    group: Phones
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Muscle Shoals
+    group: Phones
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Prattville
+    group: Phones
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Tuscumbia
     group: Phones
     token: "${PHONES_PUSH_TOKEN}"

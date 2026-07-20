@@ -34,3 +34,4 @@ scratch_*
 
 # Collector runtime state (learned phone baseline)
 collector/.phones_state.json
+science-resp.log

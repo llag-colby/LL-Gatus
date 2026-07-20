@@ -78,6 +78,10 @@
             data-tooltip="Export CSV" data-tip-pos="bottom">
             <Download class="h-5 w-5" />
           </Button>
+          <Button variant="ghost" size="icon" class="h-9 w-9" @click="forceSweep" :disabled="sweeping"
+            data-tooltip="Force sweep now" data-tip-pos="bottom">
+            <Zap class="h-5 w-5" :class="{ 'animate-pulse text-primary': sweeping }" />
+          </Button>
           <Button variant="ghost" size="icon" class="h-9 w-9" @click="fetchInventory"
             data-tooltip="Refresh" data-tip-pos="bottom">
             <RefreshCw class="h-5 w-5" :class="{ 'animate-spin': loading }" />
@@ -86,7 +90,7 @@
       </div>
 
       <!-- Status band -->
-      <div v-if="phones.length" class="flex flex-wrap items-center justify-between gap-3">
+      <div v-if="status" class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-3">
           <span class="status-pill" :class="statusMeta.cls">{{ statusMeta.label }}</span>
           <span v-if="counts" class="text-sm text-muted-foreground font-mono">
@@ -99,13 +103,22 @@
         </label>
       </div>
 
-      <!-- Empty state: no inventory reported yet -->
+      <!-- Empty state -->
       <div v-if="loaded && phones.length === 0" class="empty-state">
-        <div class="text-base font-semibold mb-1">No phones reported yet</div>
-        <div class="text-sm text-muted-foreground">
-          The collector hasn't pushed inventory for {{ locationName }}. Once
-          <span class="font-mono">phone_collector.py</span> runs, lines appear here within one sweep.
-        </div>
+        <template v-if="updatedAt">
+          <div class="text-base font-semibold mb-1">No phones registered</div>
+          <div class="text-sm text-muted-foreground">
+            The PBX is reachable and was swept {{ updatedLabel }}, but no desk phones are
+            currently registered at {{ locationName }}.
+          </div>
+        </template>
+        <template v-else>
+          <div class="text-base font-semibold mb-1">No phones reported yet</div>
+          <div class="text-sm text-muted-foreground">
+            The collector hasn't pushed inventory for {{ locationName }} yet — it appears
+            within one sweep, or hit <span class="font-mono">force sweep</span> above.
+          </div>
+        </template>
       </div>
 
       <!-- Directory table -->
@@ -158,7 +171,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowLeft, RefreshCw, SlidersHorizontal, Download } from 'lucide-vue-next'
+import { ArrowLeft, RefreshCw, SlidersHorizontal, Download, Zap } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { generatePrettyTimeAgo } from '@/utils/time'
 import { addToast } from '@/store'
@@ -259,6 +272,32 @@ const fetchInventory = async () => {
   } finally {
     loading.value = false
     loaded.value = true
+  }
+}
+
+// Force an immediate collector sweep instead of waiting out its loop. The
+// collector claims the request within ~2s and re-reports; poll for the fresh
+// push (detected by a changed updatedAt) for up to ~15s.
+const sweeping = ref(false)
+const forceSweep = async () => {
+  if (sweeping.value) return
+  sweeping.value = true
+  const before = updatedAt.value
+  try {
+    const res = await fetch(`/api/v1/phones/${route.params.key}/sweep`, { method: 'POST' })
+    if (!res.ok) throw new Error()
+    addToast('Sweep requested — refreshing…', 'success')
+    const started = Date.now()
+    const iv = setInterval(async () => {
+      await fetchInventory()
+      if (updatedAt.value !== before || Date.now() - started > 15000) {
+        clearInterval(iv)
+        sweeping.value = false
+      }
+    }, 1500)
+  } catch (e) {
+    addToast('Couldn’t request a sweep — try again', 'error')
+    sweeping.value = false
   }
 }
 

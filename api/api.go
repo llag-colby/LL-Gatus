@@ -99,6 +99,10 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	// Phones inventory side-channel: collector POSTs the rich per-phone table
 	// (token-auth'd like /external); the phones drill-in GETs it.
 	unprotectedAPIRouter.Post("/v1/phones/:key", SetPhonesInventory(cfg))
+	// Force-sweep: static route registered BEFORE the :key GET so it isn't
+	// swallowed by :key="sweep-pending". Collector claims pending sweeps here.
+	unprotectedAPIRouter.Get("/v1/phones/sweep-pending", ClaimPhonesSweeps)
+	unprotectedAPIRouter.Post("/v1/phones/:key/sweep", RequestPhonesSweep)
 	unprotectedAPIRouter.Get("/v1/phones/:key", GetPhonesInventory)
 	unprotectedAPIRouter.Get("/v1/phones/:key/exclusions", GetPhonesExclusions)
 	unprotectedAPIRouter.Post("/v1/phones/:key/exclusions", SetPhonesExclusion)

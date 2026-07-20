@@ -281,7 +281,13 @@ const u=({name:t,iconNode:e,absoluteStrokeWidth:n,"absolute-stroke-width":o,stro
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
- */const r=(0,i.Z)("x",[["path",{d:"M18 6 6 18",key:"1bl5f8"}],["path",{d:"m6 6 12 12",key:"d8bk6v"}]])},3744:function(t,e){e.Z=(t,e)=>{const n=t.__vccOpts||t;for(const[i,r]of e)n[i]=r;return n}},3148:function(t,e,n){n.d(e,{De:function(){return Vn},Dx:function(){return Xn},FB:function(){return Ii},FK:function(){return c},Gu:function(){return zn},IQ:function(){return N},ST:function(){return I},W_:function(){return Rt},f$:function(){return _i},jI:function(){return R},jn:function(){return nn},kL:function(){return $e},od:function(){return on},u:function(){return pi},uw:function(){return xi}});var i=n(5411);
+ */const r=(0,i.Z)("x",[["path",{d:"M18 6 6 18",key:"1bl5f8"}],["path",{d:"m6 6 12 12",key:"d8bk6v"}]])},9729:function(t,e,n){n.d(e,{Z:function(){return r}});var i=n(4264);
+/**
+ * @license lucide-vue-next v0.539.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const r=(0,i.Z)("zap",[["path",{d:"M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z",key:"1xq2db"}]])},3744:function(t,e){e.Z=(t,e)=>{const n=t.__vccOpts||t;for(const[i,r]of e)n[i]=r;return n}},3148:function(t,e,n){n.d(e,{De:function(){return Vn},Dx:function(){return Xn},FB:function(){return Ii},FK:function(){return c},Gu:function(){return zn},IQ:function(){return N},ST:function(){return I},W_:function(){return Rt},f$:function(){return _i},jI:function(){return R},jn:function(){return nn},kL:function(){return $e},od:function(){return on},u:function(){return pi},uw:function(){return xi}});var i=n(5411);
 /*!
  * Chart.js v4.5.1
  * https://www.chartjs.org
