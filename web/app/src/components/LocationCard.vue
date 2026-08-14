@@ -1,5 +1,8 @@
 <template>
-  <Card class="location h-full flex flex-col transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg dark:hover:border-gray-700">
+  <!-- Hover lifts with shadow only, deliberately NOT a transform: translating
+       the card by a fractional device pixel (any browser zoom does that) puts
+       it on a composited layer and every label on the card goes blurry. -->
+  <Card class="location h-full flex flex-col transition-[box-shadow,border-color] duration-200 ease-out hover:shadow-xl dark:hover:border-gray-700">
     <CardHeader class="px-3 sm:px-5 pt-3 sm:pt-4 pb-2 space-y-0">
       <div class="flex items-start justify-between gap-2">
         <CardTitle class="text-base sm:text-lg truncate">
@@ -18,13 +21,15 @@
           <!-- Row label -->
           <div class="loc-rowlabel w-16 sm:w-[68px] shrink-0">
             <component
-              :is="row.endpointKey ? 'a' : 'span'"
-              :href="row.endpointKey ? `/endpoints/${row.endpointKey}` : undefined"
-              @click="row.endpointKey && navigate($event, row.endpointKey)"
+              :is="row.to ? 'a' : 'span'"
+              :href="row.to"
+              @click="row.to && navigate($event, row.to)"
               :data-tooltip="row.tooltip"
               :class="[
                 'block truncate text-[11px] sm:text-xs font-medium',
-                row.isOverall ? 'text-foreground' : (row.endpointKey ? 'text-muted-foreground hover:text-primary cursor-pointer' : 'text-muted-foreground/40')
+                row.isOverall
+                  ? (row.to ? 'text-foreground hover:text-primary cursor-pointer' : 'text-foreground')
+                  : (row.to ? 'text-muted-foreground hover:text-primary cursor-pointer' : 'text-muted-foreground/40')
               ]"
             >
               {{ row.label }}
@@ -141,11 +146,20 @@ const padResults = (endpoint) => {
   return results.slice(-props.maxResults)
 }
 
+// "Nothing reported" is a distinct failure from "reported and failing": a site
+// with 0 phones registered has no health signal at all, and painting that red
+// makes it look like 0-of-N phones dropped. The collector flags it with a fixed
+// error prefix (see collector/phone_collector.py) and it renders BLACK.
+const NOT_REPORTING = /^no phones reporting\b/i
+const isNotReporting = (result) =>
+  !!result && !result.success && (result.errors || []).some((e) => NOT_REPORTING.test(e))
+
 const endpointRowCells = (endpoint) => {
   const padded = padResults(endpoint)
   return padded.map((result) => {
     if (!result) return { token: 'none', result: null }
-    return { token: result.success ? 'green' : 'red', result }
+    if (result.success) return { token: 'green', result }
+    return { token: isNotReporting(result) ? 'nodata' : 'red', result }
   })
 }
 
@@ -161,7 +175,10 @@ const overallCells = computed(() => {
     }
     const up = slice.filter((r) => r.success && r.duration)
     if (up.length === 0) {
-      cells.push({ token: 'red', result: slice[0] })
+      // Everything in this slice failed — but if the ONLY thing that failed was
+      // a not-reporting feed, there is no outage to call red.
+      const token = slice.every(isNotReporting) ? 'nodata' : 'red'
+      cells.push({ token, result: slice[0] })
       continue
     }
     const best = up.reduce((m, r) => (r.duration < m.duration ? r : m))
@@ -199,6 +216,7 @@ const displayRows = computed(() => {
       key: keyName,
       label,
       endpointKey: endpoint ? endpoint.key : null,
+      to: endpoint ? `/endpoints/${endpoint.key}` : null,
       tooltip: endpoint ? (endpoint.group || endpoint.name) : `${label}: no data`,
       isp: endpoint ? ispFromGroup(endpoint.group) : '',
       ip: ipOf(endpoint),
@@ -222,7 +240,9 @@ const displayRows = computed(() => {
     key: 'overall',
     label: 'Overall',
     endpointKey: null,
-    tooltip: 'Overall Health — best latency across WANs',
+    // Overall drills into the whole-site view rather than any one endpoint.
+    to: `/sites/${encodeURIComponent(props.name)}`,
+    tooltip: `Open the ${props.name} site overview`,
     cells: overallDisplayCells.value,
     isOverall: true,
     latencyLabel: currentLatencyLabel.value,
@@ -270,7 +290,7 @@ const hash01 = (n) => {
 // a flapping/degraded connection — not every bar the same colour. Empty slots
 // stay grey. Recent bars (right side) skew worse for a "down" site.
 const effectiveToken = (token, rowIdx, cellIdx) => {
-  if (!isSimulated.value || token === 'none') return token
+  if (!isSimulated.value || token === 'none' || token === 'nodata') return token
   const status = simulations[props.name]
   if (status === 'healthy') return 'green'
   const n = props.maxResults || 20
@@ -296,14 +316,15 @@ const cellClass = (token, selected) => {
     case 'green': return `${base}${cursor} stbar-up${sel}`
     case 'red': return `${base}${cursor} stbar-down${sel}`
     case 'amber': return `${base}${cursor} stbar-degraded${sel}`
+    case 'nodata': return `${base}${cursor} stbar-nodata${sel}`
     default: return `${base} bg-gray-200 dark:bg-gray-700`
   }
 }
 
 // --- Interaction (reuses the app-wide rich tooltip) ---
-const navigate = (event, key) => {
+const navigate = (event, path) => {
   event.preventDefault()
-  router.push(`/endpoints/${key}`)
+  router.push(path)
 }
 
 const handleMouseEnter = (result, event) => emit('showTooltip', result, event, 'hover')

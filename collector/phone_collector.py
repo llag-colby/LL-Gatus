@@ -65,6 +65,21 @@ LOCATIONS = [
         "pbx": "https://longlewiscl.wildixin.com",
         "token_env": "PHONES_CULLMAN_TOKEN",
     },
+    # Decatur GMC and Decatur KIA share ONE PBX (longlewisde) and one token, so
+    # both cards will always show the same phone inventory. Two entries because
+    # the dashboard cards are keyed by endpoint name.
+    {
+        "key": "phones_decatur-gmc",       # slug(group=Phones)_slug(name=Decatur GMC)
+        "label": "Decatur GMC",
+        "pbx": "https://longlewisde.wildixin.com",
+        "token_env": "PHONES_DECATUR_TOKEN",
+    },
+    {
+        "key": "phones_decatur-kia",       # slug(group=Phones)_slug(name=Decatur KIA)
+        "label": "Decatur KIA",
+        "pbx": "https://longlewisde.wildixin.com",
+        "token_env": "PHONES_DECATUR_TOKEN",
+    },
     {
         "key": "phones_florence",          # slug(group=Phones)_slug(name=Florence)
         "label": "Florence",
@@ -247,6 +262,12 @@ def evaluate_health(phones, pbx_reachable, degraded_at, down_at):
     }
     if not pbx_reachable:
         status = "down"
+    elif not phones:
+        # PBX answered but reported ZERO registered desk phones. That is an
+        # outage, not a healthy site — without this branch the empty case falls
+        # through to "0 offline < threshold" and the card goes green with
+        # nothing behind it.
+        status = "down"
     elif monitored and online == 0:
         status = "down"
     elif offline >= down_at:
@@ -296,7 +317,11 @@ def run_location(loc, push_token, base):
     if pbx_reachable:
         try:
             code, body = http(f"{loc['pbx']}/api/v1/PBX/Users/Sip/Registrations", token)
-            reg_result = json.loads(body).get("result", {}) if code == 200 else {}
+            # A non-200 here (bad/expired token -> 401/403) used to fall through as
+            # an empty map, which read as "0 phones, all fine". Fail loudly instead.
+            if code != 200:
+                raise ValueError(f"registrations HTTP {code}")
+            reg_result = json.loads(body).get("result", {})
             # Wildix (PHP json_encode) serializes an EMPTY registrations map as a
             # JSON array [] rather than {} — a PBX with zero registered phones.
             # Coerce any non-dict (i.e. []) to {} so build_inventory doesn't crash.
@@ -315,7 +340,13 @@ def run_location(loc, push_token, base):
     success = status != "down"
     reason = None
     if status == "down":
-        reason = error or "all monitored phones offline"
+        # NOTE: the "no phones reporting" wording is a CONTRACT with the UI —
+        # LocationCard.vue matches it to paint the bar BLACK (nothing reported)
+        # instead of red (phones present but offline). Don't reword the prefix.
+        reason = error or (
+            "no phones reporting (PBX reachable, 0 desk phones registered)"
+            if not phones else "all monitored phones offline"
+        )
     elif status == "degraded":
         reason = f"{counts['offline']} of {counts['monitored']} desk phones offline"
 

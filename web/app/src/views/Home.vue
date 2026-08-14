@@ -38,7 +38,11 @@
         <!-- Locations Section -->
         <div v-if="locations.length > 0">
           <h2 v-if="filteredSuites.length > 0" class="text-lg font-semibold text-foreground mb-3">Locations</h2>
-          <div class="dashboard-grid grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5" :style="{ '--fs-cols': fsCols }">
+          <div class="dashboard-grid grid"
+            :class="(dashboardView === 'horizontal' || isFullscreen)
+              ? 'gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
+              : 'gap-5 grid-cols-1 max-w-3xl mx-auto'"
+            :style="{ '--fs-cols': fsCols }">
             <LocationCard
               v-for="(location, index) in paginatedLocations"
               :key="location.name"
@@ -107,7 +111,7 @@ import Settings from '@/components/Settings.vue'
 import Loading from '@/components/Loading.vue'
 import AnnouncementBanner from '@/components/AnnouncementBanner.vue'
 import PastAnnouncements from '@/components/PastAnnouncements.vue'
-import { controls, soundEnabled, simulations, knownLocations, isFullscreen } from '@/store'
+import { controls, soundEnabled, simulations, knownLocations, isFullscreen, dashboardView } from '@/store'
 import { playUp, playDown, playDegraded } from '@/utils/sounds'
 
 const props = defineProps({
@@ -135,7 +139,7 @@ const itemsPerPage = 96
 const resultPageSize = 50
 // Bars shown per row. Fewer on the fullscreen wall so each bar is thick and
 // readable from a distance; more in the normal grid where cards are smaller.
-const barsToShow = computed(() => isFullscreen.value ? 10 : 20)
+const barsToShow = computed(() => isFullscreen.value ? 8 : 20)
 
 // --- helpers ---
 const latestFailed = (ep) => {

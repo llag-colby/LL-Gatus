@@ -143,6 +143,24 @@ endpoints:
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
+  # ---------- Alabaster Body Shop ----------
+  # WAN 1 only — no WAN 2 and no phone system at this site, so those rows on the
+  # card stay empty. Separate card from Alabaster (cards group by `name`).
+  - name: Alabaster Body Shop
+    group: WAN 1 (ATT Fiber)
+    url: "icmp://107.222.141.62"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+
+  # ---------- Decatur KIA ----------
+  # NOTE: same IP as Decatur GMC above — both cards will always show identical
+  # status. Correct if the two stores sit behind one shared Spectrum circuit.
+  - name: Decatur KIA
+    group: WAN 1 (Spectrum Fiber)
+    url: "icmp://71.86.70.190"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+
 # Push-based receivers. Gatus does NOT call these — an external collector
 # (collector/phone_collector.py, run by cron) does the PBX check and POSTs a
 # pass/fail here.
@@ -163,6 +181,13 @@ external-endpoints:
     group: Phones
     token: "${PHONES_PUSH_TOKEN}"
   - name: Cullman
+    group: Phones
+    token: "${PHONES_PUSH_TOKEN}"
+  # Both Decatur stores sit on one PBX (longlewisde) — identical phone data.
+  - name: Decatur GMC
+    group: Phones
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Decatur KIA
     group: Phones
     token: "${PHONES_PUSH_TOKEN}"
   - name: Florence

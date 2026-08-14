@@ -175,7 +175,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { LogIn, Maximize, Minimize, RefreshCw, Volume2, VolumeX } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
@@ -189,6 +189,7 @@ import Loading from './components/Loading.vue'
 import jiraIcon from '@/assets/jira.png'
 import { requestRefresh, soundEnabled, setSoundEnabled, applyStatusColors, isFullscreen } from '@/store'
 import { unlockAudio } from '@/utils/sounds'
+import { installTooltips, hideTooltip } from '@/utils/tooltip'
 
 const route = useRoute()
 
@@ -202,6 +203,9 @@ const tooltipIsPersistent = ref(false)
 let configInterval = null
 
 const refreshData = () => requestRefresh()
+
+// A drill-in click leaves the hovered element behind — drop its bubble too.
+watch(() => route.path, () => hideTooltip())
 
 // Sound alerts toggle (the click also unlocks browser audio).
 const toggleSound = () => {
@@ -309,6 +313,7 @@ const handleDocumentClick = (event) => {
 // Fetch config on mount and set up interval
 onMounted(() => {
   applyStatusColors()   // push saved custom colors into CSS vars before first paint
+  installTooltips()     // global [data-tooltip] bubbles (fixed-position, clamped to the viewport)
   fetchConfig()
   fetchVersion()
   // Refresh config every 10 minutes for announcements

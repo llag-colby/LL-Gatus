@@ -81,6 +81,16 @@
 .stbar-degraded:hover, .stbar-degraded.sel { background-color: color-mix(in srgb, var(--status-degraded) 78%, #000); }
 .stbar-down:hover,     .stbar-down.sel     { background-color: color-mix(in srgb, var(--status-down) 72%, #000); }
 
+/* NOT REPORTING — the same empty grey as a slot with no data, because that is
+   exactly what it is. Red means the thing is there and failing (phones
+   registered but offline); this means nothing reported at all, so there is no
+   health signal to colour. Deliberately NOT part of the status palette — it
+   must never read as a state. Hovering still shows why (see LocationCard). */
+.stbar-nodata { background-color: #e5e7eb; }          /* gray-200 */
+.dark .stbar-nodata { background-color: #374151; }    /* gray-700 */
+.stbar-nodata:hover, .stbar-nodata.sel { background-color: #d1d5db; }
+.dark .stbar-nodata:hover, .dark .stbar-nodata.sel { background-color: #4b5563; }
+
 /* Status text (KPIs, event icons, badges). */
 .st-text-up   { color: var(--status-up) !important; }
 .st-text-degraded { color: var(--status-degraded) !important; }
@@ -167,79 +177,60 @@
 .expand-enter-to, .expand-leave-from   { opacity: 1; max-height: 1200px; }
 
 /* ------------------------------------------------------------------ */
-/*  Classy tooltips: any element with [data-tooltip="..."] gets one.  */
-/*  Add data-tip-pos="bottom" to make it appear below (e.g. header).  */
+/*  Tooltips: any element with [data-tooltip="..."] gets one.          */
+/*  Add data-tip-pos="bottom" to prefer appearing below (e.g. header). */
+/*                                                                     */
+/*  The bubble is ONE fixed-position node driven by utils/tooltip.js —  */
+/*  see the note there for why this isn't a ::after pseudo-element any  */
+/*  more (half-pixel centering made the text blurry, and the bubble got */
+/*  clipped by cards near the edge of the screen).                      */
+/*                                                                     */
+/*  Nothing here may use transform on the settled state: a composited   */
+/*  layer at a fractional offset is exactly what smeared the text.      */
 /* ------------------------------------------------------------------ */
-[data-tooltip]:not([data-tooltip=""]) {
-    position: relative;
-}
-
-[data-tooltip]:not([data-tooltip=""])::before,
-[data-tooltip]:not([data-tooltip=""])::after {
-    position: absolute;
-    left: 50%;
+.gt-tip {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 90;
     opacity: 0;
+    visibility: hidden;
     pointer-events: none;
-    z-index: 70;
-    transition: opacity var(--dur-2, .18s) var(--ease-out-expo, ease), transform var(--dur-2, .18s) var(--ease-out-expo, ease);
-    will-change: opacity, transform;
-}
-
-/* Bubble */
-[data-tooltip]:not([data-tooltip=""])::after {
-    content: attr(data-tooltip);
-    bottom: calc(100% + 9px);
-    transform: translateX(-50%) translateY(5px) scale(.97);
-    transform-origin: bottom center;
-    white-space: nowrap;
-    max-width: 320px;
     background: hsl(222.2 47% 11% / .97);
     color: #f8fafc;
     font-size: 12px;
     font-weight: 500;
-    line-height: 1.1;
+    line-height: 1.25;
     letter-spacing: .1px;
     padding: 7px 10px;
     border-radius: 8px;
     border: 1px solid rgb(255 255 255 / .08);
     box-shadow: 0 10px 30px -8px rgb(0 0 0 / .5), 0 3px 8px -3px rgb(0 0 0 / .35);
+    transition: opacity var(--dur-2, .18s) var(--ease-out-expo, ease);
+}
+.gt-tip--visible {
+    opacity: 1;
+    visibility: visible;
 }
 
-/* Arrow */
-[data-tooltip]:not([data-tooltip=""])::before {
-    content: "";
-    bottom: calc(100% + 4px);
-    transform: translateX(-50%) translateY(5px);
+/* Arrow — positioned by tooltip.js so it keeps pointing at the element even
+   after the bubble has been clamped against a screen edge. */
+.gt-tip__arrow {
+    position: absolute;
+    bottom: -10px;
+    margin-left: -5px;
     border: 5px solid transparent;
     border-top-color: hsl(222.2 47% 11% / .97);
 }
-
-[data-tooltip]:not([data-tooltip=""]):hover::after {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
-}
-[data-tooltip]:not([data-tooltip=""]):hover::before {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-}
-
-/* Bottom-positioned variant (for the sticky header) */
-[data-tooltip][data-tip-pos="bottom"]:not([data-tooltip=""])::after {
+.gt-tip--below .gt-tip__arrow {
     bottom: auto;
-    top: calc(100% + 9px);
-    transform-origin: top center;
-}
-[data-tooltip][data-tip-pos="bottom"]:not([data-tooltip=""])::before {
-    bottom: auto;
-    top: calc(100% + 4px);
+    top: -10px;
     border-top-color: transparent;
     border-bottom-color: hsl(222.2 47% 11% / .97);
 }
 
-@media (hover: none) {
-    /* Don't show hover tooltips on touch devices */
-    [data-tooltip]::before,
-    [data-tooltip]::after { display: none; }
+@media (prefers-reduced-motion: reduce) {
+    .gt-tip { transition: none; }
 }
 
 /* ------------------------------------------------------------------ */
@@ -261,6 +252,21 @@
 .fs-active header,
 .fs-active footer {
     display: none !important;
+}
+
+/* Settings pill (refresh interval + theme toggle): shrink it right down on the
+   wall so it reads as a small corner affordance instead of a UI control.
+   Scaled from the bottom-left corner so it stays tucked in the corner. */
+.fs-active #settings {
+    bottom: 0.5rem !important;
+    left: 0.5rem !important;
+    transform: scale(0.75) !important;
+    transform-origin: bottom left;
+    opacity: 0.55;
+    transition: opacity 0.2s ease;
+}
+.fs-active #settings:hover {
+    opacity: 1;
 }
 
 /* #global is the fullscreen element and fills the screen. Scrolling happens on
@@ -289,64 +295,98 @@
 .fs-active .home-view .mb-6:empty {
     display: none;
 }
-/* Balanced grid (columns computed from card count) that fills the whole screen */
-/* Cards fill the whole screen (computed columns, rows stretched to fill the
-   height). The spare height is consumed by ENLARGING the content — tall status
-   bars, evenly spaced — so each card reads as a dense, glanceable block from
-   across a room, with no big empty gaps or margins. */
+/* ---- Fullscreen wall layout (container-query scaled) -------------------
+   Each card is its own SIZE CONTAINER, so everything inside is sized in
+   card-relative units (cqw = 1% of card width, cqh = 1% of card height).
+   Result: the layout is proportional and looks identical on a 1080p or a
+   4K wall — the card scales, and text/bars/padding scale with it. No element
+   is stretched; the bars keep a proper short-and-wide proportion, and the
+   rows are distributed with even spacing so the card fills top to bottom.
+
+   Proportion budget per card (~100cqh tall):
+     header ~16 · four rows spread across ~72 · timestamp ~8, with 3cqh pad.
+   Tune the cq numbers to taste — bigger cqw = bigger text, bigger cqh = taller
+   bars/rows. */
 .fs-active .dashboard-grid {
-    height: calc(100vh - 28px);
+    height: calc(100vh - 14px);
     grid-template-columns: repeat(var(--fs-cols, 3), 1fr) !important;
     grid-auto-rows: 1fr;
-    gap: 16px;
+    gap: 0.9vh 0.7vw;
 }
 .fs-active .location {
     height: 100%;
+    container-type: size;
+}
+/* Slim the header padding so the title sits close to the top and the rows
+   get the bulk of the height. */
+.fs-active .location > :first-child {          /* CardHeader */
+    padding: 3cqh 5cqw 0 !important;
 }
 .fs-active .loc-content {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    height: 100%;
+    padding: 2cqh 5cqw 2.5cqh !important;
 }
+/* Rows spread evenly down the card (even rhythm, fills the height) without
+   stretching any bar. */
 .fs-active .loc-rows {
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.25rem 0;
+    padding: 1.5cqh 0;
 }
 .fs-active .loc-rows > * {
     margin-top: 0 !important;
 }
-/* Big bars so status is readable at wall-display distance. */
-.fs-active .loc-bars > div {
-    height: 3.75rem !important;
+.fs-active .loc-row {
+    display: flex;
+    align-items: center;
+    gap: 3cqw;
 }
 .fs-active .loc-bars {
-    gap: 6px;
+    gap: 1cqw;
 }
-/* Scale the typography up so every card reads from across the room. */
-.fs-active .location h3 {                 /* card title (location name) */
-    font-size: 2rem !important;
-    line-height: 1.1 !important;
+/* Short-and-wide status bars, sized to the card (not stretched). */
+.fs-active .loc-bars > div {
+    height: 8.5cqh !important;
+    border-radius: 0.6cqw;
 }
-.fs-active .rounded-full {                 /* status badge (Healthy / Down) */
-    font-size: 1rem !important;
-    padding: 0.28rem 0.85rem !important;
+/* Card title + status badge. */
+.fs-active .location h3 {
+    font-size: 8cqw !important;
+    line-height: 1.05 !important;
 }
-.fs-active .loc-rowlabel {                 /* WAN 1 / WAN 2 / Phones / Overall */
-    width: 8.5rem !important;
+/* Card status badge. MUST stay scoped to .location — as a bare
+   `.fs-active .rounded-full` this also hit the settings pill and the loading
+   spinner, and cq-unit padding forced onto a fixed-size circle stretched it
+   into an oval. Anything pill-shaped outside a card is not this badge. */
+.fs-active .location .rounded-full {
+    font-size: 3.6cqw !important;
+    padding: 0.8cqh 2.4cqw !important;
+}
+/* Row labels (WAN 1 / WAN 2 / Phones / Overall). */
+.fs-active .loc-rowlabel {
+    width: 26cqw !important;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 .fs-active .loc-rowlabel > a,
 .fs-active .loc-rowlabel > span {
-    font-size: 1.3rem !important;
+    font-size: 5cqw !important;
     line-height: 1.15 !important;
 }
-.fs-active .tabular-nums {                 /* trailing latency value */
-    font-size: 1.35rem !important;
+/* Trailing latency value on the Overall row. Scoped to .location for the same
+   reason as the badge above — tabular-nums is used all over the detail views,
+   which also render inside .fs-active. */
+.fs-active .location .tabular-nums {
+    font-size: 5cqw !important;
     width: auto !important;
-    padding-left: 0.5rem;
+    display: flex;
+    align-items: center;
+    padding-left: 1.5cqw;
 }
 /* ISP + IP under each WAN row — shown only in fullscreen, where there's room. */
 .loc-meta {
@@ -356,12 +396,13 @@
     display: block;
 }
 .fs-active .loc-meta div {
-    font-size: 0.95rem !important;
+    font-size: 3cqw !important;
+    line-height: 1.25;
 }
 .fs-active .loc-age {
-    margin-top: 0.5rem !important;
-    padding-left: 9rem !important;
-    font-size: 1.1rem !important;
+    margin-top: 0 !important;
+    padding-left: 29cqw !important;
+    font-size: 3.3cqw !important;
     white-space: nowrap;
 }
 

@@ -1,5 +1,6 @@
 <template>
-  <Card class="endpoint h-full flex flex-col transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg dark:hover:border-gray-700">
+  <!-- Shadow-only hover (no transform) — see LocationCard for why. -->
+  <Card class="endpoint h-full flex flex-col transition-[box-shadow,border-color] duration-200 ease-out hover:shadow-xl dark:hover:border-gray-700">
     <CardHeader class="endpoint-header px-3 sm:px-6 pt-3 sm:pt-6 pb-2 space-y-0">
       <div class="flex items-start justify-between gap-2 sm:gap-3">
         <div class="flex-1 min-w-0 overflow-hidden">

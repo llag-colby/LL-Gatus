@@ -3,6 +3,7 @@ import Home from '@/views/Home'
 import EndpointDetailRouter from "@/views/EndpointDetailRouter";
 import SuiteDetails from '@/views/SuiteDetails';
 import JiraDetails from '@/views/JiraDetails';
+import SiteOverview from '@/views/SiteOverview';
 
 const routes = [
     {
@@ -14,6 +15,13 @@ const routes = [
         path: '/endpoints/:key',
         name: 'EndpointDetails',
         component: EndpointDetailRouter,
+    },
+    {
+        // Whole-site drill-in (the Overall row on a location card). Keyed by
+        // endpoint `name`, which is what groups endpoints into a site.
+        path: '/sites/:name',
+        name: 'SiteOverview',
+        component: SiteOverview,
     },
     {
         path: '/suites/:key',

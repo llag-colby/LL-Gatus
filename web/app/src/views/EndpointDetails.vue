@@ -28,6 +28,10 @@
               :data-tooltip="showAverageResponseTime ? 'Showing average response time' : 'Showing min–max response time'">
               <Activity v-if="showAverageResponseTime" class="h-5 w-5" /><Timer v-else class="h-5 w-5" />
             </Button>
+            <Button variant="ghost" size="icon" class="h-9 w-9" @click="forcePing" :disabled="isPinging"
+              data-tooltip="Force ping now" data-tip-pos="bottom">
+              <Zap class="h-5 w-5" :class="{ 'animate-pulse text-primary': isPinging }" />
+            </Button>
             <Button variant="ghost" size="icon" class="h-9 w-9" @click="fetchData" :disabled="isRefreshing" data-tooltip="Refresh data">
               <RefreshCw :class="['h-4 w-4', isRefreshing && 'animate-spin']" />
             </Button>
@@ -206,12 +210,13 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ArrowLeft, RefreshCw, ArrowUpCircle, ArrowDownCircle, PlayCircle, Activity, Timer, ChevronLeft, ChevronRight, Download } from 'lucide-vue-next'
+import { ArrowLeft, RefreshCw, ArrowUpCircle, ArrowDownCircle, PlayCircle, Activity, Timer, ChevronLeft, ChevronRight, Download, Zap } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import StatusBadge from '@/components/StatusBadge.vue'
 import EndpointCard from '@/components/EndpointCard.vue'
 import Settings from '@/components/Settings.vue'
+import { addToast } from '@/store'
 import Loading from '@/components/Loading.vue'
 import ResponseTimeChart from '@/components/ResponseTimeChart.vue'
 import { generatePrettyTimeAgo, generatePrettyTimeDifference } from '@/utils/time'
@@ -384,6 +389,36 @@ const fetchData = async () => {
     console.error('[Details][fetchData] Error:', error)
   } finally {
     isRefreshing.value = false
+  }
+}
+
+// Force ping: run one check right now instead of waiting out the endpoint's
+// interval. The backend stores the result like any scheduled check, so we just
+// re-fetch afterwards to pull it into the timeline.
+const isPinging = ref(false)
+const forcePing = async () => {
+  if (isPinging.value) return
+  isPinging.value = true
+  try {
+    const res = await fetch(`/api/v1/endpoints/${route.params.key}/check`, {
+      method: 'POST',
+      credentials: 'include'
+    })
+    const data = await res.json().catch(() => ({}))
+    if (res.status === 429) {
+      addToast(`Checked a moment ago — try again in ${Math.ceil((data.retryAfterMs || 3000) / 1000)}s`, 'error')
+    } else if (!res.ok) {
+      addToast(data.error || 'Ping failed to run — try again', 'error')
+    } else if (data.success) {
+      addToast(`Ping OK — ${data.durationMs}ms`, 'success')
+    } else {
+      addToast(`Ping failed${data.errors && data.errors.length ? ' — ' + data.errors[0] : ''}`, 'error')
+    }
+    if (res.ok) await fetchData()
+  } catch (e) {
+    addToast('Ping failed to run — try again', 'error')
+  } finally {
+    isPinging.value = false
   }
 }
 

@@ -118,6 +118,7 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	app.Get("/", SinglePageApplication(cfg.UI))
 	app.Get("/endpoints/:key", SinglePageApplication(cfg.UI))
 	app.Get("/suites/:key", SinglePageApplication(cfg.UI))
+	app.Get("/sites/:name", SinglePageApplication(cfg.UI))
 	app.Get("/jira", SinglePageApplication(cfg.UI))
 	// Health endpoint
 	healthHandler := health.Handler().WithJSON(true)
@@ -158,6 +159,9 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	}
 	protectedAPIRouter.Get("/v1/endpoints/statuses", EndpointStatuses(cfg))
 	protectedAPIRouter.Get("/v1/endpoints/:key/statuses", EndpointStatus(cfg))
+	// Force ping: runs one out-of-band check now instead of waiting out the
+	// endpoint's interval (the "Force ping" button on the endpoint drill-in).
+	protectedAPIRouter.Post("/v1/endpoints/:key/check", ForceEndpointCheck(cfg))
 	protectedAPIRouter.Get("/v1/suites/statuses", SuiteStatuses(cfg))
 	protectedAPIRouter.Get("/v1/suites/:key/statuses", SuiteStatus(cfg))
 	// Live status stream (SSE) — a single broadcaster pushes the same snapshot

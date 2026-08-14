@@ -3,7 +3,7 @@
     id="tooltip"
     ref="tooltip"
     :class="[
-      'rich-tip absolute z-50 px-3 py-2 text-sm rounded-md shadow-lg border',
+      'rich-tip fixed z-50 px-3 py-2 text-sm rounded-md shadow-lg border',
       'bg-popover text-popover-foreground border-border',
       hidden ? 'invisible opacity-0 translate-y-1 scale-[0.98] pointer-events-none' : 'visible opacity-100 translate-y-0 scale-100'
     ]"
@@ -149,46 +149,29 @@ const updatePosition = async () => {
   const targetRect = targetElement.value.getBoundingClientRect()
   const tooltipRect = tooltip.value.getBoundingClientRect()
 
-  // For absolute positioning, we need to add scroll offsets
-  const scrollTop = window.pageYOffset || document.documentElement.scrollTop
-  const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft
+  // Fixed positioning, so these are plain viewport coordinates — no scroll
+  // offsets. (They used to be added for absolute positioning, which put the
+  // tooltip in the wrong place inside the full-screen wall view, where the app
+  // container scrolls rather than the document.)
+  const margin = 8
+  let newTop = targetRect.bottom + margin
+  let newLeft = targetRect.left
 
-  // Default position: below the target (viewport coords + scroll offset)
-  let newTop = targetRect.bottom + scrollTop + 8
-  let newLeft = targetRect.left + scrollLeft
-
-  // Check if tooltip would overflow the viewport bottom
-  const spaceBelow = window.innerHeight - targetRect.bottom
-  const spaceAbove = targetRect.top
-
-  if (spaceBelow < tooltipRect.height + 20) {
-    // Not enough space below, try above
-    if (spaceAbove > tooltipRect.height + 20) {
-      // Position above
-      newTop = targetRect.top + scrollTop - tooltipRect.height - 8
-    } else {
-      // Not enough space above either, position at the best spot
-      if (spaceAbove > spaceBelow) {
-        // More space above
-        newTop = scrollTop + 10
-      } else {
-        // More space below or equal, keep below but adjust
-        newTop = scrollTop + window.innerHeight - tooltipRect.height - 10
-      }
-    }
+  // Flip above the target when it won't fit below.
+  if (newTop + tooltipRect.height > window.innerHeight - margin) {
+    const above = targetRect.top - tooltipRect.height - margin
+    newTop = above >= margin ? above : Math.max(margin, window.innerHeight - tooltipRect.height - margin)
   }
 
-  // Adjust horizontal position if tooltip would overflow right edge
-  const spaceRight = window.innerWidth - targetRect.left
-  if (spaceRight < tooltipRect.width + 20) {
-    // Align right edge of tooltip with right edge of target
-    newLeft = targetRect.right + scrollLeft - tooltipRect.width
-    // Make sure it doesn't go off the left edge
-    if (newLeft < scrollLeft + 10) {
-      newLeft = scrollLeft + 10
-    }
+  // Prefer left-aligned with the target; pull it back in when that would hang
+  // off the right edge, then clamp so it can never leave the viewport.
+  if (newLeft + tooltipRect.width > window.innerWidth - margin) {
+    newLeft = targetRect.right - tooltipRect.width
   }
+  newLeft = Math.max(margin, Math.min(newLeft, window.innerWidth - tooltipRect.width - margin))
+  newTop = Math.max(margin, Math.min(newTop, window.innerHeight - tooltipRect.height - margin))
 
+  // Integer coordinates only — a half-pixel offset renders the text blurry.
   top.value = Math.round(newTop)
   left.value = Math.round(newLeft)
 }
@@ -279,6 +262,8 @@ watch(() => route.path, () => {
   transition: opacity var(--dur-2, .18s) var(--ease-out-quart, ease),
               transform var(--dur-2, .18s) var(--ease-out-quart, ease);
   transform-origin: top left;
-  will-change: opacity, transform;
+  /* Only opacity is promoted: keeping `transform` in will-change pins the
+     tooltip on a composited layer for good, which softens its text. */
+  will-change: opacity;
 }
 </style>

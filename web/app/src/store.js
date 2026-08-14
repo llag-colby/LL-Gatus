@@ -9,17 +9,17 @@ function fromConfig(key) {
 }
 
 const savedSort = (typeof localStorage !== 'undefined' && localStorage.getItem('gatus:sort-by')) || fromConfig('defaultSortBy') || 'name'
-const savedFilter = (typeof localStorage !== 'undefined' && localStorage.getItem('gatus:filter-by')) || fromConfig('defaultFilterBy') || 'none'
 const savedShowAvg = typeof localStorage === 'undefined' || localStorage.getItem('gatus:show-average-response-time') !== 'false'
 
 // Shared dashboard controls. Lives outside the router-view so the header (App.vue)
-// and the dashboard (Home.vue) can share the same search / filter / sort state.
+// and the dashboard (Home.vue) share the same search / sort state. Health
+// filtering was removed from the UI (kept simple), so it always defaults off.
 export const controls = reactive({
   searchQuery: '',
-  filterBy: savedFilter,
+  filterBy: 'none',
   sortBy: savedSort,
-  showOnlyFailing: savedFilter === 'failing',
-  showRecentFailures: savedFilter === 'unstable',
+  showOnlyFailing: false,
+  showRecentFailures: false,
   groupByGroup: savedSort === 'group',
   showAverageResponseTime: savedShowAvg,
 })
@@ -99,6 +99,17 @@ export const knownLocations = ref([])
 // fullscreenchange; read by Home.vue to render fewer, thicker status bars
 // (a wall reads better with chunky bars than a wall of thin ticks).
 export const isFullscreen = ref(false)
+
+// Dashboard layout view (independent of fullscreen):
+//   'vertical'   — every location card full-width, stacked in one column (default)
+//   'horizontal' — the multi-column grid flowing across the screen
+export const dashboardView = ref(
+  (typeof localStorage !== 'undefined' && localStorage.getItem('gatus:view')) || 'vertical'
+)
+export function setDashboardView(value) {
+  dashboardView.value = value === 'horizontal' ? 'horizontal' : 'vertical'
+  if (typeof localStorage !== 'undefined') localStorage.setItem('gatus:view', dashboardView.value)
+}
 
 // Live clock anchored to the SERVER's time, so every browser computes the same
 // relative "x ago" labels regardless of its own (possibly wrong) local clock.
