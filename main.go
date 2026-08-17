@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/TwiN/gatus/v5/auth"
 	"github.com/TwiN/gatus/v5/config"
 	"github.com/TwiN/gatus/v5/controller"
 	"github.com/TwiN/gatus/v5/history"
@@ -26,6 +27,11 @@ const (
 	// volume, so it survives updates but is not subject to the Gatus store's
 	// cascading deletes.
 	historyDatabasePath = "/data/history.db"
+
+	// Local user accounts and sessions. Its own file for the same reasons as the
+	// history database above, plus one of its own: a login query has no business
+	// queueing behind the Gatus store's single connection.
+	authDatabasePath = "/data/auth.db"
 )
 
 func main() {
@@ -66,6 +72,16 @@ func start(cfg *config.Config) {
 	if err := history.Open(historyDatabasePath); err != nil {
 		logr.Errorf("[main.start] Metric history is unavailable: %s", err.Error())
 	}
+	// User accounts. A failure here is logged and the dashboard carries on with
+	// auth disabled: nobody can sign in, and every control reverts to the
+	// anonymous behaviour it had before accounts existed. That is a far better
+	// outcome on a wallboard than refusing to boot over a login feature. Open is
+	// idempotent and EnsureAdmin is a no-op on a closed database, so both are safe
+	// on the restart path that a configuration change takes through start().
+	if err := auth.Open(authDatabasePath); err != nil {
+		logr.Errorf("[main.start] User accounts are unavailable: %s", err.Error())
+	}
+	auth.EnsureAdmin()
 	watchdog.Monitor(cfg)
 	jira.StartPoller() // background Jira service-desk metrics (no-op unless configured)
 	go listenToConfigurationFileChanges(cfg)

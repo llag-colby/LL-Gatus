@@ -62,16 +62,16 @@
                UniFi rows, best-of latency on Overall. Same reserved width on
                every row so all the bar sets stay perfectly aligned. -->
           <div
-            class="loc-rowvalue w-14 sm:w-16 shrink-0 text-right"
+            class="loc-rowvalue w-[62px] sm:w-[70px] shrink-0 text-right overflow-hidden"
             :data-tooltip="row.isOverall ? 'Current best latency across WANs' : null"
           >
             <div
               :class="[
-                'truncate text-[11px] sm:text-xs tabular-nums leading-tight',
+                'truncate text-[10px] sm:text-[11px] tabular-nums leading-tight',
                 row.valueBad ? 'text-destructive font-medium' : 'text-muted-foreground'
               ]"
             >{{ row.value }}</div>
-            <div v-if="row.valueSub" class="loc-meta truncate text-[11px] text-muted-foreground/70 tabular-nums leading-tight">
+            <div v-if="row.valueSub" class="loc-meta truncate text-[10px] text-muted-foreground/70 tabular-nums leading-tight">
               {{ row.valueSub }}
             </div>
           </div>

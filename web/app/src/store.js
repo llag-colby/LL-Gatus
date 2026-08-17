@@ -1,4 +1,4 @@
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 
 // Reads a value from window.config, ignoring unreplaced Go template placeholders.
 function fromConfig(key) {
@@ -243,3 +243,110 @@ async function syncServerTime() {
 }
 syncServerTime()
 setInterval(syncServerTime, 60000)
+
+// --- Sign-in, session and roles ---
+// The session cookie is HttpOnly, so the browser can never read it. Everything
+// the UI knows about who is signed in comes from /auth/me, which always answers
+// 200 (never 401) precisely so a signed-out page is a normal state rather than
+// an error to handle at every call site.
+//
+// Roles are ordered: viewer < operator < admin.
+export const ROLES = ['viewer', 'operator', 'admin']
+
+export const authState = reactive({
+  enabled: false,
+  authenticated: false,
+  user: null,
+})
+
+// Pulls the server's message out of an error body so the UI can show what the
+// server actually said, falling back to something actionable when it says
+// nothing useful.
+async function authErrorMessage(response, fallback) {
+  try {
+    const data = await response.json()
+    if (data && typeof data.error === 'string' && data.error.trim()) return data.error
+  } catch (e) {
+    // no JSON body — use the fallback
+  }
+  return fallback
+}
+
+// Never throws: a failed poll leaves the last known session in place rather
+// than blanking the header.
+export async function refreshAuth() {
+  try {
+    const response = await fetch('/api/v1/auth/me', { cache: 'no-store', credentials: 'include' })
+    if (!response.ok) return
+    const data = await response.json()
+    authState.enabled = !!data.enabled
+    authState.authenticated = !!data.authenticated
+    authState.user = data.user || null
+  } catch (e) {
+    // non-fatal — keep the session we already know about
+  }
+}
+
+export async function login(username, password) {
+  let response
+  try {
+    response = await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ username, password }),
+    })
+  } catch (e) {
+    throw new Error('Could not reach the server. Check your connection and try again.')
+  }
+  if (!response.ok) {
+    throw new Error(await authErrorMessage(response, 'Sign-in failed. Check your username and password.'))
+  }
+  await refreshAuth()
+}
+
+export async function logout() {
+  try {
+    await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' })
+  } catch (e) {
+    // non-fatal — the refresh below settles the real state
+  }
+  await refreshAuth()
+}
+
+export async function changePassword(current, next) {
+  let response
+  try {
+    response = await fetch('/api/v1/auth/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ currentPassword: current, newPassword: next }),
+    })
+  } catch (e) {
+    throw new Error('Could not reach the server. Check your connection and try again.')
+  }
+  if (!response.ok) {
+    throw new Error(await authErrorMessage(response, 'Could not change the password. Try again.'))
+  }
+}
+
+// Anonymous visitors read as 'viewer', which is also what every control checks
+// against, so there is one code path instead of two.
+export const currentRole = computed(() => {
+  const role = authState.authenticated && authState.user ? authState.user.role : null
+  return ROLES.includes(role) ? role : 'viewer'
+})
+
+// The single permission helper. When auth is switched off (or the backend that
+// serves it is missing) this returns true for everything, so a deployment
+// without auth behaves exactly as it did before auth existed rather than
+// disabling every control on the page.
+export function can(minimumRole = 'viewer') {
+  if (!authState.enabled) return true
+  const required = ROLES.indexOf(minimumRole)
+  if (required === -1) return false // unknown role name: deny rather than grant
+  return ROLES.indexOf(currentRole.value) >= required
+}
+
+refreshAuth()

@@ -98,6 +98,7 @@
                        background-image workaround the Jira icon requires. -->
                   <SatelliteDish class="h-5 w-5" />
                 </router-link>
+                <UserMenu />
               </div>
 
               <!-- Optional configured navigation buttons -->
@@ -198,6 +199,7 @@ import SimulatePanel from './components/SimulatePanel.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import Social from './components/Social.vue'
 import Tooltip from './components/Tooltip.vue'
+import UserMenu from './components/UserMenu.vue'
 import Loading from './components/Loading.vue'
 import jiraIcon from '@/assets/jira.png'
 import { requestRefresh, soundEnabled, setSoundEnabled, applyStatusColors, isFullscreen } from '@/store'

@@ -380,7 +380,7 @@ onUnmounted(() => {
 
 .live-ind { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-family: ui-monospace, monospace; color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.08em; }
 .live-ind .ldot { width: 7px; height: 7px; border-radius: 999px; background: hsl(var(--muted-foreground) / 0.5); }
-.live-ind.on { color: #7bbd8a; }
+.live-ind.on { color: hsl(var(--foreground)); }
 .live-ind.on .ldot { background: #5aa06b; }
 
 /* page tabs: a hairline rail rather than a filled pill, so the KPI rail below

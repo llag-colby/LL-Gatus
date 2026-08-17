@@ -1,5 +1,12 @@
 <template>
-  <div class="mtoggle" :class="{ 'is-compact': compact, 'is-paused': !monitored }">
+  <!-- The tooltip lives on the wrapper, not the switch: a disabled button gets
+       no pointer events, so a bubble bound to it would never appear. -->
+  <div
+    class="mtoggle"
+    :class="{ 'is-compact': compact, 'is-paused': !monitored, 'is-locked': !allowed }"
+    :data-tooltip="allowed ? null : 'Sign in to change monitoring'"
+    data-tip-pos="bottom"
+  >
     <button
       ref="switchEl"
       type="button"
@@ -9,6 +16,8 @@
       :aria-checked="monitored ? 'true' : 'false'"
       :aria-labelledby="labelId"
       :aria-describedby="noteId"
+      :disabled="!allowed"
+      :aria-disabled="!allowed ? 'true' : 'false'"
       @click="toggle"
       @keydown.space.prevent="toggle"
       @keydown.enter.prevent="toggle"
@@ -25,7 +34,7 @@
 
 <script setup>
 import { computed, ref, useId } from 'vue'
-import { isMonitored, setMonitored } from '@/store'
+import { can, isMonitored, setMonitored } from '@/store'
 
 const props = defineProps({
   endpointKey: { type: String, required: true },
@@ -42,7 +51,16 @@ const switchEl = ref(null)
 // the ref itself, which is exactly what isMonitored touches).
 const monitored = computed(() => isMonitored(props.endpointKey))
 
-const toggle = () => setMonitored(props.endpointKey, !monitored.value)
+// Pausing changes state, so it needs operator. `can` is true whenever accounts
+// are switched off, which keeps an account-less deployment behaving as before.
+const allowed = computed(() => can('operator'))
+
+// Guarded as well as disabled: the markup is a hint, this is the control. A
+// stale render or a console click must not reach the store.
+const toggle = () => {
+  if (!can('operator')) return
+  setMonitored(props.endpointKey, !monitored.value)
+}
 
 // Says what pausing actually does. Paused is a choice, not a fault, so it reads
 // amber rather than red — and it names the one thing people worry about losing.
@@ -93,6 +111,10 @@ const note = computed(() => {
   transform: translateX(17px);
 }
 .sw:hover { border-color: hsl(var(--muted-foreground) / 0.55); }
+/* Visibly inert but still on screen: a viewer should see that the control
+   exists and is out of reach, not an empty space. */
+.sw:disabled { cursor: not-allowed; opacity: 0.5; }
+.sw:disabled:hover { border-color: hsl(var(--border)); }
 .sw:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
@@ -129,6 +151,8 @@ const note = computed(() => {
 }
 .is-paused .mt-label,
 .is-paused .mt-note { color: #e0a458; }
+.is-locked .mt-label,
+.is-locked .mt-note { opacity: 0.7; }
 
 .is-compact { gap: 0.45rem; }
 .is-compact .mt-text { flex-direction: row; align-items: baseline; gap: 0.4rem; }

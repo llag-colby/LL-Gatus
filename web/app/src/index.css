@@ -381,15 +381,26 @@
 /* Trailing metric column on every row (latency, WAN/AP counts, best-of latency
    on Overall). Scoped to .location for the same reason as the badge above. */
 .fs-active .location .loc-rowvalue {
-    width: 14cqw !important;
+    width: 15cqw !important;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: flex-end;
     padding-left: 1.5cqw;
+    /* A flex item defaults to min-width:auto, so "19/23 AP" refused to shrink,
+       burst out of this column and sat on top of the status bars to its left.
+       Clipping here plus min-width:0 on the children is what actually lets the
+       child's truncate do its job. */
+    overflow: hidden;
 }
+.fs-active .location .loc-rowvalue > div {
+    min-width: 0;
+    max-width: 100%;
+}
+/* Smaller than the row label (5cqw): this column is little over half the width
+   of the label column, and its values are longer. */
 .fs-active .location .loc-rowvalue > div:first-child {
-    font-size: 5cqw !important;
+    font-size: 4cqw !important;
     line-height: 1.15 !important;
 }
 /* Secondary lines — ISP + IP under a WAN row, client/latency detail under a

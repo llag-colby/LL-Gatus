@@ -5,6 +5,7 @@ import SuiteDetails from '@/views/SuiteDetails';
 import JiraDetails from '@/views/JiraDetails';
 import SiteOverview from '@/views/SiteOverview';
 import TelemetryConsole from '@/views/TelemetryConsole';
+import SettingsView from '@/views/SettingsView';
 
 const routes = [
     {
@@ -40,6 +41,13 @@ const routes = [
         path: '/ll-telemetry',
         name: 'Telemetry',
         component: TelemetryConsole
+    },
+    {
+        // Account, users, monitoring overview and the role reference. The page
+        // renders per role: the admin sections are absent, not disabled.
+        path: '/settings',
+        name: 'Settings',
+        component: SettingsView
     }
 ];
 

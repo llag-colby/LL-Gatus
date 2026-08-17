@@ -132,7 +132,6 @@
                   <div class="wire">
                     <span class="node node-gw" aria-hidden="true"></span>
                     <span class="span">
-                      <i class="pulse" aria-hidden="true"></i>
                       <span class="chip chip-if">
                         {{ w.interface || 'unnamed port' }}
                         <span v-if="w.port !== null && w.port !== undefined" class="chip-dim">port {{ w.port }}</span>
@@ -151,7 +150,7 @@
           </div>
 
           <div class="legend">
-            <span class="lg"><i class="key k-up"></i>carrying traffic</span>
+            <span class="lg"><i class="key k-up"></i>up</span>
             <span class="lg"><i class="key k-linked"></i>link up, no address</span>
             <span class="lg"><i class="key k-down"></i>no link</span>
           </div>
@@ -171,8 +170,8 @@
         </div>
         <div v-else-if="status === 'degraded' && notCarrying.length" class="partial">
           <AlertTriangle class="h-3.5 w-3.5" />
-          {{ notCarrying.join(', ') }} {{ notCarrying.length === 1 ? 'is' : 'are' }} not carrying traffic. A working
-          path remains, so Gatus records the check as a pass — chase the uplink marked above.
+          {{ notCarrying.join(', ') }} {{ notCarrying.length === 1 ? 'is' : 'are' }} down. A working
+          path remains, so Gatus records the check as a pass. Chase the uplink marked above.
         </div>
 
         <!-- Result history -->
@@ -278,9 +277,9 @@ const gateway = computed(() => detail.value.gateway || {})
 // The collector already sorts WAN before WAN2 before WAN3, so the primary reads first.
 const wans = computed(() => (Array.isArray(detail.value.wans) ? detail.value.wans : []))
 
-// A WAN is only carrying when the port has link AND an address on it.
-const wanState = (w) => (w.up ? 'carrying' : w.plugged ? 'linked' : 'down')
-const STATE_LABELS = { carrying: 'carrying', linked: 'linked, no address', down: 'no link' }
+// A WAN is only up when the port has link AND an address on it.
+const wanState = (w) => (w.up ? 'up' : w.plugged ? 'linked' : 'down')
+const STATE_LABELS = { up: 'up', linked: 'linked, no address', down: 'no link' }
 const stateLabel = (w) => STATE_LABELS[wanState(w)]
 const notCarrying = computed(() => wans.value.filter(w => !w.up).map(w => w.id))
 
@@ -288,7 +287,7 @@ const uplinkSummary = computed(() => {
   const total = counts.value.wansTotal != null ? counts.value.wansTotal : wans.value.length
   const up = counts.value.wansUp != null ? counts.value.wansUp : wans.value.filter(w => w.up).length
   if (!total) return 'no uplinks'
-  return `${up} of ${total} ${total === 1 ? 'uplink' : 'uplinks'} carrying`
+  return `${up} of ${total} ${total === 1 ? 'uplink' : 'uplinks'} up`
 })
 
 const STATUS_META = {
@@ -571,7 +570,7 @@ onUnmounted(() => {
 /* --- live indicator (same idiom as the Jira board) --- */
 .live-ind { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.08em; }
 .live-ind .ldot { width: 7px; height: 7px; border-radius: 999px; background: hsl(var(--muted-foreground) / 0.5); }
-.live-ind.on { color: #7bbd8a; }
+.live-ind.on { color: hsl(var(--foreground)); }
 .live-ind.on .ldot { background: #5aa06b; }
 
 /* --- states --- */
@@ -608,7 +607,7 @@ onUnmounted(() => {
 /* ================================================================= */
 /*  THE UPLINK LADDER                                                 */
 /*  Every WAN is drawn as a path from the gateway to the internet.     */
-/*  Solid sage = carrying · dashed amber = linked but no address ·     */
+/*  Solid sage = up      · dashed amber = linked but no address ·     */
 /*  cut terracotta = no link. Facts ride on the wire itself.           */
 /* ================================================================= */
 .ladder-wrap { overflow-x: auto; }
@@ -644,9 +643,6 @@ onUnmounted(() => {
 .chip-speed { flex: 0 0 auto; border: 1px solid hsl(var(--border)); border-radius: 999px; padding: 0.05rem 0.5rem; font-size: 0.66rem; letter-spacing: 0.03em; color: hsl(var(--muted-foreground)); }
 .chip-ip { flex: 0 0 auto; margin-left: auto; font-weight: 600; }
 
-/* a travelling pulse, only on a wire that is actually carrying */
-.pulse { display: none; }
-
 /* the cut, for a wire with no link */
 .break { position: relative; z-index: 1; flex: 0 0 auto; margin-left: auto; width: 18px; height: 14px; background: hsl(var(--card)); }
 .break::before, .break::after { content: ''; position: absolute; top: 0; width: 2px; height: 14px; border-radius: 2px; background: #ef6b53; transform: rotate(24deg); }
@@ -656,12 +652,12 @@ onUnmounted(() => {
 
 .rung-state { text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; color: hsl(var(--muted-foreground)); }
 
-/* carrying */
-.rung.s-carrying .span::before { background: #5aa06b; }
-.rung.s-carrying .node-gw { background: #5aa06b; }
-.rung.s-carrying .node-net { background: #5aa06b; border-color: #5aa06b; box-shadow: 0 0 8px -1px #5aa06b; }
-.rung.s-carrying .rung-state { color: #7bbd8a; }
-.rung.s-carrying .chip-ip { color: #7bbd8a; }
+/* up: link and an address */
+.rung.s-up .span::before { background: #5aa06b; }
+.rung.s-up .node-gw { background: #5aa06b; }
+.rung.s-up .node-net { background: #5aa06b; border-color: #5aa06b; box-shadow: 0 0 8px -1px #5aa06b; }
+.rung.s-up .rung-state { color: #7bbd8a; }
+.rung.s-up .chip-ip { color: #7bbd8a; }
 
 /* linked, but not carrying an address */
 .rung.s-linked .span::before { background: repeating-linear-gradient(90deg, #e0a458 0 8px, transparent 8px 15px); }
@@ -695,20 +691,6 @@ onUnmounted(() => {
 .hist-head .sec-title { margin-bottom: 0; }
 .chart-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
 
-@media (prefers-reduced-motion: no-preference) {
-  .rung.s-carrying .pulse {
-    display: block; position: absolute; top: 50%; left: 0; z-index: 0;
-    width: 6px; height: 6px; margin-top: -3px; border-radius: 999px;
-    background: #8fd4a2; box-shadow: 0 0 7px -1px #5aa06b;
-    animation: uplink-flow 3.2s linear infinite;
-  }
-}
-@keyframes uplink-flow {
-  0% { left: 0; opacity: 0; }
-  12% { opacity: 1; }
-  88% { opacity: 1; }
-  100% { left: 100%; opacity: 0; }
-}
 
 /* --- mobile: the wire gets its own full-width row --- */
 @media (max-width: 719px) {
