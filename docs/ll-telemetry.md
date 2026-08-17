@@ -234,34 +234,6 @@ The telemetry API is never published to the host: it is reachable only over the
 compose network, and MariaDB sits on an `internal: true` network with no route
 off the host.
 
-### Seeding demo data
-
-Nothing writes to a locally-run telemetry database. The real field scripts POST
-to `telemetry.longlewis.local`, not to this box, so a fresh local stack renders
-a perfectly working console reporting zero events.
-
-```sh
-docker compose -f docker-compose.yml -f docker-compose.telemetry.yml \
-  --profile seed run --rm lltel-seed
-```
-
-This posts a few hundred runs through the real ingest path, so it exercises
-server-side site resolution, field clipping and replay de-duplication the same
-way a field script would. It includes one deliberately unmapped subnet so the
-console's "unmapped subnets" panel has something to show.
-
-Two optional knobs:
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `SEED_RUNS` | `280` | How many runs to post |
-| `SEED_DAYS` | `3` | How far back to spread them |
-
-The default stays just under the upstream's ingest rate limit (300 per rolling
-300s per source IP), since every seeded run arrives from one container. Larger
-values are fine: the seeder reads `Retry-After` on a 429 and waits the window
-out rather than dropping runs.
-
 ## Two upstream bugs this depended on
 
 Both are fixed on the `fix/keys-panel-and-schema-mount` branch of LL-Telemetry:
@@ -300,7 +272,6 @@ panels forever.
 | `web/app/src/App.vue` | Header button |
 | `web/app/src/router/index.js` | `/ll-telemetry` route |
 | `docker-compose.telemetry.yml` | Local MariaDB + FastAPI stack |
-| `collector/seed_telemetry.py` | Demo-data seeder |
 
 ## Site resolution
 

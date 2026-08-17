@@ -70,30 +70,6 @@ services:
       - default
       - lltel-internal
 
-  # One-shot demo seeder. Nothing writes to a locally-run telemetry database:
-  # the real field scripts POST to telemetry.longlewis.local, not here. Without
-  # this the console renders correctly and reports zero events.
-  #
-  #   docker compose -f docker-compose.yml -f docker-compose.telemetry.yml \
-  #     --profile seed run --rm lltel-seed
-  lltel-seed:
-    image: python:3-slim
-    container_name: gatus-lltel-seed
-    profiles: ["seed"]
-    depends_on:
-      - lltel-api
-    environment:
-      LLTEL_BASE: http://lltel-api:8080
-      LL_INGEST_TOKEN: ${LL_INGEST_TOKEN:-local-dev-ingest-token}
-      PYTHONUNBUFFERED: "1"
-      TZ: America/Chicago
-    volumes:
-      - ./collector:/collector
-    working_dir: /collector
-    command: ["python", "seed_telemetry.py"]
-    networks:
-      - default
-
 networks:
   lltel-internal:
     internal: true

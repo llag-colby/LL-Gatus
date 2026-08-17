@@ -56,12 +56,12 @@ config, and the startup console/CSP assertions. `go vet ./api/...` is clean.
 Auth 401 without credentials / 200 with; console 200; `POST /runs` via proxy
 403; traversal (`%2e%2e`, literal `../`, encoded slash) all 403; key mint →
 revoke → delete lifecycle including the active-key delete refusal; CSP script
-hash independently recomputed and matched; 300 seeded runs readable through the
+hash independently recomputed and matched; run data readable through the
 proxy.
 
-**Not verified:** visual rendering in a real browser. Loading the page triggers
-a native basic-auth dialog, which would have frozen the browser-automation
-session. Needs a human eyeball.
+**Not verified:** visual rendering in a real browser. Signing in triggers
+a credential prompt the browser-automation session could not complete safely.
+Needs a human eyeball.
 
 ## Open items
 

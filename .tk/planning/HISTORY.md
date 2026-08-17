@@ -39,7 +39,7 @@ Four reviewers: 5 blockers, 1 HIGH security finding, all fixed.
 - `renderRibbon(RIB)` threw while `RIB` was still null (during load, and forever
   if the API was down), which also stopped the river re-filtering on release.
 - `telemetryFailures` was never swept; the lockout window did not slide.
-- An auth bypass I caught before the reviewers: the session exemption used
+- An auth bypass caught before review: the session exemption used
   `strings.HasSuffix`, so `/api/v1/telemetry/runs/x/telemetry/session` skipped
   the gate. Only the allowlist stopped it reaching the upstream. Now exact.
 
@@ -63,7 +63,7 @@ reached from a satellite-dish button in the header.
 
 **New:** `api/telemetry.go`, `api/assets/telemetry-console.html`,
 `web/app/src/views/TelemetryConsole.vue`, `docker-compose.telemetry.yml`,
-`collector/seed_telemetry.py`, `docs/ll-telemetry.md`.
+`docs/ll-telemetry.md`.
 **Changed:** `api/api.go` (route group + SPA deep link), `App.vue` (button),
 `router/index.js` (route), `.env` / `.env.example` (`TELEMETRY_*`, `LL_*`),
 rebuilt `web/static/`.
