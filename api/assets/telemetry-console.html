@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LL-Telemetry — Operations Console</title>
+<style>
+:root{
+  color-scheme: dark;
+  --bg: oklch(0.16 0.012 250);
+  --panel: oklch(0.20 0.012 250);
+  --raise: oklch(0.24 0.013 250);
+  --line: oklch(0.30 0.012 250);
+  --line-2: oklch(0.38 0.014 250);
+  --fg: oklch(0.94 0.006 250);
+  --fg-dim: oklch(0.74 0.010 250);
+  --fg-mute: oklch(0.56 0.012 250);
+  --brand: oklch(0.70 0.132 236);
+  --brand-dim: oklch(0.56 0.110 236);
+  --brand-wash: oklch(0.70 0.132 236 / 0.14);
+  --ok: oklch(0.74 0.13 158);      --ok-w: oklch(0.74 0.13 158 / 0.15);
+  --info: oklch(0.76 0.10 210);    --info-w: oklch(0.76 0.10 210 / 0.15);
+  --notice: oklch(0.72 0.12 236);  --notice-w: oklch(0.72 0.12 236 / 0.15);
+  --warn: oklch(0.80 0.13 85);     --warn-w: oklch(0.80 0.13 85 / 0.15);
+  --error: oklch(0.68 0.16 42);    --error-w: oklch(0.68 0.16 42 / 0.16);
+  --crit: oklch(0.62 0.17 18);     --crit-w: oklch(0.62 0.17 18 / 0.18);
+  --r: 2px;
+  --mono: ui-monospace,"Cascadia Mono","Cascadia Code","SF Mono","Segoe UI Mono",Consolas,"Liberation Mono",monospace;
+  --sans: system-ui,-apple-system,"Segoe UI Variable","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--fg);
+  font-family:var(--sans);font-size:13px;line-height:1.35;
+  -webkit-font-smoothing:antialiased;
+  font-variant-numeric:tabular-nums;
+}
+.mono{font-family:var(--mono)}
+.num{font-variant-numeric:tabular-nums;font-family:var(--mono)}
+.micro{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--fg-mute)}
+button{font-family:inherit;color:inherit;background:none;border:none;cursor:pointer}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:var(--r)}
+
+/* ---- top bar ---- */
+/* The bar sits on --bg, one step DARKER than the panels it floats over, so the
+   sticky chrome recedes and the data comes forward. It used to be --panel with
+   every control outlined in --line-2, which put the brightest surface and the
+   strongest borders in the one element that is always on screen. */
+.bar{
+  position:sticky;top:0;z-index:30;min-height:50px;display:flex;align-items:center;
+  gap:10px;flex-wrap:wrap;padding:8px 16px;background:var(--bg);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:baseline;gap:8px;font-size:12px;font-weight:600;letter-spacing:.2px}
+.brand b{color:var(--fg-dim)}
+.brand .tag{font-family:var(--mono);font-size:10px;color:var(--fg-mute);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px}
+.grow{flex:1}
+.live{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--fg-dim);
+  border:1px solid var(--line);border-radius:var(--r);padding:4px 9px}
+.live[aria-pressed=true]{color:var(--fg);border-color:var(--brand-dim)}
+.live .d{width:8px;height:8px;border-radius:50%;background:var(--fg-mute)}
+.live[aria-pressed=true] .d{background:var(--ok);box-shadow:0 0 0 0 var(--ok);animation:pulse 2s ease-out infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 oklch(0.74 0.13 158 / .5)}70%{box-shadow:0 0 0 7px oklch(0.74 0.13 158 / 0)}100%{box-shadow:0 0 0 0 oklch(0.74 0.13 158 / 0)}}
+@media (prefers-reduced-motion: reduce){.live[aria-pressed=true] .d{animation:none}}
+.seg{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+/* --fg-dim, not --fg-mute: mute on the darker --bg bar falls to 4.2:1, under
+   the 4.5:1 floor at 11px. */
+.seg button{padding:5px 10px;font-size:11px;font-family:var(--mono);color:var(--fg-dim);border-right:1px solid var(--line)}
+.seg button:hover{color:var(--fg)}
+.seg button:last-child{border-right:none}
+.seg button[aria-pressed=true]{background:var(--raise);color:var(--fg)}
+/* Controls sit one step ABOVE the bar now that the bar is the darkest surface. */
+.search{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:0 8px;height:28px;width:260px;min-width:180px;flex:1 1 220px;max-width:340px}
+.search input{background:none;border:none;color:var(--fg);font-family:var(--mono);font-size:12px;width:100%}
+.search input:focus{outline:none}
+.search .k{color:var(--fg-mute);font-size:11px;font-family:var(--mono)}
+.health{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--fg-dim)}
+.health .d{width:8px;height:8px;border-radius:50%;background:var(--fg-mute)}
+.health .d.ok{background:var(--ok)} .health .d.warn{background:var(--warn)} .health .d.bad{background:var(--crit)}
+
+/* Full bleed. A centred max-width leaves gutters on the 27in monitors this is
+   actually read on, and the event river is the one thing that wants the width. */
+.wrap{padding:14px 16px 40px}
+.err{margin-bottom:12px;padding:9px 12px;background:var(--crit-w);border:1px solid var(--crit);border-radius:var(--r);color:var(--fg);font-family:var(--mono);font-size:12px}
+
+/* ---- status band ---- */
+.band{display:grid;grid-template-columns:minmax(320px,1.15fr) 2fr;gap:14px;margin-bottom:14px}
+@media (max-width:1100px){.band{grid-template-columns:1fr}}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.stat{background:var(--panel);padding:11px 13px;display:flex;flex-direction:column;gap:5px;min-height:64px;justify-content:center}
+.stat .v{font-size:22px;font-weight:640;line-height:1;font-family:var(--mono)}
+.stat .l{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--fg-mute)}
+.stat .v.ok{color:var(--ok)} .stat .v.error{color:var(--error)} .stat .v.warn{color:var(--warn)} .stat .v.brand{color:var(--brand)}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
+.phd{display:flex;align-items:center;gap:10px;height:32px;padding:0 12px;border-bottom:1px solid var(--line);background:var(--raise)}
+.phd .t{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--fg-dim);font-weight:600}
+.phd .s{font-size:10.5px;color:var(--fg-mute);font-family:var(--mono)}
+.phd .grow{flex:1}
+
+/* site board */
+.sites{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:1px;background:var(--line);padding:1px}
+.site{background:var(--panel);padding:9px 11px;display:flex;flex-direction:column;gap:6px;cursor:pointer}
+.site:hover{background:var(--raise)}
+.site[data-on=true]{background:var(--brand-wash)}
+.site .n{font-size:12px;font-weight:600;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.site .row{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:11px;color:var(--fg-dim)}
+.site .row .f{color:var(--error)}
+/* Named .sbar, not .bar: the sticky top bar owns .bar, and sharing the class
+   meant every rule added there (sticky, padding, min-height, flex-wrap) leaked
+   into a 4px sparkbar. */
+.site .sbar{height:4px;background:var(--bg);border-radius:2px;overflow:hidden;display:flex}
+.site .sbar i{display:block;height:100%}
+.site .seen{font-size:10px;color:var(--fg-mute);font-family:var(--mono)}
+.site.dead .n::after{content:" ●";color:var(--crit)}
+
+/* ---- ribbon (signature) ---- */
+.ribbon-wrap{margin-bottom:14px}
+.ribbon{width:100%;height:78px;display:block;cursor:crosshair;user-select:none;touch-action:none}
+.rb-legend{display:flex;gap:14px;flex-wrap:wrap;padding:8px 12px 0}
+.rb-legend span{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--fg-dim);font-family:var(--mono)}
+.rb-legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+.brush-note{font-family:var(--mono);font-size:10.5px;color:var(--brand)}
+.brush-note button{color:var(--fg-mute);text-decoration:underline;font-family:var(--mono);font-size:10.5px;margin-left:8px}
+
+/* ---- charts ---- */
+.charts{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:14px;margin-bottom:14px}
+@media (max-width:1100px){.charts{grid-template-columns:1fr}}
+.cbody{padding:12px}
+.mix{display:flex;height:26px;border-radius:var(--r);overflow:hidden;border:1px solid var(--line)}
+.mix i{display:block;height:100%}
+.mixkey{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;margin-top:12px}
+.mixkey span{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--fg-dim)}
+.mixkey b{margin-left:auto;color:var(--fg)}
+.mixkey i{width:9px;height:9px;border-radius:2px}
+.hbars{display:flex;flex-direction:column;gap:7px}
+.hbar{display:grid;grid-template-columns:120px 1fr 34px;align-items:center;gap:8px;font-size:11px}
+.hbar .lbl{font-family:var(--mono);color:var(--fg-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.hbar .lbl:hover{color:var(--fg)}
+.hbar .track{height:8px;background:var(--bg);border-radius:2px;overflow:hidden}
+.hbar .track i{display:block;height:100%}
+.hbar .n{font-family:var(--mono);text-align:right;color:var(--fg)}
+.emptyc{color:var(--fg-mute);font-family:var(--mono);font-size:11px;padding:8px 2px}
+
+/* ---- event river ---- */
+.rhd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;height:auto;min-height:38px;padding:7px 12px}
+.chips{display:flex;gap:5px;flex-wrap:wrap}
+.chip{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:3px;border:1px solid transparent;cursor:pointer;color:var(--fg-mute);background:var(--bg)}
+.chip[data-on=true]{color:var(--fg)}
+.chip[data-sev=ok][data-on=true]{background:var(--ok-w);border-color:var(--ok);color:var(--ok)}
+.chip[data-sev=notice][data-on=true]{background:var(--notice-w);border-color:var(--notice);color:var(--notice)}
+.chip[data-sev=warn][data-on=true]{background:var(--warn-w);border-color:var(--warn);color:var(--warn)}
+.chip[data-sev=error][data-on=true]{background:var(--error-w);border-color:var(--error);color:var(--error)}
+.chip[data-sev=crit][data-on=true]{background:var(--crit);border-color:var(--crit);color:var(--bg)}
+.chip[data-sev=info][data-on=true]{background:var(--info-w);border-color:var(--info);color:var(--info)}
+.rhd select{height:26px;background:var(--bg);border:1px solid var(--line-2);color:var(--fg-dim);border-radius:var(--r);font-size:11px;font-family:var(--mono);padding:0 6px}
+.rhd .ghost{border:1px solid var(--line-2);border-radius:var(--r);padding:4px 10px;font-size:11px;font-family:var(--mono);color:var(--fg-dim)}
+.rhd .ghost:hover{background:var(--raise);color:var(--fg)}
+.river{max-height:min(58vh,720px);overflow:auto}
+table.rv{width:100%;border-collapse:collapse;font-family:var(--mono)}
+.rv thead th{position:sticky;top:0;z-index:2;background:var(--raise);text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-mute);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.rv tbody td{padding:0 8px;height:25px;font-size:12px;border-bottom:1px solid oklch(0.30 0.012 250 / .5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rv tbody tr{cursor:pointer}
+.rv tbody tr:hover{background:var(--raise)}
+.rv tbody tr[data-sev=error]{background:var(--error-w)}
+.rv tbody tr[data-sev=crit]{background:var(--crit-w)}
+.rv tbody tr[data-sev=error]:hover,.rv tbody tr[data-sev=crit]:hover{background:var(--raise)}
+.rv tbody tr.fresh{animation:fresh 1.4s ease-out}
+@keyframes fresh{from{background:var(--brand-wash)}to{}}
+@media (prefers-reduced-motion: reduce){.rv tbody tr.fresh{animation:none}}
+td.t{color:var(--fg-mute);width:112px}
+td.t .ms{color:oklch(0.44 0.012 250)}
+td.site{color:var(--fg-dim);width:132px}
+td.host{color:var(--brand);width:132px}
+td.script{color:var(--fg-dim);width:132px}
+td.msg{color:var(--fg-dim);font-family:var(--mono)}
+td.msg .k{color:var(--fg-mute)}
+.rchip{display:inline-block;font-size:10px;line-height:15px;padding:0 6px;border-radius:3px;border:1px solid transparent;font-weight:600;letter-spacing:.03em}
+.rchip.ok{background:var(--ok-w);border-color:oklch(0.74 0.13 158 / .4);color:var(--ok)}
+.rchip.notice{background:var(--notice-w);border-color:oklch(0.72 0.12 236 / .4);color:var(--notice)}
+.rchip.warn{background:var(--warn-w);border-color:oklch(0.80 0.13 85 / .4);color:var(--warn)}
+.rchip.error{background:var(--error-w);border-color:oklch(0.68 0.16 42 / .4);color:var(--error)}
+.rchip.crit{background:var(--crit);border-color:var(--crit);color:var(--bg)}
+.rchip.info{background:var(--info-w);border-color:oklch(0.76 0.10 210 / .4);color:var(--info)}
+.flag{font-size:9.5px;padding:0 4px;border-radius:2px;border:1px solid var(--line-2);color:var(--fg-mute);margin-left:5px}
+.flag.tls{color:var(--error);border-color:oklch(0.68 0.16 42 / .5)}
+.flag.q{color:var(--warn);border-color:oklch(0.80 0.13 85 / .5)}
+.rfoot{display:flex;align-items:center;gap:10px;padding:7px 12px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--fg-mute)}
+.rfoot .grow{flex:1}
+.rfoot button{border:1px solid var(--line-2);border-radius:var(--r);padding:3px 10px;color:var(--fg-dim);font-size:11px;font-family:var(--mono)}
+.rfoot button:disabled{opacity:.35;cursor:not-allowed}
+.emptyr{padding:26px;text-align:center;color:var(--fg-mute);font-family:var(--mono);font-size:12px}
+.skel{height:25px;border-bottom:1px solid oklch(0.30 0.012 250 / .5);background:linear-gradient(90deg,var(--panel),var(--raise),var(--panel));background-size:200% 100%;animation:sh 1.1s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
+
+/* ---- drawer ---- */
+.scrim{position:fixed;inset:0;background:oklch(0 0 0 / .5);z-index:40;display:none}
+.scrim.on{display:block}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:min(820px,94vw);background:var(--panel);
+  border-left:1px solid var(--line);box-shadow:-16px 0 40px oklch(0 0 0 / .4);
+  display:flex;flex-direction:column;transform:translateX(100%);transition:transform .22s cubic-bezier(.16,1,.3,1)}
+.scrim.on .drawer{transform:translateX(0)}
+@media (prefers-reduced-motion: reduce){.drawer{transition:none}}
+.dhd{display:flex;align-items:center;gap:10px;height:46px;padding:0 14px;background:var(--raise);border-bottom:1px solid var(--line)}
+.dhd .ttl{font-family:var(--mono);font-size:13px;font-weight:600}
+.dhd .grow{flex:1}
+.dhd button{border:1px solid var(--line-2);border-radius:var(--r);padding:4px 11px;font-family:var(--mono);font-size:11px;color:var(--fg-dim)}
+.dhd button:hover{background:var(--panel);color:var(--fg)}
+.dbody{flex:1;overflow:auto;padding:14px}
+.sec{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--fg-mute);margin:16px 0 7px;font-weight:600}
+.sec:first-child{margin-top:0}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.kv>div{background:var(--panel);padding:5px 9px;font-size:12px;font-family:var(--mono);min-height:26px;display:flex;align-items:center}
+.kv>div:nth-child(odd){color:var(--fg-mute);background:var(--bg);font-size:11px}
+.kv>div .wv{overflow:hidden;text-overflow:ellipsis}
+.log{margin-top:8px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);overflow:auto;max-height:44vh}
+.log .ln{display:grid;grid-template-columns:44px 1fr;gap:8px;padding:1px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.55;border-bottom:1px solid oklch(0.30 0.012 250 / .35)}
+.log .ln:last-child{border-bottom:none}
+.log .ln .lv{font-size:9px;text-transform:uppercase;color:var(--fg-mute);padding-top:2px}
+.log .ln .tx{white-space:pre-wrap;word-break:break-word;color:var(--fg-dim)}
+.log .ln[data-sev=error]{background:var(--error-w)} .log .ln[data-sev=error] .lv{color:var(--error)} .log .ln[data-sev=error] .tx{color:var(--fg)}
+.log .ln[data-sev=warn]{background:var(--warn-w)} .log .ln[data-sev=warn] .lv{color:var(--warn)}
+.log .ln[data-sev=ok] .lv{color:var(--ok)}
+.log .empty{padding:14px;color:var(--fg-mute);font-family:var(--mono);font-size:12px}
+
+/* ---- keys ---- */
+.tbtn{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--fg-dim);border:1px solid var(--line);border-radius:var(--r);padding:5px 10px}
+.tbtn:hover{background:var(--raise);color:var(--fg)}
+.ksec{padding:14px;border-bottom:1px solid var(--line)}
+.krow{display:flex;gap:8px}
+.krow input{flex:1;height:30px;background:var(--bg);border:1px solid var(--line-2);color:var(--fg);border-radius:var(--r);padding:0 10px;font-family:var(--mono);font-size:12px}
+.krow input:focus{outline:none;border-color:var(--brand)}
+.kbtn{height:30px;padding:0 12px;border:1px solid var(--line-2);border-radius:var(--r);color:var(--fg-dim);font-family:var(--mono);font-size:11px;cursor:pointer}
+.kbtn:hover{background:var(--raise);color:var(--fg)}
+.kbtn.primary{background:var(--brand);border-color:var(--brand);color:var(--bg);font-weight:600}
+.kbtn.primary:hover{background:var(--brand-dim)}
+.ksecret{margin-top:12px;background:var(--brand-wash);border:1px solid var(--brand-dim);border-radius:var(--r);padding:10px}
+.kwarn{font-size:11px;color:var(--warn);margin-bottom:7px;font-family:var(--mono)}
+.kval{display:flex;gap:8px;align-items:center}
+.kval code{flex:1;font-family:var(--mono);font-size:12px;color:var(--fg);word-break:break-all;background:var(--bg);padding:6px 8px;border-radius:var(--r);border:1px solid var(--line)}
+.kmeta{margin-top:6px;font-size:10.5px;color:var(--fg-mute);font-family:var(--mono)}
+table.ktbl{width:100%;border-collapse:collapse;font-family:var(--mono)}
+.ktbl th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--fg-mute);padding:6px 8px;border-bottom:1px solid var(--line);font-weight:600}
+.ktbl td{font-size:12px;padding:6px 8px;border-bottom:1px solid oklch(0.30 0.012 250 / .5);color:var(--fg-dim);white-space:nowrap}
+.ktbl tr.krev td{opacity:.55}
+.kstat{font-size:10px;padding:1px 7px;border-radius:3px;border:1px solid transparent}
+.kstat.act{background:var(--ok-w);border-color:oklch(0.74 0.13 158 / .4);color:var(--ok)}
+.kstat.rev{background:var(--bg);border-color:var(--line-2);color:var(--fg-mute)}
+.kact{white-space:nowrap;text-align:right}
+.kact button{font-family:var(--mono);font-size:10.5px;color:var(--fg-dim);border:1px solid var(--line-2);border-radius:2px;padding:2px 7px;margin-left:4px;cursor:pointer}
+.kact button:hover{background:var(--raise);color:var(--fg)}
+.kact button.danger:hover{background:var(--error-w);border-color:var(--error);color:var(--error)}
+.khint{padding:10px 14px;font-size:11px;color:var(--fg-mute);font-family:var(--mono);line-height:1.6}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div class="brand"><b>LONG&nbsp;LEWIS</b><span class="micro">Telemetry Ops</span><span class="tag">v0.4</span></div>
+  <div class="seg" id="range" role="group" aria-label="Time range">
+    <button data-r="1h">1h</button>
+    <button data-r="6h">6h</button>
+    <button data-r="24h" aria-pressed="true">24h</button>
+    <button data-r="7d">7d</button>
+    <button data-r="30d">30d</button>
+  </div>
+  <button class="live" id="live" aria-pressed="false" title="Toggle live tailing"><span class="d"></span>LIVE</button>
+  <button class="tbtn" id="keysbtn" title="Manage ingest keys">KEYS</button>
+  <div class="search"><span class="k">/</span><input id="q" type="text" placeholder="search host, script, site, log..." autocomplete="off"><span class="k" id="qhint"></span></div>
+  <div class="grow"></div>
+  <div class="health"><span class="d" id="hdot"></span><span id="hstat">connecting</span></div>
+</div>
+
+<div class="wrap">
+  <div id="err"></div>
+
+  <div class="band">
+    <div class="stats" id="stats"></div>
+    <div class="panel">
+      <div class="phd"><span class="t">Sites</span><span class="s" id="sitesub">the estate</span><span class="grow"></span><span class="s">click to filter</span></div>
+      <div class="sites" id="sites"></div>
+    </div>
+  </div>
+
+  <div class="panel ribbon-wrap">
+    <div class="phd"><span class="t">Severity timeline</span><span class="s" id="ribsub"></span><span class="grow"></span><span class="brush-note" id="brushnote"></span></div>
+    <div class="rb-legend" id="riblegend"></div>
+    <svg class="ribbon" id="ribbon" preserveAspectRatio="none" role="img" aria-label="Event severity over time"></svg>
+  </div>
+
+  <div class="charts">
+    <div class="panel">
+      <div class="phd"><span class="t">Result mix</span><span class="s" id="mixsub"></span></div>
+      <div class="cbody"><div class="mix" id="mix"></div><div class="mixkey" id="mixkey"></div></div>
+    </div>
+    <div class="panel">
+      <div class="phd"><span class="t">By script</span><span class="s">runs / failures</span></div>
+      <div class="cbody"><div class="hbars" id="byscript"></div></div>
+    </div>
+    <div class="panel">
+      <div class="phd"><span class="t">Repeat offenders</span><span class="s">2+ trust repairs</span></div>
+      <div class="cbody"><div class="hbars" id="offenders"></div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="rhd">
+      <span class="t micro" style="color:var(--fg-dim)">Event stream</span>
+      <div class="chips" id="sevchips"></div>
+      <span class="grow"></span>
+      <select id="fscript"><option value="">all scripts</option></select>
+      <select id="fsite"><option value="">all sites</option></select>
+      <button class="ghost" id="clearf">clear</button>
+    </div>
+    <div class="river" id="river"><div class="emptyr">loading…</div></div>
+    <div class="rfoot">
+      <span id="rcount">—</span>
+      <span class="grow"></span>
+      <button id="prev">‹ newer</button>
+      <button id="next">older ›</button>
+      <span id="pinfo"></span>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"><div class="drawer"><div class="dhd"><span class="ttl" id="dttl">Run</span><span class="grow"></span><button id="dclose">Close ✕</button></div><div class="dbody" id="dbody"></div></div></div>
+
+<div class="scrim" id="kscrim"><div class="drawer"><div class="dhd"><span class="ttl">Ingest keys</span><span class="grow"></span><button id="kclose">Close ✕</button></div><div class="dbody" id="kbody" style="padding:0"></div></div></div>
+
+<script>
+const API='/api/v1';
+const SEV={HEALTHY:'ok',OK:'ok',REPAIRED:'notice',NOT_JOINED:'warn',PARTIAL:'warn',CANCELLED:'warn',FAILED:'error',ERROR:'error',NO_DC:'crit'};
+const SEV_STACK=['ok','info','notice','warn','error','crit'];   // draw order, crit on top
+const SEV_COLOR={ok:'var(--ok)',info:'var(--info)',notice:'var(--notice)',warn:'var(--warn)',error:'var(--error)',crit:'var(--crit)'};
+const SEV_LABEL={ok:'ok',info:'info',notice:'notice',warn:'warn',error:'error',crit:'crit'};
+const RESULT_PHRASE={HEALTHY:'domain trust healthy',OK:'completed clean',REPAIRED:'secure channel repaired',NOT_JOINED:'not domain-joined',NO_DC:'no domain controller reachable',FAILED:'run failed',ERROR:'unhandled error',PARTIAL:'completed with gaps',CANCELLED:'cancelled by tech'};
+const RANGES={'1h':{hours:1,buckets:60,days:1},'6h':{hours:6,buckets:72,days:1},'24h':{hours:24,buckets:96,days:1},'7d':{hours:168,buckets:84,days:7},'30d':{hours:720,buckets:90,days:30}};
+const sev=r=>SEV[r]||'info';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pad2=n=>String(n).padStart(2,'0');
+
+const S={range:'24h',live:false,timer:null,q:'',fscript:'',fsite:'',
+  sevOn:{ok:true,info:true,notice:true,warn:true,error:true,crit:true},
+  brush:null,page:{offset:0,limit:250,total:0},runs:[],lastMax:0,loading:false};
+
+async function api(p){const r=await fetch(API+p,{headers:{accept:'application/json'}});if(!r.ok)throw new Error(p+' → '+r.status);return r.json();}
+function showErr(m){document.getElementById('err').innerHTML=m?`<div class="err">${esc(m)}</div>`:'';}
+
+function fmtTime(iso){const d=new Date(iso);return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}<span class="ms">.${String(d.getMilliseconds()).padStart(3,'0')}</span>`;}
+/* Date + time, for columns where the day matters (key "Created"); fmtTime is
+   time-only and useless once a row is more than a day old. */
+function fmtDate(iso){const d=new Date(iso);if(isNaN(d.getTime()))return'';return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;}
+function rel(iso){if(!iso)return'never';let s=(Date.now()-new Date(iso).getTime())/1000;if(s<90)return Math.round(s)+'s';if(s<5400)return Math.round(s/60)+'m';if(s<172800)return Math.round(s/3600)+'h';return Math.round(s/86400)+'d';}
+function shortScript(s){return String(s||'').replace(/^LL-/,'');}
+
+/* ---------------- health ---------------- */
+function renderHealth(svc){
+  const dot=document.getElementById('hdot'),st=document.getElementById('hstat');
+  if(!svc||!svc.last_received_utc){dot.className='d';st.textContent='no runs yet';return;}
+  const min=(Date.now()-new Date(svc.last_received_utc).getTime())/60000;
+  dot.className='d '+(min<15?'ok':min<180?'warn':'bad');
+  st.textContent=`api v${svc.version} · ${svc.runs_last_hour}/hr · last ${rel(svc.last_received_utc)}`;
+}
+
+/* ---------------- stats + sites ---------------- */
+function renderStats(st){
+  const t=st.totals||{},br=st.by_script_result||[];
+  const sum=f=>br.filter(f).reduce((a,b)=>a+b.n,0);
+  const healthy=sum(x=>['HEALTHY','OK'].includes(x.result));
+  const failed=sum(x=>['FAILED','ERROR','NO_DC'].includes(x.result));
+  const repaired=sum(x=>x.result==='REPAIRED');
+  const cells=[
+    ['num',t.total??0,'events'],
+    ['num',t.hosts??0,'machines'],
+    ['ok',healthy,'healthy'],
+    ['error',failed,'failed'],
+    ['brand',repaired,'repaired'],
+    ['warn',t.tls_bypassed??0,'tls bypassed'],
+  ];
+  document.getElementById('stats').innerHTML=cells.map(([c,v,l])=>
+    `<div class="stat"><span class="v ${c==='num'?'':c}">${v}</span><span class="l">${l}</span></div>`).join('');
+}
+function renderSites(st){
+  const rows=st.by_site||[];
+  document.getElementById('sitesub').textContent=`${rows.length} reporting`;
+  if(!rows.length){document.getElementById('sites').innerHTML=`<div class="site"><span class="seen">no data</span></div>`;return;}
+  const max=Math.max(1,...rows.map(r=>r.n));
+  document.getElementById('sites').innerHTML=rows.map(r=>{
+    const fail=r.failures||0,okn=r.n-fail;
+    const on=S.fsite===r.site;
+    const dead=fail>0&&fail>=r.n*0.5;
+    return `<div class="site${dead?' dead':''}" data-site="${esc(r.site)}" data-on="${on}">
+      <div class="n">${esc(r.site)}</div>
+      <div class="row"><span>${r.n} runs</span><span class="f">${fail?fail+' fail':''}</span></div>
+      <div class="sbar"><i style="width:${okn/max*100}%;background:var(--ok)"></i><i style="width:${fail/max*100}%;background:var(--error)"></i></div>
+    </div>`;
+  }).join('');
+  document.querySelectorAll('.site[data-site]').forEach(el=>el.onclick=()=>{
+    const s=el.getAttribute('data-site');S.fsite=(S.fsite===s?'':s);document.getElementById('fsite').value=S.fsite;resetPage();refresh();
+  });
+}
+
+/* ---------------- ribbon (signature) ---------------- */
+let RIB=null;
+function renderRibbon(tl){
+  /* Guard: RIB is null until /timeline first resolves, and stays null while the
+     API is down. Brushing before then would throw on tl.series. */
+  if(!tl)return;
+  RIB=tl;const svg=document.getElementById('ribbon');
+  const W=1000,H=78,pad=1;const s=tl.series||[];
+  document.getElementById('ribsub').textContent=`${RANGES[S.range].hours}h · ${s.length} buckets`;
+  const present=new Set();s.forEach(b=>Object.keys(b.counts).forEach(r=>present.add(sev(r))));
+  document.getElementById('riblegend').innerHTML=SEV_STACK.filter(k=>present.has(k)).map(k=>
+    `<span><i style="background:${SEV_COLOR[k]}"></i>${SEV_LABEL[k]}</span>`).join('')||'<span>no events in window</span>';
+  const max=Math.max(1,...s.map(b=>b.total));
+  const bw=(W-pad*2)/Math.max(1,s.length);
+  let rects='';
+  s.forEach((b,i)=>{
+    const bysev={};for(const [res,n] of Object.entries(b.counts)){const k=sev(res);bysev[k]=(bysev[k]||0)+n;}
+    let y=H-pad;const x=pad+i*bw;
+    for(const k of SEV_STACK){const n=bysev[k];if(!n)continue;const h=(n/max)*(H-pad*2);y-=h;
+      rects+=`<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${Math.max(0.6,bw-0.4).toFixed(2)}" height="${h.toFixed(2)}" fill="${SEV_COLOR[k]}"><title>${new Date(b.t).toLocaleString()} — ${b.total} events</title></rect>`;
+    }
+  });
+  let sel='';
+  if(S.brush){const x0=fracForTime(S.brush.t0)*W,x1=fracForTime(S.brush.t1)*W;
+    sel=`<rect x="${Math.min(x0,x1).toFixed(2)}" y="0" width="${Math.abs(x1-x0).toFixed(2)}" height="${H}" fill="var(--brand-wash)" stroke="var(--brand)" stroke-width="1"/>`;}
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.innerHTML=rects+sel;
+}
+function ribbonSpan(){const s=RIB?RIB.series:[];if(!s.length)return[Date.now()-3600e3,Date.now()];return[s[0].t,s[s.length-1].t+(RIB.bucket_sec*1000)];}
+function fracForTime(t){const [a,b]=ribbonSpan();return Math.max(0,Math.min(1,(t-a)/(b-a)));}
+function timeForFrac(f){const [a,b]=ribbonSpan();return a+f*(b-a);}
+(function brushSetup(){
+  const svg=document.getElementById('ribbon');
+  let activePointer=null,startX=0,startT=0,moved=false,frame=0;
+  const xf=e=>{const r=svg.getBoundingClientRect();return Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));};
+  /* Repaint the ribbon at most once per frame while dragging. */
+  const schedule=()=>{if(frame)return;frame=requestAnimationFrame(()=>{frame=0;renderRibbon(RIB);updateBrushNote();});};
+  const endDrag=e=>{
+    if(activePointer===null||(e&&e.pointerId!==activePointer))return;
+    try{svg.releasePointerCapture(activePointer);}catch(_){}
+    activePointer=null;
+    if(frame){cancelAnimationFrame(frame);frame=0;}
+    if(!moved)S.brush=null;   /* a click clears rather than making a sliver */
+    renderRibbon(RIB);updateBrushNote();
+    /* The river is rebuilt once, on release. Rebuilding 250 rows on every
+       pointermove is what made this feel broken. */
+    applyRiver();
+  };
+  svg.addEventListener('pointerdown',e=>{
+    if(e.pointerType==='mouse'&&e.button!==0)return;
+    /* A second finger must not restart the drag: its release would see
+       moved=false and wipe the window the first one drew. */
+    if(activePointer!==null)return;
+    activePointer=e.pointerId;startX=xf(e);startT=timeForFrac(startX);moved=false;
+    try{svg.setPointerCapture(e.pointerId);}catch(_){}
+    e.preventDefault();
+  });
+  svg.addEventListener('pointermove',e=>{
+    if(e.pointerId!==activePointer)return;
+    const at=xf(e);
+    /* Ignore sub-pixel jitter so a click stays a click. */
+    if(!moved&&Math.abs(at-startX)<0.004)return;
+    moved=true;
+    /* Anchor on the absolute start TIME, not the start fraction: live mode
+       refreshes the ribbon every 5s, which would otherwise remap the anchor
+       to a different moment mid-drag. */
+    const nowT=timeForFrac(at);
+    S.brush={t0:Math.min(startT,nowT),t1:Math.max(startT,nowT)};
+    schedule();
+  });
+  svg.addEventListener('pointerup',endDrag);
+  svg.addEventListener('pointercancel',endDrag);
+  /* A release outside the ribbon still has to end the drag, or the brush
+     keeps tracking the cursor with no button held. */
+  window.addEventListener('pointerup',endDrag);
+  /* Only cancels an in-progress drag. Escape is already taken by the search
+     field and the detail drawer; a committed brush has its own clear button. */
+  window.addEventListener('keydown',e=>{
+    if(e.key!=='Escape'||activePointer===null)return;
+    try{svg.releasePointerCapture(activePointer);}catch(_){}
+    activePointer=null;moved=false;S.brush=null;
+    if(frame){cancelAnimationFrame(frame);frame=0;}
+    renderRibbon(RIB);updateBrushNote();applyRiver();
+  });
+})();
+let BRUSH_NOTE=null;
+function updateBrushNote(){
+  const n=document.getElementById('brushnote');
+  if(!BRUSH_NOTE){
+    /* Built once. Re-running innerHTML every frame threw away the button and
+       rebound its handler on each pointermove. */
+    n.innerHTML='<span id="brushrange"></span><button id="brushclear" type="button" hidden>clear</button>';
+    BRUSH_NOTE={range:n.querySelector('#brushrange'),clear:n.querySelector('#brushclear')};
+    BRUSH_NOTE.clear.onclick=()=>{S.brush=null;renderRibbon(RIB);updateBrushNote();applyRiver();};
+  }
+  if(!S.brush){BRUSH_NOTE.range.textContent='drag to brush a window';BRUSH_NOTE.clear.hidden=true;return;}
+  const f=new Date(S.brush.t0),t=new Date(S.brush.t1);
+  BRUSH_NOTE.range.textContent=`${pad2(f.getHours())}:${pad2(f.getMinutes())} to ${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
+  BRUSH_NOTE.clear.hidden=false;
+}
+
+/* ---------------- charts ---------------- */
+function renderCharts(st){
+  const br=st.by_script_result||[];
+  // result mix by severity
+  const bySev={};br.forEach(x=>{const k=sev(x.result);bySev[k]=(bySev[k]||0)+x.n;});
+  const total=Object.values(bySev).reduce((a,b)=>a+b,0);
+  document.getElementById('mixsub').textContent=total?`${total} events`:'';
+  const order=SEV_STACK.filter(k=>bySev[k]);
+  document.getElementById('mix').innerHTML=total?order.map(k=>`<i style="width:${bySev[k]/total*100}%;background:${SEV_COLOR[k]}" title="${SEV_LABEL[k]} ${bySev[k]}"></i>`).join(''):'<i style="width:100%;background:var(--line)"></i>';
+  document.getElementById('mixkey').innerHTML=order.length?order.map(k=>`<span><i style="background:${SEV_COLOR[k]}"></i>${SEV_LABEL[k]}<b>${bySev[k]}</b></span>`).join(''):'<span class="emptyc">no events</span>';
+  // by script
+  const scripts={};br.forEach(x=>{const s=x.script;scripts[s]=scripts[s]||{n:0,f:0};scripts[s].n+=x.n;if(['FAILED','ERROR','NO_DC'].includes(x.result))scripts[s].f+=x.n;});
+  const sarr=Object.entries(scripts).sort((a,b)=>b[1].n-a[1].n);const smax=Math.max(1,...sarr.map(x=>x[1].n));
+  document.getElementById('byscript').innerHTML=sarr.length?sarr.map(([s,v])=>
+    `<div class="hbar"><span class="lbl" data-script="${esc(s)}">${esc(shortScript(s))}</span><div class="track"><i style="width:${v.n/smax*100}%;background:var(--brand-dim)"></i>${v.f?`<i style="width:${v.f/smax*100}%;background:var(--error);margin-top:-8px"></i>`:''}</div><span class="n">${v.n}</span></div>`
+  ).join(''):'<div class="emptyc">no events</div>';
+  document.querySelectorAll('#byscript .lbl[data-script]').forEach(el=>el.onclick=()=>{S.fscript=el.getAttribute('data-script');document.getElementById('fscript').value=S.fscript;resetPage();refresh();});
+  // offenders
+  const off=st.repeat_offenders||[];const omax=Math.max(1,...off.map(o=>o.repairs));
+  document.getElementById('offenders').innerHTML=off.length?off.slice(0,8).map(o=>
+    `<div class="hbar"><span class="lbl" data-host="${esc(o.hostname)}">${esc(o.hostname)}</span><div class="track"><i style="width:${o.repairs/omax*100}%;background:var(--notice)"></i></div><span class="n">${o.repairs}</span></div>`
+  ).join(''):'<div class="emptyc">nothing repeating — good</div>';
+  document.querySelectorAll('#offenders .lbl[data-host]').forEach(el=>el.onclick=()=>{setSearch(el.getAttribute('data-host'));});
+}
+
+/* ---------------- severity chips + selects ---------------- */
+function renderChips(){
+  document.getElementById('sevchips').innerHTML=['crit','error','warn','notice','ok','info'].map(k=>
+    `<button class="chip" data-sev="${k}" data-on="${S.sevOn[k]}">${SEV_LABEL[k]}</button>`).join('');
+  document.querySelectorAll('.chip[data-sev]').forEach(el=>el.onclick=()=>{const k=el.getAttribute('data-sev');S.sevOn[k]=!S.sevOn[k];el.setAttribute('data-on',S.sevOn[k]);applyRiver();});
+}
+function fillSelect(id,vals){const el=document.getElementById(id);const cur=el.value;const first=el.options[0].outerHTML;
+  el.innerHTML=first+[...new Set(vals.filter(Boolean))].sort().map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');el.value=cur;}
+
+/* ---------------- river ---------------- */
+function riverRow(r){
+  const sv=sev(r.result);
+  const det=r.details&&typeof r.details==='object'?Object.entries(r.details).slice(0,2).map(([k,v])=>`<span class="k">${esc(k)}=</span>${esc(v)}`).join(' '):'';
+  const phrase=RESULT_PHRASE[r.result]||r.result.toLowerCase();
+  const flags=(r.tls_bypassed?'<span class="flag tls">TLS</span>':'')+(r.queued_offline?'<span class="flag q">Q</span>':'');
+  const msg=`${esc(phrase)} <span class="k">·</span> exit=${r.exit_code??'—'} <span class="k">·</span> ${r.duration_sec??0}s${det?' <span class="k">·</span> '+det:''}${flags}`;
+  return `<tr data-sev="${sv}" data-id="${esc(r.run_id)}">
+    <td class="t">${fmtTime(r.received_utc)}</td>
+    <td class="site">${esc(r.site||'—')}</td>
+    <td class="host">${esc(r.hostname)}</td>
+    <td class="script">${esc(shortScript(r.script))}</td>
+    <td><span class="rchip ${sv}">${esc(r.result)}</span></td>
+    <td class="msg">${msg}</td></tr>`;
+}
+function applyRiver(){
+  let rows=S.runs;
+  rows=rows.filter(r=>S.sevOn[sev(r.result)]);
+  if(S.brush)rows=rows.filter(r=>{const t=new Date(r.received_utc).getTime();return t>=S.brush.t0&&t<=S.brush.t1;});
+  const tb=document.getElementById('river');
+  if(!rows.length){tb.innerHTML=`<div class="emptyr">No events match these filters. Widen the range, clear the brush, or reset filters.</div>`;}
+  else{
+    tb.innerHTML=`<table class="rv"><thead><tr><th>Time</th><th>Site</th><th>Host</th><th>Script</th><th>Result</th><th>Message</th></tr></thead><tbody>${rows.map(riverRow).join('')}</tbody></table>`;
+    tb.querySelectorAll('tbody tr').forEach(tr=>{ tr.onclick=()=>openDrawer(tr.getAttribute('data-id')); });
+    // mark fresh rows (received after lastMax) when live
+    if(S.live){rows.forEach((r,i)=>{if(new Date(r.received_utc).getTime()>S.lastMax){const tr=tb.querySelectorAll('tbody tr')[i];if(tr)tr.classList.add('fresh');}});}
+  }
+  document.getElementById('rcount').textContent=`${rows.length} shown${S.brush?' (brushed)':''}`;
+  const p=S.page;document.getElementById('pinfo').textContent=`${p.total} in range`;
+  document.getElementById('prev').disabled=p.offset===0;
+  document.getElementById('next').disabled=p.offset+p.limit>=p.total;
+}
+
+/* ---------------- drawer ---------------- */
+function logSeverity(line){const l=line.toLowerCase();
+  if(/(error|exception|fail|denied|unable|cannot|fatal|0x[0-9a-f]{4,})/.test(l))return'error';
+  if(/(warn|retry|timeout|timed out|slow|deprecat|skip)/.test(l))return'warn';
+  if(/(success|healthy|repaired|joined|ok\b|done|complete|validated)/.test(l))return'ok';
+  return'';}
+async function openDrawer(id){
+  const sc=document.getElementById('scrim');sc.classList.add('on');
+  document.getElementById('dttl').textContent='loading…';
+  document.getElementById('dbody').innerHTML='';
+  try{
+    const r=await api(`/runs/${id}`);
+    document.getElementById('dttl').textContent=`${shortScript(r.script)} · ${r.hostname}`;
+    const kv=o=>Object.entries(o).map(([k,v])=>`<div>${esc(k)}</div><div class="wv">${esc(typeof v==='object'&&v?JSON.stringify(v):(v??'—'))}</div>`).join('');
+    const lines=(r.log||'').split(/\r?\n/);
+    const logHtml=lines.length&&r.log?lines.map(ln=>{const s=logSeverity(ln);return `<div class="ln" data-sev="${s}"><span class="lv">${s||''}</span><span class="tx">${esc(ln||' ')}</span></div>`;}).join(''):'<div class="empty">no transcript captured</div>';
+    document.getElementById('dbody').innerHTML=`
+      <div class="sec">Outcome</div>
+      <div class="kv">${kv({result:r.result,exit_code:r.exit_code,duration_sec:r.duration_sec,received_utc:r.received_utc,started_utc:r.started_utc,tech:r.tech,queued_offline:!!r.queued_offline,tls_bypassed:!!r.tls_bypassed})}</div>
+      <div class="sec">Machine</div>
+      <div class="kv">${kv({hostname:r.hostname,serial:r.serial,manufacturer:r.manufacturer,model:r.model,os:r.os,os_build:r.os_build,ad_domain:r.ad_domain,ip:r.ip,mac:r.mac,site:r.site})}</div>
+      ${r.details&&Object.keys(r.details).length?`<div class="sec">Details</div><div class="kv">${kv(r.details)}</div>`:''}
+      <div class="sec">Transcript${r.log?` · ${lines.length} lines`:''}</div>
+      <div class="log">${logHtml}</div>`;
+  }catch(e){document.getElementById('dbody').innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+function closeDrawer(){document.getElementById('scrim').classList.remove('on');}
+
+/* ---------------- data flow ---------------- */
+function resetPage(){S.page.offset=0;}
+function setSearch(v){S.q=v;document.getElementById('q').value=v;resetPage();refresh();}
+async function loadRiver(){
+  const cfg=RANGES[S.range];const p=S.page;
+  const qs=new URLSearchParams({days:String(cfg.days),limit:String(p.limit),offset:String(p.offset)});
+  if(S.q)qs.set('q',S.q);
+  if(S.fscript)qs.set('script',S.fscript);
+  if(S.fsite)qs.set('site',S.fsite);
+  const d=await api(`/runs?${qs}`);
+  S.page.total=d.total??d.count??0;S.runs=d.runs||[];
+  applyRiver();
+}
+async function refresh(){
+  if(S.loading)return;S.loading=true;showErr('');
+  const cfg=RANGES[S.range];
+  document.getElementById('qhint').textContent=S.q?'esc to clear':'';
+  try{
+    const [st,tl]=await Promise.all([api(`/stats?days=${cfg.days}`),api(`/timeline?hours=${cfg.hours}&buckets=${cfg.buckets}`)]);
+    renderHealth(st.service);renderStats(st);renderSites(st);renderCharts(st);renderRibbon(tl);
+    fillSelect('fscript',(st.by_script_result||[]).map(x=>x.script));
+    fillSelect('fsite',(st.by_site||[]).map(x=>x.site));
+    await loadRiver();
+    S.lastMax=Math.max(S.lastMax,...S.runs.map(r=>new Date(r.received_utc).getTime()),0);
+  }catch(e){showErr(e.message);}
+  finally{S.loading=false;}
+}
+
+/* ---------------- controls ---------------- */
+document.querySelectorAll('#range button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#range button').forEach(x=>x.removeAttribute('aria-pressed'));
+  b.setAttribute('aria-pressed','true');S.range=b.getAttribute('data-r');S.brush=null;resetPage();updateBrushNote();refresh();
+});
+document.getElementById('live').onclick=function(){
+  S.live=!S.live;this.setAttribute('aria-pressed',S.live);
+  if(S.live){S.timer=setInterval(()=>{if(!document.getElementById('scrim').classList.contains('on'))refresh();},5000);refresh();}
+  else{clearInterval(S.timer);S.timer=null;}
+};
+let qDeb;document.getElementById('q').addEventListener('input',e=>{clearTimeout(qDeb);qDeb=setTimeout(()=>{S.q=e.target.value.trim();resetPage();refresh();},280);});
+document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Escape'){e.target.value='';S.q='';resetPage();refresh();}});
+document.getElementById('fscript').onchange=e=>{S.fscript=e.target.value;resetPage();refresh();};
+document.getElementById('fsite').onchange=e=>{S.fsite=e.target.value;resetPage();refresh();};
+document.getElementById('clearf').onclick=()=>{S.q='';S.fscript='';S.fsite='';S.brush=null;Object.keys(S.sevOn).forEach(k=>S.sevOn[k]=true);
+  document.getElementById('q').value='';document.getElementById('fscript').value='';document.getElementById('fsite').value='';
+  renderChips();updateBrushNote();resetPage();refresh();};
+document.getElementById('prev').onclick=()=>{S.page.offset=Math.max(0,S.page.offset-S.page.limit);loadRiver();};
+document.getElementById('next').onclick=()=>{S.page.offset+=S.page.limit;loadRiver();};
+document.getElementById('dclose').onclick=closeDrawer;
+document.getElementById('scrim').addEventListener('click',e=>{if(e.target.id==='scrim')closeDrawer();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDrawer();document.getElementById('kscrim').classList.remove('on');}
+  if(e.key==='/'&&document.activeElement.tagName!=='INPUT'){e.preventDefault();document.getElementById('q').focus();}});
+
+/* ---------------- keys ---------------- */
+async function apiSend(path,method,body){
+  const r=await fetch(API+path,{method,headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+  if(!r.ok)throw new Error(`${method} ${path} → ${r.status}`);
+  return r.status===204?{}:r.json();
+}
+function keysErr(e){document.getElementById('kbody').insertAdjacentHTML('afterbegin',`<div class="ksec"><div class="err">${esc(e.message)}</div></div>`);}
+function renderKeys(keys,secret){
+  const create=`<div class="ksec">
+    <div class="krow"><input id="klabel" type="text" placeholder="label for this batch, e.g. 2026-Q3 USB" maxlength="96" autocomplete="off"><button class="kbtn primary" id="kcreate">Create key</button></div>
+    ${secret?`<div class="ksecret"><div class="kwarn">Copy this now — it is shown once and never stored.</div><div class="kval"><code id="ksecval">${esc(secret.secret)}</code><button class="kbtn" id="kcopy">Copy</button></div><div class="kmeta">${esc(secret.label)} · ${esc(secret.prefix)}${secret.rotated_from?` · rotated from #${secret.rotated_from}`:''}</div></div>`:''}
+  </div>`;
+  const rows=keys.length?keys.map(k=>`<tr data-id="${k.id}" class="${k.revoked?'krev':''}">
+    <td>${esc(k.label)}</td><td>${esc(k.prefix)}</td>
+    <td>${k.created_utc?fmtDate(k.created_utc):''}</td>
+    <td>${k.last_used_utc?rel(k.last_used_utc)+' ago':'never'}</td>
+    <td>${k.use_count}</td>
+    <td>${k.revoked?'<span class="kstat rev">revoked</span>':'<span class="kstat act">active</span>'}</td>
+    <td class="kact">${k.revoked?'<button data-act="delete" class="danger">delete</button>':'<button data-act="rotate">rotate</button><button data-act="revoke">revoke</button>'}</td>
+  </tr>`).join(''):`<tr><td colspan="7" style="padding:16px;color:var(--fg-mute)">No keys yet. Create one for your next rollout batch, then stamp it into that batch of scripts.</td></tr>`;
+  document.getElementById('kbody').innerHTML=create
+    +`<div class="ksec"><table class="ktbl"><thead><tr><th>Label</th><th>Prefix</th><th>Created</th><th>Last used</th><th>Uses</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+    +`<div class="khint">Keys are write-only (ingest only). The secret is hashed on the server — this screen can never show it again.<br>Stamp a key into a script batch with <code>tools\\Build-FieldScripts.ps1 -Token &lt;secret&gt;</code>, then revoke the old key.</div>`;
+  const lbl=document.getElementById('klabel');
+  document.getElementById('kcreate').onclick=()=>{const v=lbl.value.trim();if(v)keyCreate(v);};
+  lbl.addEventListener('keydown',e=>{if(e.key==='Enter'){const v=lbl.value.trim();if(v)keyCreate(v);}});
+  if(secret){const cp=document.getElementById('kcopy');cp.onclick=()=>{if(navigator.clipboard)navigator.clipboard.writeText(secret.secret).then(()=>{cp.textContent='Copied';setTimeout(()=>cp.textContent='Copy',1200);});};}
+  document.querySelectorAll('#kbody .kact button[data-act]').forEach(b=>b.onclick=()=>keyAction(b.closest('tr').getAttribute('data-id'),b.getAttribute('data-act')));
+}
+async function loadKeys(secret){try{const d=await api('/keys');renderKeys(d.keys||[],secret);}catch(e){document.getElementById('kbody').innerHTML=`<div class="ksec"><div class="err">${esc(e.message)}</div></div>`;}}
+async function keyCreate(label){try{const s=await apiSend('/keys','POST',{label});loadKeys(s);}catch(e){keysErr(e);}}
+async function keyAction(id,act){try{
+  if(act==='revoke'){await apiSend(`/keys/${id}/revoke`,'POST');loadKeys();}
+  else if(act==='rotate'){const s=await apiSend(`/keys/${id}/rotate`,'POST');loadKeys(s);}
+  else if(act==='delete'){await apiSend(`/keys/${id}`,'DELETE');loadKeys();}
+}catch(e){keysErr(e);}}
+document.getElementById('keysbtn').onclick=()=>{document.getElementById('kscrim').classList.add('on');loadKeys();};
+document.getElementById('kclose').onclick=()=>document.getElementById('kscrim').classList.remove('on');
+document.getElementById('kscrim').addEventListener('click',e=>{if(e.target.id==='kscrim')e.currentTarget.classList.remove('on');});
+
+renderChips();updateBrushNote();refresh();
+</script>
+</body>
+</html>

@@ -83,7 +83,12 @@ func TestCreateExternalEndpointResult(t *testing.T) {
 			ExpectedCode:                   200,
 		},
 		{
-			Name:                           "good-token-success-true-with-ignored-error-because-success-true",
+			// A pass that carries a reason: our collectors are tri-state
+			// (healthy/degraded/down) and report degraded as success=true so a
+			// partial problem doesn't fire a down alert. The reason IS recorded,
+			// and the dashboard renders such a result amber. See the comment in
+			// CreateExternalEndpointResult.
+			Name:                           "good-token-success-true-with-warning",
 			Path:                           "/api/v1/endpoints/g_n/external?success=true&error=failed",
 			AuthorizationHeaderBearerToken: "Bearer token",
 			ExpectedCode:                   200,
@@ -147,8 +152,9 @@ func TestCreateExternalEndpointResult(t *testing.T) {
 		if !endpointStatus.Results[1].Success {
 			t.Errorf("expected second result to be successful")
 		}
-		if len(endpointStatus.Results[1].Errors) > 0 {
-			t.Errorf("expected second result to have no errors")
+		// Successful BUT carrying the pushed reason — a warning, not a failure.
+		if len(endpointStatus.Results[1].Errors) != 1 || endpointStatus.Results[1].Errors[0] != "failed" {
+			t.Errorf(`expected second result to keep its warning ["failed"] alongside success, but got %v`, endpointStatus.Results[1].Errors)
 		}
 		if endpointStatus.Results[2].Duration == 0 || endpointStatus.Results[2].Duration.Seconds() != 10 {
 			t.Errorf("expected third result to have a duration of 10 seconds")

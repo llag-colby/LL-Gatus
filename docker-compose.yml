@@ -37,3 +37,25 @@ services:
       - ./collector:/collector
     working_dir: /collector
     command: ["python", "phone_collector.py"]
+
+  # UniFi collector: reads Ubiquiti's cloud Site Manager API (api.ui.com) and
+  # pushes the Firewall (gateway + WANs) and Wireless (APs + clients) rows.
+  # Cloud, not per-console, so no route to any store LAN is needed. Sweeps every
+  # 30-60s — UniFi state moves slower than phone registrations.
+  unifi-collector:
+    image: python:3-slim
+    container_name: unifi-collector
+    restart: always
+    depends_on:
+      - gatus
+    env_file:
+      - .env   # UNIFI_API_KEY (+ PHONES_PUSH_TOKEN to push)
+    environment:
+      - LOOP=1
+      - GATUS_PUSH_BASE=http://gatus:8080
+      - PYTHONUNBUFFERED=1
+      - TZ=America/Chicago
+    volumes:
+      - ./collector:/collector
+    working_dir: /collector
+    command: ["python", "unifi_collector.py"]

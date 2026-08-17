@@ -7,6 +7,7 @@ import (
 	"github.com/TwiN/gatus/v5/config"
 	"github.com/TwiN/gatus/v5/config/endpoint"
 	"github.com/TwiN/gatus/v5/metrics"
+	"github.com/TwiN/gatus/v5/monitoring"
 	"github.com/TwiN/gatus/v5/storage/store"
 	"github.com/TwiN/logr"
 )
@@ -36,6 +37,13 @@ func executeExternalEndpointHeartbeat(ee *endpoint.ExternalEndpoint, cfg *config
 	// If there's a connectivity checker configured, check if Gatus has internet connectivity
 	if cfg.Connectivity != nil && cfg.Connectivity.Checker != nil && !cfg.Connectivity.Checker.IsConnected() {
 		logr.Infof("[watchdog.monitorExternalEndpointHeartbeat] No connectivity; skipping execution")
+		return
+	}
+	// If monitoring is paused for this endpoint, skip the heartbeat entirely.
+	// Nothing is being pushed while paused, so checking it would only manufacture
+	// a heartbeat failure (and its alert) out of the pause itself.
+	if monitoring.IsPaused(ee.Key()) {
+		logr.Debugf("[watchdog.monitorExternalEndpointHeartbeat] Monitoring paused; skipping heartbeat for group=%s; endpoint=%s; key=%s", ee.Group, ee.Name, ee.Key())
 		return
 	}
 	logr.Debugf("[watchdog.monitorExternalEndpointHeartbeat] Checking heartbeat for group=%s; endpoint=%s; key=%s", ee.Group, ee.Name, ee.Key())

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/TwiN/gatus/v5/config"
+	"github.com/TwiN/gatus/v5/monitoring"
 	"github.com/TwiN/logr"
 	"github.com/gofiber/fiber/v2"
 )
@@ -64,6 +65,13 @@ func SetPhonesInventory(cfg *config.Config) fiber.Handler {
 		if err := json.Unmarshal(c.Body(), &payload); err != nil || len(payload.Phones) == 0 {
 			return c.Status(400).SendString(`invalid body: expected {"phones": [...]}`)
 		}
+		// Paused means paused: freeze the inventory too, so the drill-in doesn't show
+		// a live phone table on a page that says monitoring is stopped. 200 for the
+		// same reason the result push returns 200 — a non-200 would make the collector
+		// warn on every sweep.
+		if monitoring.IsPaused(key) {
+			return c.Status(200).SendString("OK (monitoring paused)")
+		}
 		phonesInventoryMu.Lock()
 		phonesInventoryStore[key] = storedInventory{
 			UpdatedAt: time.Now().UTC().Format(time.RFC3339),
@@ -72,6 +80,10 @@ func SetPhonesInventory(cfg *config.Config) fiber.Handler {
 			Phones:    payload.Phones,
 		}
 		phonesInventoryMu.Unlock()
+		// Persist the counts for the charts. After the pause guard on purpose: a
+		// paused endpoint records nothing, so its history has a gap rather than a
+		// flat line implying it was still being measured.
+		recordCounts(key, payload.Counts)
 		logr.Infof("[api.SetPhonesInventory] Stored inventory for key=%s status=%s", key, payload.Status)
 		return c.Status(200).SendString("OK")
 	}

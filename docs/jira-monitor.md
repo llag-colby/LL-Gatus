@@ -50,7 +50,6 @@ Jira Cloud REST  <--poll (30s)--  jira poller (Go)  --snapshot-->  in-memory sto
 |------|---------|
 | `jira/jira.go` | Config, HTTP client (Basic auth), the poll loop, metric aggregation, the in-memory store, and the SSE broadcaster (`Subscribe`/`Unsubscribe`/`broadcast`). |
 | `jira/issue.go` | `FetchIssue()` — on-demand single-ticket detail (description via `renderedFields`, SLA cycles, recent comments). |
-| `jira/demo.go` | Synthetic snapshot for `JIRA_DEMO=1` (preview the UI without live creds). |
 | `api/jira.go` | HTTP handlers: `GetJiraMetrics`, `GetJiraIssue`, `JiraLive` (SSE). |
 | `api/api.go` | Registers the three routes; **excludes `/api/v1/jira/live` from the compress middleware** (SSE must stream unbuffered). |
 | `main.go` | Calls `jira.StartPoller()` from `start()`. |
@@ -101,7 +100,6 @@ All environment-driven (in `.env`, injected into the `gatus` container via
 | `JIRA_EMAIL` | yes | — | The Atlassian account email that **owns the API token**. Must match exactly. |
 | `JIRA_API_TOKEN` | yes | — | Atlassian API token. Used as HTTP Basic `email:token`. |
 | `JIRA_PROJECTS` | no | `LLSM,LLIP` | Comma-separated project keys to monitor. |
-| `JIRA_DEMO` | no | `0` | `1` serves synthetic data (badged "demo data"). |
 | `JIRA_POLL_SECONDS` | no | `30` | How often the poller refreshes (min 15). |
 | `JIRA_TREND_DAYS` | no | `14` | Days in the created-vs-resolved trend/sparkline. |
 | `JIRA_MAX_ISSUES` | no | `500` | Pagination cap per query. |
@@ -115,7 +113,7 @@ All environment-driven (in `.env`, injected into the `gatus` container via
    in as the account that can see the projects.
 2. Put the token in `JIRA_API_TOKEN` and that account's **exact** email in
    `JIRA_EMAIL`.
-3. Set `JIRA_DEMO=0`, then recreate the container (`docker compose up -d`).
+3. Recreate the container (`docker compose up -d`).
 
 ---
 
@@ -170,9 +168,6 @@ must bypass gzip. `/api/v1/jira/live` is excluded from the compress middleware i
 business-hours calendar. Outside those hours a ticket's `slaActive` is false and
 the UI shows the (static) remaining time rather than ticking. Overdue tickets show
 "overdue" in red regardless.
-
-**Preview without live Jira.** Set `JIRA_DEMO=1` and recreate the container to see
-the full UI populated with synthetic LLSM/LLIP data (clearly badged "demo data").
 
 ---
 

@@ -378,26 +378,38 @@
     font-size: 5cqw !important;
     line-height: 1.15 !important;
 }
-/* Trailing latency value on the Overall row. Scoped to .location for the same
-   reason as the badge above — tabular-nums is used all over the detail views,
-   which also render inside .fs-active. */
-.fs-active .location .tabular-nums {
-    font-size: 5cqw !important;
-    width: auto !important;
+/* Trailing metric column on every row (latency, WAN/AP counts, best-of latency
+   on Overall). Scoped to .location for the same reason as the badge above. */
+.fs-active .location .loc-rowvalue {
+    width: 14cqw !important;
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-end;
     padding-left: 1.5cqw;
 }
-/* ISP + IP under each WAN row — shown only in fullscreen, where there's room. */
+.fs-active .location .loc-rowvalue > div:first-child {
+    font-size: 5cqw !important;
+    line-height: 1.15 !important;
+}
+/* Secondary lines — ISP + IP under a WAN row, client/latency detail under a
+   UniFi row. Shown only in fullscreen, where there's room for them. */
 .loc-meta {
     display: none;
 }
 .fs-active .loc-meta {
     display: block;
+    font-size: 3cqw !important;
+    line-height: 1.25;
 }
 .fs-active .loc-meta div {
     font-size: 3cqw !important;
     line-height: 1.25;
+}
+/* Five or more rows: thin the bars so a UniFi-equipped site still fits its
+   card at the same rhythm as the rest of the wall. */
+.fs-active .loc-rows.loc-dense .loc-bars > div {
+    height: 6.5cqh !important;
 }
 .fs-active .loc-age {
     margin-top: 0 !important;

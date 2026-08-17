@@ -59,10 +59,16 @@ LOCATIONS = [
         "pbx": "https://longlewisbe.wildixin.com",
         "token_env": "PHONES_BESSEMER_TOKEN",
     },
+    # Cullman is longlewisCU, not longlewisCL. longlewiscl exists and accepts a
+    # token, but it is a different tenant: it serves the shared colleague
+    # directory and has zero SIP registrations, which is why this row reported
+    # "no phones reporting" indefinitely. The directory is authoritative — every
+    # groupName=Cullman record carries pbx=longlewiscu.wildixin.com and
+    # dialplan=usersCU. The token must be issued on longlewiscu.
     {
         "key": "phones_cullman",           # slug(group=Phones)_slug(name=Cullman)
         "label": "Cullman",
-        "pbx": "https://longlewiscl.wildixin.com",
+        "pbx": "https://longlewiscu.wildixin.com",
         "token_env": "PHONES_CULLMAN_TOKEN",
     },
     # Decatur GMC and Decatur KIA share ONE PBX (longlewisde) and one token, so
@@ -171,9 +177,19 @@ def parse_useragent(ua):
     return model, firmware, mac
 
 
-def fetch_directory(pbx, token):
-    """ext -> {name, did, department, email}, best effort."""
-    info = {}
+def fetch_directory(pbx, token, label=""):
+    """(ext -> {name, did, department, email}, home_pbx) — both best effort.
+
+    home_pbx is the PBX host the directory says THIS site's users actually live
+    on, taken from each record's `pbx` field and tallied over the records whose
+    groupName matches the site label. The colleague directory is shared across
+    every Long Lewis tenant, so a PBX can happily answer for a site whose phones
+    register somewhere else entirely — that is exactly how Cullman sat on
+    longlewiscl reporting zero phones. Used only to explain a zero-phone result,
+    never to decide health.
+    """
+    info, homes = {}, {}
+    want = (label or "").strip().lower()
     try:
         code, body = http(f"{pbx}/api/v1/PBX/Colleagues/", token)
         if code == 200:
@@ -186,9 +202,14 @@ def fetch_directory(pbx, token):
                         "department": rec.get("groupName") or "",
                         "email": rec.get("email") or "",
                     }
+                group = str(rec.get("groupName") or "").strip().lower()
+                host = str(rec.get("pbx") or "").strip().lower()
+                if want and group and host and (group in want or want in group):
+                    homes[host] = homes.get(host, 0) + 1
     except (urllib.error.URLError, OSError, ValueError):
         pass
-    return info
+    home_pbx = max(homes, key=homes.get) if homes else ""
+    return info, home_pbx
 
 
 def build_inventory(reg_result, directory, excluded):
@@ -288,7 +309,10 @@ def push_inventory(base, key, phones, status, counts, push_token):
 def push_result(base, key, success, error, duration_ms, push_token):
     from urllib.parse import urlencode
     q = {"success": "true" if success else "false", "duration": f"{int(duration_ms)}ms"}
-    if error and not success:
+    # Send the reason for a DEGRADED result too ("3 of 44 desk phones offline"),
+    # not just a failure: Gatus stores it against the passing result so the
+    # dashboard can paint it amber rather than a bare green.
+    if error:
         q["error"] = error
     http(f"{base}/api/v1/endpoints/{key}/external?{urlencode(q)}", push_token, method="POST")
 
@@ -299,7 +323,7 @@ def run_location(loc, push_token, base):
     if not token:
         print(f"ERROR: {loc['token_env']} not set; skipping {key}", file=sys.stderr)
         return
-    error, phones, pbx_reachable = None, [], True
+    error, phones, pbx_reachable, home_pbx = None, [], True, ""
 
     # Response time = ONLY the PBX API reachability call (how responsive the phone
     # system is). The registrations/Colleagues fetches below are data-gathering
@@ -327,7 +351,7 @@ def run_location(loc, push_token, base):
             # Coerce any non-dict (i.e. []) to {} so build_inventory doesn't crash.
             if not isinstance(reg_result, dict):
                 reg_result = {}
-            directory = fetch_directory(loc["pbx"], token)
+            directory, home_pbx = fetch_directory(loc["pbx"], token, loc["label"])
             excluded = fetch_exclusions(base, key)
             phones = build_inventory(reg_result, directory, excluded)
         except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -343,10 +367,18 @@ def run_location(loc, push_token, base):
         # NOTE: the "no phones reporting" wording is a CONTRACT with the UI —
         # LocationCard.vue matches it to paint the bar BLACK (nothing reported)
         # instead of red (phones present but offline). Don't reword the prefix.
-        reason = error or (
-            "no phones reporting (PBX reachable, 0 desk phones registered)"
-            if not phones else "all monitored phones offline"
-        )
+        if error:
+            reason = error
+        elif not phones:
+            detail = "PBX reachable, 0 desk phones registered"
+            queried = loc["pbx"].split("//")[-1].lower()
+            if home_pbx and home_pbx != queried:
+                # The wrong-tenant case: say where the phones actually are
+                # instead of leaving someone to rediscover it.
+                detail += f"; directory says {loc['label']} users are on {home_pbx}, not {queried}"
+            reason = f"no phones reporting ({detail})"
+        else:
+            reason = "all monitored phones offline"
     elif status == "degraded":
         reason = f"{counts['offline']} of {counts['monitored']} desk phones offline"
 

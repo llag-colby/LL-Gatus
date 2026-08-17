@@ -9,6 +9,7 @@ import (
 
 	"github.com/TwiN/gatus/v5/config"
 	"github.com/TwiN/gatus/v5/controller"
+	"github.com/TwiN/gatus/v5/history"
 	"github.com/TwiN/gatus/v5/jira"
 	"github.com/TwiN/gatus/v5/metrics"
 	"github.com/TwiN/gatus/v5/storage/store"
@@ -20,6 +21,11 @@ const (
 	GatusConfigPathEnvVar = "GATUS_CONFIG_PATH"
 	GatusConfigFileEnvVar = "GATUS_CONFIG_FILE" // Deprecated in favor of GatusConfigPathEnvVar
 	GatusLogLevelEnvVar   = "GATUS_LOG_LEVEL"
+
+	// Collector metric history. Its own file next to data.db in the same mounted
+	// volume, so it survives updates but is not subject to the Gatus store's
+	// cascading deletes.
+	historyDatabasePath = "/data/history.db"
 )
 
 func main() {
@@ -52,6 +58,14 @@ func main() {
 func start(cfg *config.Config) {
 	go controller.Handle(cfg)
 	metrics.InitializePrometheusMetrics(cfg, nil)
+	// Collector metric history lives in its own SQLite file, deliberately outside
+	// the Gatus store: that store cascades deletes from the endpoints table on
+	// every startup, so a key missing from config.yaml for one restart would take
+	// its history with it. A failure here is logged and the app carries on without
+	// history rather than refusing to boot over a charting feature.
+	if err := history.Open(historyDatabasePath); err != nil {
+		logr.Errorf("[main.start] Metric history is unavailable: %s", err.Error())
+	}
 	watchdog.Monitor(cfg)
 	jira.StartPoller() // background Jira service-desk metrics (no-op unless configured)
 	go listenToConfigurationFileChanges(cfg)

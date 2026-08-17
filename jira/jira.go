@@ -11,8 +11,8 @@
 // results, which would otherwise masquerade as a healthy but all-zero board.
 //
 // Everything is environment-driven; nothing polls until JIRA_BASE_URL,
-// JIRA_EMAIL and JIRA_API_TOKEN are all set. Set JIRA_DEMO=1 to serve synthetic
-// data (useful for previewing the UI without live credentials).
+// JIRA_EMAIL and JIRA_API_TOKEN are all set. There is no synthetic/demo mode —
+// every number the dashboard shows came from Jira.
 package jira
 
 import (
@@ -91,7 +91,6 @@ type Snapshot struct {
 	Configured bool      `json:"configured"`
 	OK         bool      `json:"ok"`
 	Error      string    `json:"error,omitempty"`
-	Demo       bool      `json:"demo"`
 	Status     string    `json:"status"` // healthy | degraded | down | unknown
 	UpdatedAt  string    `json:"updatedAt,omitempty"`
 	BaseURL    string    `json:"baseUrl,omitempty"`
@@ -166,7 +165,6 @@ type config struct {
 	maxIssues    int // hard cap on issues fetched per query (pagination bound)
 	pollInterval time.Duration
 	slaMax       int // max open tickets to check per project for SLA breaches
-	demo         bool
 	// projects that should have SLA data pulled (Jira Service Management).
 	// Defaults to the first project (typically the service desk).
 	slaProjects map[string]bool
@@ -223,13 +221,12 @@ func loadConfig() config {
 		maxIssues:    maxIssues,
 		pollInterval: time.Duration(poll) * time.Second,
 		slaMax:       slaMax,
-		demo:         os.Getenv("JIRA_DEMO") == "1",
 		slaProjects:  slaProjects,
 	}
 }
 
 func (c config) configured() bool {
-	return c.demo || (c.baseURL != "" && c.email != "" && c.token != "")
+	return c.baseURL != "" && c.email != "" && c.token != ""
 }
 
 // --- Poller ----------------------------------------------------------------
@@ -237,11 +234,6 @@ func (c config) configured() bool {
 // StartPoller launches the background polling loop. Safe to call unconditionally.
 func StartPoller() {
 	cfg := loadConfig()
-	if cfg.demo {
-		logr.Info("[jira.StartPoller] JIRA_DEMO=1 — serving synthetic data")
-		setSnapshot(demoSnapshot(cfg))
-		return
-	}
 	if !cfg.configured() {
 		logr.Info("[jira.StartPoller] Jira is not configured (set JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN) — the /jira page will show a not-configured state")
 		setSnapshot(Snapshot{Configured: false, Status: "unknown"})

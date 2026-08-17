@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"time"
 )
 
 // SLAInfo is one SLA metric on a ticket (e.g. "Time to first response").
@@ -40,15 +39,11 @@ type IssueDetail struct {
 	URL             string    `json:"url"`
 	SLAs            []SLAInfo `json:"slas"`
 	Comments        []Comment `json:"comments"`
-	Demo            bool      `json:"demo"`
 }
 
 // FetchIssue loads a single ticket's detail on demand (used by the drill-down).
 func FetchIssue(ctx context.Context, key string) (*IssueDetail, error) {
 	cfg := loadConfig()
-	if cfg.demo {
-		return demoIssueDetail(key), nil
-	}
 	if !cfg.configured() {
 		return nil, fmt.Errorf("jira is not configured")
 	}
@@ -57,11 +52,11 @@ func FetchIssue(ctx context.Context, key string) (*IssueDetail, error) {
 	var raw struct {
 		Key    string `json:"key"`
 		Fields struct {
-			Summary   string   `json:"summary"`
-			Created   string   `json:"created"`
-			Updated   string   `json:"updated"`
-			Labels    []string `json:"labels"`
-			Status    *struct {
+			Summary string   `json:"summary"`
+			Created string   `json:"created"`
+			Updated string   `json:"updated"`
+			Labels  []string `json:"labels"`
+			Status  *struct {
 				Name           string `json:"name"`
 				StatusCategory struct {
 					Key string `json:"key"`
@@ -170,25 +165,4 @@ func (c *client) fetchComments(ctx context.Context, key string) []Comment {
 		comments = append(comments, Comment{Author: cm.Author.DisplayName, HTML: cm.RenderedBody, Created: cm.Created})
 	}
 	return comments
-}
-
-// demoIssueDetail returns synthetic detail for the demo tickets.
-func demoIssueDetail(key string) *IssueDetail {
-	now := time.Now()
-	ago := func(h int) string { return now.Add(-time.Duration(h) * time.Hour).Format("2006-01-02T15:04:05.000-0700") }
-	return &IssueDetail{
-		Key: key, Summary: "Showroom POS terminal won't print invoices", Type: "Incident",
-		Status: "In Progress", Category: "indeterminate", Priority: "High",
-		Assignee: "Dana Reeves", Reporter: "Front Desk", Created: ago(5), Updated: ago(1),
-		Labels: []string{"pos", "alabaster"},
-		DescriptionHTML: "<p>The invoice printer attached to the showroom POS stopped printing after the last Windows update. " +
-			"Restarting the spooler works for one job then fails again.</p><p><b>Steps tried:</b> reinstalled driver, cleared queue.</p>",
-		URL:  "https://longlewis.atlassian.net/browse/" + key,
-		SLAs: []SLAInfo{{Name: "Time to first response", Breached: true, Remaining: "-1h 20m", Ongoing: true}, {Name: "Time to resolution", Breached: false, Remaining: "3h 40m", Ongoing: true}},
-		Comments: []Comment{
-			{Author: "Dana Reeves", HTML: "<p>Swapping the printer with a spare, will confirm shortly.</p>", Created: ago(1)},
-			{Author: "Front Desk", HTML: "<p>Still down as of this morning.</p>", Created: ago(3)},
-		},
-		Demo: true,
-	}
 }

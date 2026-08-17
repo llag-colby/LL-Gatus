@@ -6,6 +6,7 @@ import (
 
 	"github.com/TwiN/gatus/v5/config"
 	"github.com/TwiN/gatus/v5/config/endpoint"
+	"github.com/TwiN/gatus/v5/monitoring"
 	"github.com/TwiN/gatus/v5/watchdog"
 	"github.com/TwiN/logr"
 	"github.com/gofiber/fiber/v2"
@@ -74,6 +75,13 @@ func ForceEndpointCheck(cfg *config.Config) fiber.Handler {
 		}
 		if !target.IsEnabled() {
 			return c.Status(400).JSON(fiber.Map{"error": "endpoint is disabled"})
+		}
+		// Paused endpoints are refused up front. Without this the check falls through
+		// to the watchdog's own pause guard, which returns ErrCheckSkipped — whose
+		// message blames shutdown or connectivity and would send someone chasing a
+		// problem that doesn't exist.
+		if monitoring.IsPaused(key) {
+			return c.Status(409).JSON(fiber.Map{"error": "monitoring is paused for this endpoint; resume it to run a check"})
 		}
 		retryAfter, inFlight, release := claimForceCheck(key)
 		if inFlight {

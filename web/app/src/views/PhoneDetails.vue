@@ -17,6 +17,7 @@
           </div>
         </div>
         <div class="flex items-center gap-2 mb-0.5">
+          <MonitorToggle :endpoint-key="routeKey" compact />
           <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
             <span class="sweep-dot" :class="{ dead: !updatedAt }"></span>
             <span class="font-mono">swept {{ updatedLabel }}</span>
@@ -103,6 +104,48 @@
         </label>
       </div>
 
+      <!-- History: one filter row scopes every chart below it -->
+      <section class="history-section">
+        <div class="history-head">
+          <div>
+            <div class="eyebrow">History</div>
+            <div class="text-sm text-muted-foreground">Recorded counts and uptime for {{ locationName }}</div>
+          </div>
+          <!-- setHistoryRange rather than a plain v-model write, so the choice is
+               persisted through the store's single key and follows the user
+               between pages. -->
+          <RangeSelector :model-value="historyRange" label="History range"
+            @update:modelValue="setHistoryRange" />
+        </div>
+        <div class="history-grid">
+          <HistoryChart
+            title="Phones registered"
+            kind="area"
+            :series="onlineSeries"
+            :loading="historyLoading"
+            :note="metricNote"
+            :empty-text="metricEmptyText" />
+          <HistoryChart
+            v-if="showOffline"
+            title="Phones offline"
+            kind="area"
+            :series="offlineSeries"
+            :loading="historyLoading"
+            :note="metricNote"
+            :empty-text="metricEmptyText" />
+          <HistoryChart
+            title="Uptime"
+            kind="column"
+            ratio
+            :series="uptimeSeries"
+            :warn-below="UPTIME_WARN_BELOW"
+            :down-below="UPTIME_DOWN_BELOW"
+            :loading="historyLoading"
+            :note="uptimeNote"
+            :empty-text="uptimeEmptyText" />
+        </div>
+      </section>
+
       <!-- Empty state -->
       <div v-if="loaded && phones.length === 0" class="empty-state">
         <template v-if="updatedAt">
@@ -169,14 +212,18 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowLeft, RefreshCw, SlidersHorizontal, Download, Zap } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import MonitorToggle from '@/components/MonitorToggle.vue'
+import RangeSelector from '@/components/RangeSelector.vue'
+import HistoryChart from '@/components/HistoryChart.vue'
 import { generatePrettyTimeAgo } from '@/utils/time'
-import { addToast } from '@/store'
+import { addToast, historyRange, setHistoryRange } from '@/store'
 
 const route = useRoute()
+const routeKey = computed(() => route.params.key || '')
 
 const locationName = computed(() => {
   const slug = (route.params.key || '').replace(/^phones_/, '')
@@ -274,6 +321,124 @@ const fetchInventory = async () => {
     loaded.value = true
   }
 }
+
+// --- History (metric counts + uptime buckets) ------------------------------
+// The snapshot above answers "what is registered now". These two endpoints
+// answer "what was registered last night", which the snapshot cannot.
+
+const EMPTY_SERIES = { timestamps: [], values: [] }
+
+// A phones row reports degraded as a pass, so nearly every bucket sits at 1.0
+// and a threshold set close to 100% would paint the whole chart amber. With a
+// sweep about once a minute an hourly bucket holds roughly 60 executions, so:
+// one missed sweep (98.3%) stays green, two or more (96.7% and below) turn
+// amber, and losing a tenth of the window turns red.
+const UPTIME_WARN_BELOW = 0.98
+const UPTIME_DOWN_BELOW = 0.9
+
+const historyLoading = ref(false)
+const metricSeries = ref({})
+const metricResolution = ref('')
+const metricFailed = ref(false)
+const uptimeSeries = ref(EMPTY_SERIES)
+const uptimeResolution = ref('')
+const uptimeFailed = ref(false)
+
+const seriesFor = (name) => {
+  const s = metricSeries.value[name]
+  return s && Array.isArray(s.timestamps) ? s : EMPTY_SERIES
+}
+const onlineSeries = computed(() => seriesFor('online'))
+const offlineSeries = computed(() => seriesFor('offline'))
+
+// A healthy site would otherwise get a permanently flat chart at zero, which
+// carries no information. Show it only once something has actually gone offline.
+const showOffline = computed(() =>
+  offlineSeries.value.values.some(v => typeof v === 'number' && v > 0))
+
+// Say plainly what one point covers. Never imply per sweep detail once the
+// backend has rolled the samples up.
+const metricNote = computed(() => {
+  if (metricResolution.value === 'raw') return 'One point per collector sweep.'
+  if (metricResolution.value === 'hour') return 'One point per hour, averaged from the sweeps in that hour.'
+  return ''
+})
+
+const uptimeNote = computed(() => {
+  const parts = []
+  if (uptimeResolution.value === 'hour') parts.push('One column per hour.')
+  else if (uptimeResolution.value === 'day') parts.push('One column per day: Gatus keeps hourly uptime for about 48 hours, then compacts it to daily.')
+  else if (uptimeResolution.value === 'mixed') parts.push('One column per hour for about the last 48 hours, one per day before that.')
+  parts.push('Grey columns are buckets with no checks recorded, which is a gap in collection, not an outage.')
+  return parts.join(' ')
+})
+
+const NOT_BACKFILLED = 'History starts when collection is first deployed and cannot be backfilled, so an older site can still be empty here.'
+const metricEmptyText = computed(() => metricFailed.value
+  ? 'Could not load metric history. The next refresh tries again.'
+  : `No counts recorded in this range. ${NOT_BACKFILLED}`)
+const uptimeEmptyText = computed(() => uptimeFailed.value
+  ? 'Could not load uptime history. The next refresh tries again.'
+  : `No uptime buckets in this range. ${NOT_BACKFILLED}`)
+
+// Changing the range fires a new pair of requests while the old pair may still
+// be open; only the newest token is allowed to write, so a slow 30d response
+// cannot land on top of a 1h view the user already switched to.
+let historyToken = 0
+const fetchHistory = async () => {
+  const key = route.params.key
+  if (!key) return
+  const token = ++historyToken
+  const range = historyRange.value
+  historyLoading.value = true
+  try {
+    const [metricRes, uptimeRes] = await Promise.all([
+      fetch(`/api/v1/history/${key}?range=${range}`, { cache: 'no-store' }),
+      fetch(`/api/v1/endpoints/${key}/uptime-series?range=${range}`, { cache: 'no-store' }),
+    ])
+    if (token !== historyToken) return
+
+    if (metricRes.ok) {
+      const data = await metricRes.json()
+      metricSeries.value = data && data.series && typeof data.series === 'object' ? data.series : {}
+      metricResolution.value = data && data.resolution ? data.resolution : ''
+      metricFailed.value = false
+    } else {
+      metricSeries.value = {}
+      metricResolution.value = ''
+      metricFailed.value = true
+    }
+
+    if (uptimeRes.ok) {
+      const data = await uptimeRes.json()
+      uptimeSeries.value = {
+        timestamps: Array.isArray(data.timestamps) ? data.timestamps : [],
+        values: Array.isArray(data.values) ? data.values : [],
+      }
+      uptimeResolution.value = data && data.resolution ? data.resolution : ''
+      uptimeFailed.value = false
+    } else {
+      // A 404 means Gatus has no such endpoint key, which reads as empty rather
+      // than broken. Anything else is a real failure worth saying out loud.
+      uptimeSeries.value = EMPTY_SERIES
+      uptimeResolution.value = ''
+      uptimeFailed.value = uptimeRes.status !== 404
+    }
+  } catch (e) {
+    if (token === historyToken) {
+      metricSeries.value = {}
+      metricResolution.value = ''
+      metricFailed.value = true
+      uptimeSeries.value = EMPTY_SERIES
+      uptimeResolution.value = ''
+      uptimeFailed.value = true
+    }
+  } finally {
+    if (token === historyToken) historyLoading.value = false
+  }
+}
+
+watch(historyRange, fetchHistory)
 
 // Force an immediate collector sweep instead of waiting out its loop. The
 // collector claims the request within ~2s and re-reports; poll for the fresh
@@ -408,11 +573,19 @@ const exportCSV = () => {
 }
 
 let poll = null
+// History moves at bucket speed, not sweep speed, so it refreshes far less often
+// than the inventory snapshot above it.
+let historyPoll = null
 onMounted(() => {
   fetchInventory()
+  fetchHistory()
   poll = setInterval(fetchInventory, 15000)
+  historyPoll = setInterval(fetchHistory, 60000)
 })
-onUnmounted(() => { if (poll) clearInterval(poll) })
+onUnmounted(() => {
+  if (poll) clearInterval(poll)
+  if (historyPoll) clearInterval(historyPoll)
+})
 </script>
 
 <style scoped>
@@ -423,6 +596,27 @@ onUnmounted(() => { if (poll) clearInterval(poll) })
   border-radius: 10px;
   padding: 2.5rem 1.5rem;
   text-align: center;
+}
+
+/* --- History section --- */
+.history-section {
+  border-top: 1px solid hsl(var(--border));
+  padding-top: 0.9rem;
+}
+/* The filter row sits above everything it scopes, so it reads as belonging to
+   the charts rather than to the toolbar. */
+.history-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.7rem;
+}
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 0.75rem;
 }
 
 /* Equipment-panel micro-label */

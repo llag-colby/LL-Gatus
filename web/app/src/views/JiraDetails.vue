@@ -17,12 +17,21 @@
           </div>
         </div>
         <div class="flex items-center gap-3 mb-0.5">
-          <span v-if="snapshot.demo" class="demo-badge">demo data</span>
-          <span class="live-ind" :class="{ on: live }"><span class="ldot"></span>{{ live ? 'live' : updatedLabel }}</span>
-          <Button variant="ghost" size="icon" class="h-9 w-9" @click="fetchMetrics" data-tooltip="Refresh" data-tip-pos="bottom">
+          <span v-if="tab === 'overview'" class="live-ind" :class="{ on: live }"><span class="ldot"></span>{{ live ? 'live' : updatedLabel }}</span>
+          <Button v-if="tab === 'overview'" variant="ghost" size="icon" class="h-9 w-9" @click="fetchMetrics" data-tooltip="Refresh" data-tip-pos="bottom">
             <RefreshCw class="h-5 w-5" :class="{ 'animate-spin': loading }" />
           </Button>
         </div>
+      </div>
+
+      <!-- Page tabs -->
+      <div class="tabbar" role="tablist">
+        <button role="tab" :aria-selected="tab === 'overview'" class="tab" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">
+          <Gauge class="h-4 w-4" />Overview
+        </button>
+        <button role="tab" :aria-selected="tab === 'kanban'" class="tab" :class="{ active: tab === 'kanban' }" @click="tab = 'kanban'">
+          <LayoutGrid class="h-4 w-4" />Kanban
+        </button>
       </div>
 
       <div v-if="loaded && !snapshot.configured" class="notice">
@@ -34,7 +43,10 @@
         <pre class="err-pre">{{ snapshot.error }}</pre>
       </div>
 
-      <template v-else-if="snapshot.configured && snapshot.ok && proj">
+      <!-- KANBAN tab: the real Jira agile board -->
+      <JiraKanban v-else-if="tab === 'kanban' && snapshot.configured" @open="openKey = $event" />
+
+      <template v-else-if="tab === 'overview' && snapshot.configured && snapshot.ok && proj">
         <!-- Project switcher -->
         <div class="segmented" role="tablist">
           <button v-for="p in projects" :key="p.key" role="tab" :aria-selected="p.key === selectedKey"
@@ -158,12 +170,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { ArrowLeft, RefreshCw, AlertTriangle, Rows3, Columns3 } from 'lucide-vue-next'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ArrowLeft, RefreshCw, AlertTriangle, Rows3, Columns3, Gauge, LayoutGrid } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { generatePrettyTimeAgo } from '@/utils/time'
 import jiraIcon from '@/assets/jira.png'
 import JiraTicketPanel from '@/components/JiraTicketPanel.vue'
+import JiraKanban from '@/components/JiraKanban.vue'
 
 const RED = '#ef6b53', GOLD = '#e0a458', GRAY = '#8a8f98'
 const prioColor = { highest: RED, high: GOLD, medium: GRAY, low: '#6b7280', lowest: '#6b7280', none: '#6b7280' }
@@ -173,6 +186,9 @@ const loading = ref(false)
 const loaded = ref(false)
 const live = ref(false)
 const search = ref('')
+// Which page tab is showing; remembered so a refresh lands where you left off.
+const tab = ref(localStorage.getItem('gatus.jira.tab') === 'kanban' ? 'kanban' : 'overview')
+watch(tab, (v) => localStorage.setItem('gatus.jira.tab', v))
 const view = ref('list')
 const selectedKey = ref('')
 const openKey = ref('')
@@ -361,12 +377,19 @@ onUnmounted(() => {
 .jira-panel { width: 100%; }
 .eyebrow { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: hsl(var(--muted-foreground)); font-weight: 600; }
 .jira-mark { display: inline-block; width: 32px; height: 32px; border-radius: 8px; background-size: contain; background-repeat: no-repeat; background-position: center; }
-.demo-badge { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #1a1206; background: #e0a458; padding: 0.15rem 0.5rem; border-radius: 5px; }
 
 .live-ind { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-family: ui-monospace, monospace; color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.08em; }
 .live-ind .ldot { width: 7px; height: 7px; border-radius: 999px; background: hsl(var(--muted-foreground) / 0.5); }
 .live-ind.on { color: #7bbd8a; }
 .live-ind.on .ldot { background: #5aa06b; }
+
+/* page tabs: a hairline rail rather than a filled pill, so the KPI rail below
+   stays the loudest thing on the page */
+.tabbar { display: flex; gap: 1.4rem; border-bottom: 1px solid hsl(var(--border)); }
+.tab { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0 0.1rem 0.6rem; font-size: 0.82rem; font-weight: 600; color: hsl(var(--muted-foreground)); background: transparent; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.16s ease, border-color 0.16s ease; }
+.tab:hover { color: hsl(var(--foreground)); }
+.tab.active { color: hsl(var(--foreground)); border-bottom-color: #e0a458; }
+.tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; border-radius: 3px; }
 
 .notice { border: 1px dashed hsl(var(--border)); border-radius: 12px; padding: 1.5rem; }
 .notice-error { border-style: solid; border-color: hsl(var(--destructive) / 0.4); background: hsl(var(--destructive) / 0.05); }

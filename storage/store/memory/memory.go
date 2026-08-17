@@ -189,6 +189,41 @@ func (s *Store) GetHourlyAverageResponseTimeByKey(key string, from, to time.Time
 	return hourlyAverageResponseTimes, nil
 }
 
+// GetUptimeBucketsByKey returns every stored uptime aggregate during a time range, ordered from oldest to newest
+//
+// Unlike the SQL store, the in-memory store never merges hourly entries into daily entries, so every bucket
+// returned here is hourly. Hours during which nothing was recorded are omitted rather than returned as empty
+// buckets, which matches what the SQL store does with hours that have no row.
+func (s *Store) GetUptimeBucketsByKey(key string, from, to time.Time) ([]common.UptimeBucket, error) {
+	if from.After(to) {
+		return nil, common.ErrInvalidTimeRange
+	}
+	s.RLock()
+	defer s.RUnlock()
+	endpointStatus := s.endpointCache.GetValue(key)
+	if endpointStatus == nil || endpointStatus.(*endpoint.Status).Uptime == nil {
+		return nil, common.ErrEndpointNotFound
+	}
+	var uptimeBuckets []common.UptimeBucket
+	current := from
+	for to.Sub(current) >= 0 {
+		hourlyUnixTimestamp := current.Truncate(time.Hour).Unix()
+		hourlyStats := endpointStatus.(*endpoint.Status).Uptime.HourlyStatistics[hourlyUnixTimestamp]
+		if hourlyStats == nil || hourlyStats.TotalExecutions == 0 {
+			current = current.Add(time.Hour)
+			continue
+		}
+		uptimeBuckets = append(uptimeBuckets, common.UptimeBucket{
+			Timestamp:            hourlyUnixTimestamp,
+			TotalExecutions:      int(hourlyStats.TotalExecutions),
+			SuccessfulExecutions: int(hourlyStats.SuccessfulExecutions),
+			TotalResponseTime:    int(hourlyStats.TotalExecutionsResponseTime),
+		})
+		current = current.Add(time.Hour)
+	}
+	return uptimeBuckets, nil
+}
+
 // InsertEndpointResult adds the observed result for the specified endpoint into the store
 func (s *Store) InsertEndpointResult(ep *endpoint.Endpoint, result *endpoint.Result) error {
 	endpointKey := ep.Key()

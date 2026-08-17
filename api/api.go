@@ -67,9 +67,36 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 		// Never compress the live SSE streams — they must stream unbuffered.
 		Next: func(c *fiber.Ctx) bool {
 			p := c.Path()
-			return strings.HasPrefix(p, "/api/v1/live") || p == "/api/v1/jira/live"
+			return strings.HasPrefix(p, "/api/v1/live") || p == "/api/v1/jira/live" ||
+				(strings.HasPrefix(p, "/api/v1/jira/board/") && strings.HasSuffix(p, "/live"))
 		},
 	}))
+	// The SPA bundle is built with filenameHashing disabled, so index.html,
+	// app.js and app.css keep the same URL forever. With no revalidation header a
+	// browser may serve a cached copy indefinitely, so a deploy lands and the user
+	// still sees the previous build. The symptom is a UI that looks broken or
+	// half-updated rather than obviously stale, which is a genuinely expensive
+	// thing to debug. Registered here, above the SPA routes, because those return
+	// without calling Next() and would otherwise never reach this.
+	app.Use(func(c *fiber.Ctx) error {
+		p := c.Path()
+		if strings.HasPrefix(p, "/api/") {
+			return c.Next()
+		}
+		switch p {
+		case "/js/app.js", "/js/chunk-vendors.js", "/css/app.css", "/index.html":
+			c.Set("Cache-Control", "no-cache")
+			return c.Next()
+		}
+		// Every SPA route serves the same index.html shell, including deep links
+		// such as /endpoints/phones_hoover. They have no file extension, which is
+		// what separates them from the hashed assets, images and fonts that are
+		// safe to cache.
+		if !strings.Contains(p[strings.LastIndex(p, "/")+1:], ".") {
+			c.Set("Cache-Control", "no-cache")
+		}
+		return c.Next()
+	})
 	// Define metrics handler, if necessary
 	if cfg.Metrics {
 		metricsHandler := promhttp.InstrumentMetricHandler(prometheus.DefaultRegisterer, promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
@@ -94,6 +121,10 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	unprotectedAPIRouter.Get("/v1/endpoints/:key/response-times/:duration/badge.svg", ResponseTimeBadge(cfg))
 	unprotectedAPIRouter.Get("/v1/endpoints/:key/response-times/:duration/chart.svg", ResponseTimeChart)
 	unprotectedAPIRouter.Get("/v1/endpoints/:key/response-times/:duration/history", ResponseTimeHistory)
+	// Uptime as a series of buckets over a range, rather than the single ratio
+	// /uptimes/:duration returns. Hourly for roughly the last 48h, daily beyond,
+	// because the store compacts older buckets: the response says which.
+	unprotectedAPIRouter.Get("/v1/endpoints/:key/uptime-series", GetUptimeSeries)
 	// This endpoint requires authz with bearer token, so technically it is protected
 	unprotectedAPIRouter.Post("/v1/endpoints/:key/external", CreateExternalEndpointResult(cfg))
 	// Phones inventory side-channel: collector POSTs the rich per-phone table
@@ -108,18 +139,38 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	unprotectedAPIRouter.Post("/v1/phones/:key/exclusions", SetPhonesExclusion)
 	unprotectedAPIRouter.Get("/v1/phones/:key/settings", GetPhonesSettings)
 	unprotectedAPIRouter.Post("/v1/phones/:key/settings", SetPhonesSettings)
+	// Pause monitoring, per endpoint key. Static route first so it isn't
+	// swallowed by :key (same reason as /v1/phones/sweep-pending above).
+	unprotectedAPIRouter.Get("/v1/monitoring", GetMonitoring)
+	unprotectedAPIRouter.Get("/v1/monitoring/:key", GetMonitoringForKey)
+	unprotectedAPIRouter.Post("/v1/monitoring/:key", SetMonitoringForKey(cfg))
+	// UniFi side-channel: the collector POSTs per-site firewall/wireless
+	// snapshots; the dashboard GETs them all at once for the card rows.
+	// Static route first so it isn't swallowed by :key.
+	unprotectedAPIRouter.Get("/v1/unifi", GetUniFiSnapshots)
+	unprotectedAPIRouter.Post("/v1/unifi/:key", SetUniFiSnapshot(cfg))
+	unprotectedAPIRouter.Get("/v1/unifi/:key", GetUniFiSnapshot)
+	// Collector metric history: the counts behind the phones, firewall and
+	// wireless rows, sampled over time. Raw for recent windows, hourly rollups
+	// beyond; the response says which resolution it served.
+	unprotectedAPIRouter.Get("/v1/history/:key", GetMetricHistory)
 	// Jira service-desk metrics, refreshed by the background jira poller.
 	unprotectedAPIRouter.Get("/v1/jira/metrics", GetJiraMetrics)
 	// Jira ticket drill-down: fetches one issue's detail on demand.
 	unprotectedAPIRouter.Get("/v1/jira/issue/:key", GetJiraIssue)
 	// Jira live stream (SSE): pushes a fresh snapshot on every poll.
 	unprotectedAPIRouter.Get("/v1/jira/live", JiraLive)
+	// Jira Kanban: the agile boards themselves (columns, WIP limits, cards).
+	unprotectedAPIRouter.Get("/v1/jira/boards", GetJiraBoards)
+	unprotectedAPIRouter.Get("/v1/jira/board/:id", GetJiraBoard)
+	unprotectedAPIRouter.Get("/v1/jira/board/:id/live", JiraBoardLive)
 	// SPA
 	app.Get("/", SinglePageApplication(cfg.UI))
 	app.Get("/endpoints/:key", SinglePageApplication(cfg.UI))
 	app.Get("/suites/:key", SinglePageApplication(cfg.UI))
 	app.Get("/sites/:name", SinglePageApplication(cfg.UI))
 	app.Get("/jira", SinglePageApplication(cfg.UI))
+	app.Get("/ll-telemetry", SinglePageApplication(cfg.UI))
 	// Health endpoint
 	healthHandler := health.Handler().WithJSON(true)
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -167,5 +218,20 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	// Live status stream (SSE) — a single broadcaster pushes the same snapshot
 	// to every connected client so all screens stay in sync without refreshing.
 	protectedAPIRouter.Get("/v1/live", newSSEHub().Handler)
+	// LL-Telemetry: the vendored operations console plus a deny-by-default
+	// proxy to the telemetry API. TelemetryGate authenticates these routes on
+	// its own credentials, independent of cfg.Security — the telemetry upstream
+	// has no auth of its own, and gating it via cfg.Security would also put the
+	// SSE stream behind a login and break unattended wallboards. Sitting under
+	// protectedAPIRouter means it additionally inherits site-wide auth if that
+	// is ever enabled.
+	//
+	// The console route is registered BEFORE the wildcard so it is not
+	// swallowed by it (same trap as /v1/phones/sweep-pending above).
+	telemetryRouter := protectedAPIRouter.Group("/v1/telemetry", TelemetryGate)
+	telemetryRouter.Post("/session", TelemetryLogin)
+	telemetryRouter.Delete("/session", TelemetryLogout)
+	telemetryRouter.Get("/console", TelemetryConsole)
+	telemetryRouter.All("/*", TelemetryProxy)
 	return app
 }

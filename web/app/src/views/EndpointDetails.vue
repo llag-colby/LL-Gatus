@@ -20,12 +20,13 @@
             </div>
           </div>
           <div class="ml-auto flex items-center gap-2">
+            <MonitorToggle :endpoint-key="route.params.key" compact />
             <StatusBadge :status="currentHealthStatus" />
             <Button variant="ghost" size="icon" class="h-9 w-9" @click="exportCSV" data-tooltip="Export as CSV">
               <Download class="h-5 w-5" />
             </Button>
             <Button variant="ghost" size="icon" class="h-9 w-9" @click="toggleShowAverageResponseTime"
-              :data-tooltip="showAverageResponseTime ? 'Showing average response time' : 'Showing min–max response time'">
+              :data-tooltip="showAverageResponseTime ? 'Showing average response time' : 'Showing min to max response time'">
               <Activity v-if="showAverageResponseTime" class="h-5 w-5" /><Timer v-else class="h-5 w-5" />
             </Button>
             <Button variant="ghost" size="icon" class="h-9 w-9" @click="forcePing" :disabled="isPinging"
@@ -36,6 +37,22 @@
               <RefreshCw :class="['h-4 w-4', isRefreshing && 'animate-spin']" />
             </Button>
           </div>
+        </div>
+
+        <!-- One window for the whole page: the range below drives the response
+             time trend, the uptime chart and the summary badges. It is the
+             shared range, so moving to the site overview or the phones,
+             firewall and wireless panels keeps the same window. -->
+        <div class="flex flex-wrap items-center gap-2">
+          <RangeSelector v-model="range" label="History range" />
+          <Button size="sm" :variant="isLive ? 'secondary' : 'outline'" :aria-pressed="isLive" @click="toggleLive"
+            data-tooltip="Stream the last 10 minutes of pings">
+            <SatelliteDish class="h-4 w-4 mr-1.5" :class="{ 'animate-pulse text-primary': isLive }" />
+            Live
+          </Button>
+          <span v-if="isLive" class="text-xs text-muted-foreground">
+            The trend is streaming the last 10 minutes. Uptime and the summary still cover {{ rangeText }}.
+          </span>
         </div>
 
         <!-- KPI strip -->
@@ -77,7 +94,9 @@
             <CardHeader class="pb-1"><CardTitle class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Response Time</CardTitle></CardHeader>
             <CardContent>
               <div class="text-2xl font-bold tabular-nums">{{ pageAverageResponseTime }}</div>
-              <div class="text-xs text-muted-foreground mt-0.5">{{ pageResponseTimeRange }} range</div>
+              <!-- This pair describes the checks listed below, not the selected
+                   window, so it names the checks to avoid reading as the range. -->
+              <div class="text-xs text-muted-foreground mt-0.5">{{ pageResponseTimeRange }} across these checks</div>
             </CardContent>
           </Card>
 
@@ -93,32 +112,40 @@
           <div class="w-full xl:flex-1 min-w-0 flex flex-col gap-3">
             <Card v-if="showResponseTimeChartAndBadges">
               <CardHeader class="pb-2">
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between gap-3">
                   <CardTitle>Response Time Trend</CardTitle>
-                  <select v-model="selectedChartDuration"
-                    class="text-sm bg-background border rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-ring">
-                    <option value="live">Live</option>
-                    <option value="1h">1 hour</option>
-                    <option value="5h">5 hours</option>
-                    <option value="16h">16 hours</option>
-                    <option value="24h">24 hours</option>
-                    <option value="2d">2 days</option>
-                    <option value="7d">7 days</option>
-                    <option value="30d">1 month</option>
-                  </select>
+                  <!-- Names the window the chart actually drew, which is not
+                       always the one selected: see RANGE_TO_CHART_DURATION. -->
+                  <span class="text-xs text-muted-foreground">{{ chartWindowLabel }}</span>
                 </div>
               </CardHeader>
               <CardContent>
                 <ResponseTimeChart
                   v-if="endpointStatus && endpointStatus.key"
                   :endpointKey="endpointStatus.key"
-                  :duration="selectedChartDuration"
-                  :serverUrl="serverUrl"
+                  :duration="chartDuration"
                   :events="endpointStatus.events || []"
                   :results="liveResults"
                 />
               </CardContent>
             </Card>
+
+            <!-- Uptime for the selected window. A column per bucket, because a
+                 bucket with no checks is a real gap and a line would draw
+                 straight through it as though the endpoint had been up. -->
+            <HistoryChart
+              :series="uptimeSeries"
+              title="Uptime"
+              :subtitle="uptimeSubtitle"
+              kind="column"
+              ratio
+              :height="150"
+              :warnBelow="UPTIME_WARN_BELOW"
+              :downBelow="UPTIME_DOWN_BELOW"
+              :loading="uptimeLoading"
+              :emptyText="uptimeEmptyText"
+              :note="uptimeNote"
+            />
 
             <Card class="flex-1">
               <CardHeader class="pb-2"><CardTitle>Recent Checks</CardTitle></CardHeader>
@@ -137,29 +164,25 @@
 
           <!-- Right column (uptime + response time + events) -->
           <div class="w-full xl:w-80 2xl:w-96 shrink-0 flex flex-col gap-3">
+            <!-- Two grids of four badges used to sit here, none of them tied to
+                 the chart beside them. They are now one pair for the selected
+                 window, labelled with the period the badge really measures. -->
             <Card>
-              <CardHeader class="pb-2"><CardTitle>Uptime</CardTitle></CardHeader>
-              <CardContent>
-                <div class="grid grid-cols-2 gap-x-4 gap-y-3">
-                  <div v-for="period in ['30d', '7d', '24h', '1h']" :key="period" class="text-center">
-                    <p class="text-xs text-muted-foreground mb-1">
-                      {{ period === '30d' ? 'Last 30 days' : period === '7d' ? 'Last 7 days' : period === '24h' ? 'Last 24 hours' : 'Last hour' }}
-                    </p>
-                    <img :src="generateUptimeBadgeImageURL(period)" :alt="`${period} uptime`" class="mx-auto" />
-                  </div>
+              <CardHeader class="pb-2">
+                <div class="flex items-center justify-between gap-2">
+                  <CardTitle>Summary</CardTitle>
+                  <span class="text-xs text-muted-foreground">{{ badgePeriodLabel }}</span>
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card v-if="showResponseTimeChartAndBadges">
-              <CardHeader class="pb-2"><CardTitle>Response Time</CardTitle></CardHeader>
+              </CardHeader>
               <CardContent>
                 <div class="grid grid-cols-2 gap-x-4 gap-y-3">
-                  <div v-for="period in ['30d', '7d', '24h', '1h']" :key="period" class="text-center">
-                    <p class="text-xs text-muted-foreground mb-1">
-                      {{ period === '30d' ? 'Last 30 days' : period === '7d' ? 'Last 7 days' : period === '24h' ? 'Last 24 hours' : 'Last hour' }}
-                    </p>
-                    <img :src="generateResponseTimeBadgeImageURL(period)" :alt="`${period} response time`" class="mx-auto" />
+                  <div class="text-center">
+                    <p class="text-xs text-muted-foreground mb-1">Uptime</p>
+                    <img :src="generateUptimeBadgeImageURL(badgePeriod)" :alt="`Uptime, ${badgePeriodLabel.toLowerCase()}`" class="mx-auto" />
+                  </div>
+                  <div v-if="showResponseTimeChartAndBadges" class="text-center">
+                    <p class="text-xs text-muted-foreground mb-1">Response time</p>
+                    <img :src="generateResponseTimeBadgeImageURL(badgePeriod)" :alt="`Response time, ${badgePeriodLabel.toLowerCase()}`" class="mx-auto" />
                   </div>
                 </div>
               </CardContent>
@@ -210,13 +233,16 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ArrowLeft, RefreshCw, ArrowUpCircle, ArrowDownCircle, PlayCircle, Activity, Timer, ChevronLeft, ChevronRight, Download, Zap } from 'lucide-vue-next'
+import { ArrowLeft, RefreshCw, ArrowUpCircle, ArrowDownCircle, PlayCircle, Activity, Timer, ChevronLeft, ChevronRight, Download, Zap, SatelliteDish } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import StatusBadge from '@/components/StatusBadge.vue'
 import EndpointCard from '@/components/EndpointCard.vue'
+import MonitorToggle from '@/components/MonitorToggle.vue'
 import Settings from '@/components/Settings.vue'
-import { addToast } from '@/store'
+import RangeSelector from '@/components/RangeSelector.vue'
+import HistoryChart from '@/components/HistoryChart.vue'
+import { addToast, historyRange, setHistoryRange } from '@/store'
 import Loading from '@/components/Loading.vue'
 import ResponseTimeChart from '@/components/ResponseTimeChart.vue'
 import { generatePrettyTimeAgo, generatePrettyTimeDifference } from '@/utils/time'
@@ -232,8 +258,6 @@ const currentPage = ref(1)
 const resultPageSize = 50
 const showResponseTimeChartAndBadges = ref(false)
 const showAverageResponseTime = ref(localStorage.getItem('gatus:show-average-response-time') !== 'false')
-const selectedChartDuration = ref(localStorage.getItem('gatus:chart-duration') || '24h')
-watch(selectedChartDuration, (value) => localStorage.setItem('gatus:chart-duration', value))
 const isRefreshing = ref(false)
 const liveResults = ref([])
 const eventsPage = ref(0)
@@ -241,6 +265,154 @@ const eventsPage = ref(0)
 // Events paged 3 at a time (newest first).
 const totalEventPages = computed(() => Math.max(1, Math.ceil(events.value.length / 3)))
 const pagedEvents = computed(() => events.value.slice(eventsPage.value * 3, eventsPage.value * 3 + 3))
+
+// --- Time window ----------------------------------------------------------
+// The page used to carry its own duration select and its own localStorage key.
+// It now reads the shared range, so a window chosen here follows you to the site
+// overview and to the phones, firewall and wireless panels, and back.
+const range = computed({
+  get: () => historyRange.value,
+  set: (value) => setHistoryRange(value),
+})
+
+const RANGE_TEXT = {
+  '1h': 'the last hour',
+  '6h': 'the last 6 hours',
+  '24h': 'the last 24 hours',
+  '7d': 'the last 7 days',
+  '30d': 'the last 30 days',
+}
+const rangeText = computed(() => RANGE_TEXT[historyRange.value] || 'the selected range')
+
+// Live is a mode of this one chart, not a time range, so it is a toggle beside
+// the range rather than a sixth range value. historyRange is shared with views
+// that have no live feed: giving it a 'live' value would hand those pages a
+// window they cannot plot. Turning Live on swaps only the response time trend to
+// the last ten minutes of raw pings; the range keeps driving the uptime chart
+// and the summary badges, and turning it off returns to the selected range.
+const legacyDuration = localStorage.getItem('gatus:chart-duration')
+if (legacyDuration !== null) {
+  // Carry over the one part of the old key that the shared range cannot express.
+  if (legacyDuration === 'live') localStorage.setItem('gatus:chart-live', 'true')
+  localStorage.removeItem('gatus:chart-duration')
+}
+const isLive = ref(localStorage.getItem('gatus:chart-live') === 'true')
+const toggleLive = () => {
+  isLive.value = !isLive.value
+  localStorage.setItem('gatus:chart-live', isLive.value ? 'true' : 'false')
+}
+
+// ResponseTimeChart fetches /response-times/{duration}/history, which serves
+// 30d, 7d, 2d, 24h, 16h, 5h and 1h. The shared range list is 1h, 6h, 24h, 7d and
+// 30d, so every value but 6h maps straight across. 6h has no match: 5h is the
+// nearest the API serves, and 16h would overshoot by ten hours. The chart header
+// names the window that was actually drawn, so a 6h selection reads "Last 5
+// hours" rather than quietly claiming an hour of data it does not have. Nothing
+// outside this map ever reaches the chart, so it cannot request a duration the
+// backend rejects.
+const RANGE_TO_CHART_DURATION = { '1h': '1h', '6h': '5h', '24h': '24h', '7d': '7d', '30d': '30d' }
+const CHART_DURATION_TEXT = { '1h': 'Last hour', '5h': 'Last 5 hours', '24h': 'Last 24 hours', '7d': 'Last 7 days', '30d': 'Last 30 days' }
+const chartDuration = computed(() => (isLive.value ? 'live' : RANGE_TO_CHART_DURATION[historyRange.value] || '24h'))
+const chartWindowLabel = computed(() =>
+  isLive.value ? 'Live, last 10 minutes' : (CHART_DURATION_TEXT[chartDuration.value] || 'Last 24 hours')
+)
+
+// The badge API serves 30d, 7d, 24h and 1h only. 1h maps exactly. 6h has no
+// badge, so it rounds UP to 24h rather than down to 1h: a badge is a single
+// number with no axis, and one measuring a shorter window than the selection
+// would silently drop most of what was asked for, while a wider one at least
+// contains all of it. The card states the period the badge really measures, so
+// the widening is visible rather than assumed.
+const RANGE_TO_BADGE_PERIOD = { '1h': '1h', '6h': '24h', '24h': '24h', '7d': '7d', '30d': '30d' }
+const BADGE_PERIOD_TEXT = { '1h': 'Last hour', '24h': 'Last 24 hours', '7d': 'Last 7 days', '30d': 'Last 30 days' }
+const badgePeriod = computed(() => RANGE_TO_BADGE_PERIOD[historyRange.value] || '24h')
+const badgePeriodLabel = computed(() => BADGE_PERIOD_TEXT[badgePeriod.value] || 'Last 24 hours')
+
+// --- Uptime series --------------------------------------------------------
+// Thresholds are fractions of the bucket that succeeded. A bucket is only green
+// when nothing in it failed: 0.999 is effectively "no failed check", since no
+// endpoint here runs a thousand checks in a bucket, while still leaving room for
+// float noise on a full bucket. Below 0.95 the bucket lost more than one check
+// in twenty, which for an hourly bucket is minutes of downtime rather than a
+// single blip, so it reads as down.
+const UPTIME_WARN_BELOW = 0.999
+const UPTIME_DOWN_BELOW = 0.95
+
+const uptimeSeries = ref({ timestamps: [], values: [] })
+const uptimeExecutions = ref([])
+const uptimeResolution = ref('')
+const uptimeLoading = ref(false)
+const uptimeError = ref('')
+// Only the newest request may write: switching range twice quickly would
+// otherwise let the slower first response overwrite the second.
+let uptimeRequestId = 0
+
+const fetchUptimeSeries = async () => {
+  const requestId = ++uptimeRequestId
+  uptimeLoading.value = true
+  try {
+    const response = await fetch(`/api/v1/endpoints/${route.params.key}/uptime-series?range=${historyRange.value}`, {
+      credentials: 'include'
+    })
+    if (requestId !== uptimeRequestId) return
+    if (response.status === 200) {
+      const data = await response.json()
+      if (requestId !== uptimeRequestId) return
+      uptimeSeries.value = { timestamps: data.timestamps || [], values: data.values || [] }
+      uptimeExecutions.value = data.executions || []
+      uptimeResolution.value = data.resolution || ''
+      uptimeError.value = ''
+    } else if (response.status === 404) {
+      uptimeSeries.value = { timestamps: [], values: [] }
+      uptimeExecutions.value = []
+      uptimeResolution.value = ''
+      uptimeError.value = 'No uptime history is recorded for this endpoint.'
+    } else {
+      uptimeError.value = 'Uptime history did not load. Refresh to try again.'
+      console.error('[Details][fetchUptimeSeries] Error:', await response.text())
+    }
+  } catch (error) {
+    if (requestId !== uptimeRequestId) return
+    uptimeError.value = 'Uptime history did not load. Refresh to try again.'
+    console.error('[Details][fetchUptimeSeries] Error:', error)
+  } finally {
+    if (requestId === uptimeRequestId) uptimeLoading.value = false
+  }
+}
+
+// Weighted by executions, so a bucket holding four checks cannot count the same
+// as one holding sixty. Buckets with no executions are left out entirely.
+const uptimeSubtitle = computed(() => {
+  const values = uptimeSeries.value.values || []
+  let weighted = 0
+  let executions = 0
+  for (let i = 0; i < values.length; i++) {
+    const count = Number(uptimeExecutions.value[i]) || 0
+    const value = values[i]
+    if (count <= 0 || value === null || value === undefined) continue
+    weighted += value * count
+    executions += count
+  }
+  if (executions === 0) return ''
+  const percent = (weighted / executions) * 100
+  return `${percent >= 99.995 ? percent.toFixed(0) : percent.toFixed(2)}% over ${rangeText.value}`
+})
+
+// Says plainly what one column is. Gatus compacts uptime older than roughly 48
+// hours into daily rows, so a 7d or 30d view is days per column no matter how it
+// looks, and a gap is missing collection rather than an outage.
+const UPTIME_RESOLUTION_TEXT = {
+  hour: 'One column per hour.',
+  day: 'One column per day: uptime older than about 48 hours is kept as daily totals.',
+  mixed: 'Recent columns are hourly, older ones are daily: uptime older than about 48 hours is kept as daily totals.',
+}
+const uptimeNote = computed(() => {
+  const resolution = UPTIME_RESOLUTION_TEXT[uptimeResolution.value]
+  if (!resolution) return ''
+  return `${resolution} Grey columns are buckets with no checks recorded, which is a gap in collection rather than an outage.`
+})
+
+const uptimeEmptyText = computed(() => uptimeError.value || 'No uptime recorded in this range yet.')
 
 const latestResult = computed(() => {
   // Use currentStatus for the actual latest result
@@ -252,7 +424,12 @@ const latestResult = computed(() => {
 
 const currentHealthStatus = computed(() => {
   if (!latestResult.value) return 'unknown'
-  return latestResult.value.success ? 'healthy' : 'unhealthy'
+  if (!latestResult.value.success) return 'unhealthy'
+  // A pass that carries a reason is a warning, not a clean bill of health: the
+  // push-based collectors report their degraded state as success=true with the
+  // reason in errors[], so calling this "healthy" would hide "1 of 2 WAN uplinks
+  // down". Same rule as LocationCard's isWarning().
+  return (latestResult.value.errors || []).length > 0 ? 'degraded' : 'healthy'
 })
 
 const hostname = computed(() => {
@@ -389,6 +566,9 @@ const fetchData = async () => {
     console.error('[Details][fetchData] Error:', error)
   } finally {
     isRefreshing.value = false
+    // Refreshing the page refreshes the uptime chart too: it is the same data
+    // seen at a different resolution, and a force ping can move it.
+    fetchUptimeSeries()
   }
 }
 
@@ -406,17 +586,19 @@ const forcePing = async () => {
     })
     const data = await res.json().catch(() => ({}))
     if (res.status === 429) {
-      addToast(`Checked a moment ago — try again in ${Math.ceil((data.retryAfterMs || 3000) / 1000)}s`, 'error')
+      addToast(`Checked a moment ago, try again in ${Math.ceil((data.retryAfterMs || 3000) / 1000)}s`, 'error')
     } else if (!res.ok) {
-      addToast(data.error || 'Ping failed to run — try again', 'error')
+      // Includes the 409 a paused endpoint returns: the server explains why in
+      // data.error, so it is shown as sent rather than replaced.
+      addToast(data.error || 'Ping failed to run, try again', 'error')
     } else if (data.success) {
-      addToast(`Ping OK — ${data.durationMs}ms`, 'success')
+      addToast(`Ping OK: ${data.durationMs}ms`, 'success')
     } else {
-      addToast(`Ping failed${data.errors && data.errors.length ? ' — ' + data.errors[0] : ''}`, 'error')
+      addToast(`Ping failed${data.errors && data.errors.length ? ': ' + data.errors[0] : ''}`, 'error')
     }
     if (res.ok) await fetchData()
   } catch (e) {
-    addToast('Ping failed to run — try again', 'error')
+    addToast('Ping failed to run, try again', 'error')
   } finally {
     isPinging.value = false
   }
@@ -480,7 +662,13 @@ const connectLive = () => {
   } catch (err) { /* ignore */ }
 }
 
+// Picking a new range reloads the uptime series. The response time chart watches
+// its own duration prop, and the badges are plain image URLs, so both follow the
+// selection without any work here.
+watch(historyRange, fetchUptimeSeries)
+
 onMounted(() => {
+  // fetchData loads the uptime series as part of its refresh.
   fetchData()
   connectLive()
 })
@@ -490,6 +678,9 @@ onUnmounted(() => {
     liveES.close()
     liveES = null
   }
+  // Any uptime request still in flight is now stale: bumping the id stops it
+  // writing to refs after the view is gone.
+  uptimeRequestId++
 })
 </script>
 

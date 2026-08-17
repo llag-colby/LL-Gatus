@@ -3,6 +3,7 @@ package api
 import (
 	"sync"
 
+	"github.com/TwiN/gatus/v5/monitoring"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -22,6 +23,12 @@ var (
 // full sweep; the key is mainly a UI-facing acknowledgement.
 func RequestPhonesSweep(c *fiber.Ctx) error {
 	key := c.Params("key")
+	// Refuse while monitoring is paused. The sweep would run, but its inventory
+	// and result pushes are both discarded for a paused key, so the UI would say
+	// "sweep requested" and then nothing would ever change on screen.
+	if monitoring.IsPaused(key) {
+		return c.Status(409).JSON(fiber.Map{"error": "monitoring is paused for this endpoint; resume it to sweep"})
+	}
 	sweepMu.Lock()
 	sweepPending[key] = true
 	sweepMu.Unlock()

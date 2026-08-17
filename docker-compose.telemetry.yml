@@ -1,0 +1,102 @@
+# LL-Telemetry stack, run alongside Gatus for local development.
+#
+# This file is NOT auto-loaded. Combine it explicitly:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.telemetry.yml up -d
+#
+# It is deliberately not named docker-compose.override.yml, which Docker WOULD
+# load automatically and would then fail on the prod box, where ../LL-Telemetry
+# does not exist.
+#
+# Because both files are passed to one `docker compose` invocation they share a
+# project, so these services join the same default network as `gatus` and are
+# reachable from it by service name. The `gatus` service itself is intentionally
+# left untouched: giving it a `networks:` key would REPLACE its implicit default
+# network and silently break both collectors' http://gatus:8080 pushes.
+#
+# The telemetry API is never published to the host. In the real deployment Caddy
+# is the only thing standing in front of it, and it has no authentication of its
+# own; here Gatus is the boundary, via TelemetryGate in api/telemetry.go.
+# Caddy is therefore not run at all: Gatus terminates auth and serves the console.
+
+services:
+  # MariaDB. Reachable only from lltel-api, on an internal network with no
+  # route off the host.
+  lltel-db:
+    image: mariadb:11.4
+    container_name: gatus-lltel-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${LL_DB_ROOT_PASS:-lltelroot}
+      MARIADB_DATABASE: lltelemetry
+      MARIADB_USER: lltel
+      MARIADB_PASSWORD: ${LL_DB_PASS:-lltel}
+      TZ: America/Chicago
+    volumes:
+      # The whole db/ directory, so 02-apikeys.sql applies alongside
+      # 01-schema.sql. Mounting only the one file leaves no api_keys table and
+      # no runs.key_label column, which 500s GET /api/v1/runs itself.
+      - ../LL-Telemetry/telemetry/db:/docker-entrypoint-initdb.d:ro
+      - lltel-data:/var/lib/mysql
+    networks:
+      - lltel-internal
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # FastAPI ingest + read API. On both networks: lltel-internal to reach the
+  # database, default so Gatus can proxy to it. No `ports:` — nothing about this
+  # service is exposed to the host.
+  lltel-api:
+    build: ../LL-Telemetry/telemetry/api
+    image: lltel-api:local
+    container_name: gatus-lltel-api
+    restart: unless-stopped
+    depends_on:
+      lltel-db:
+        condition: service_healthy
+    environment:
+      LL_INGEST_TOKEN: ${LL_INGEST_TOKEN:-local-dev-ingest-token}
+      LL_DB_HOST: lltel-db
+      LL_DB_USER: lltel
+      LL_DB_PASS: ${LL_DB_PASS:-lltel}
+      LL_DB_NAME: lltelemetry
+      TZ: America/Chicago
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - default
+      - lltel-internal
+
+  # One-shot demo seeder. Nothing writes to a locally-run telemetry database:
+  # the real field scripts POST to telemetry.longlewis.local, not here. Without
+  # this the console renders correctly and reports zero events.
+  #
+  #   docker compose -f docker-compose.yml -f docker-compose.telemetry.yml \
+  #     --profile seed run --rm lltel-seed
+  lltel-seed:
+    image: python:3-slim
+    container_name: gatus-lltel-seed
+    profiles: ["seed"]
+    depends_on:
+      - lltel-api
+    environment:
+      LLTEL_BASE: http://lltel-api:8080
+      LL_INGEST_TOKEN: ${LL_INGEST_TOKEN:-local-dev-ingest-token}
+      PYTHONUNBUFFERED: "1"
+      TZ: America/Chicago
+    volumes:
+      - ./collector:/collector
+    working_dir: /collector
+    command: ["python", "seed_telemetry.py"]
+    networks:
+      - default
+
+networks:
+  lltel-internal:
+    internal: true
+
+volumes:
+  lltel-data:

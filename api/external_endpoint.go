@@ -8,6 +8,7 @@ import (
 	"github.com/TwiN/gatus/v5/config"
 	"github.com/TwiN/gatus/v5/config/endpoint"
 	"github.com/TwiN/gatus/v5/metrics"
+	"github.com/TwiN/gatus/v5/monitoring"
 	"github.com/TwiN/gatus/v5/storage/store"
 	"github.com/TwiN/gatus/v5/storage/store/common"
 	"github.com/TwiN/gatus/v5/watchdog"
@@ -42,6 +43,15 @@ func CreateExternalEndpointResult(cfg *config.Config) fiber.Handler {
 			logr.Errorf("[api.CreateExternalEndpointResult] Invalid token for external endpoint with key=%s", key)
 			return c.Status(401).SendString("invalid token")
 		}
+		// If monitoring is paused for this endpoint, drop the pushed result on the
+		// floor: it isn't stored, alerted on, or counted in metrics, and the existing
+		// history is left untouched so un-pausing resumes the same timeline. We still
+		// answer 200 — an error status would make every collector log a warning on
+		// every sweep, which is noise, not information.
+		if monitoring.IsPaused(key) {
+			logr.Debugf("[api.CreateExternalEndpointResult] Monitoring paused; discarding result for external endpoint with key=%s", key)
+			return c.Status(200).SendString("OK (monitoring paused)")
+		}
 		// Persist the result in the storage
 		result := &endpoint.Result{
 			Timestamp: time.Now(),
@@ -56,7 +66,15 @@ func CreateExternalEndpointResult(cfg *config.Config) fiber.Handler {
 			}
 			result.Duration = parsedDuration
 		}
-		if errorFromQuery := c.Query("error"); !result.Success && len(errorFromQuery) > 0 {
+		// Record the pushed reason even on a SUCCESSFUL result. Our collectors work in
+		// three states — healthy / degraded / down — but an external result only
+		// carries a bool, and they deliberately report degraded as success=true so a
+		// partial problem doesn't fire a down alert. Without this, "1 of 2 WAN uplinks
+		// down" was stored as a bare pass and the dashboard painted it green. A
+		// successful result carrying errors now means "passed, with a warning", which
+		// the UI renders amber. Alerting keys off Success alone, so this does not turn
+		// warnings into alerts.
+		if errorFromQuery := c.Query("error"); len(errorFromQuery) > 0 {
 			result.AddError(errorFromQuery)
 		}
 		convertedEndpoint := externalEndpoint.ToEndpoint()

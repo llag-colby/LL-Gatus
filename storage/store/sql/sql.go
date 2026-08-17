@@ -235,6 +235,35 @@ func (s *Store) GetHourlyAverageResponseTimeByKey(key string, from, to time.Time
 	return hourlyAverageResponseTimes, nil
 }
 
+// GetUptimeBucketsByKey returns every stored uptime aggregate during a time range, ordered from oldest to newest
+//
+// Buckets older than roughly 48 hours have been merged into one bucket per day by
+// mergeHourlyUptimeEntriesOlderThanMergeThresholdIntoDailyUptimeEntries, so a range spanning more than 48 hours
+// returns a mix of daily and hourly buckets. See common.UptimeBucket for more details.
+func (s *Store) GetUptimeBucketsByKey(key string, from, to time.Time) ([]common.UptimeBucket, error) {
+	if from.After(to) {
+		return nil, common.ErrInvalidTimeRange
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	endpointID, _, _, err := s.getEndpointIDGroupAndNameByKey(tx, key)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	uptimeBuckets, err := s.getEndpointUptimeBuckets(tx, endpointID, from, to)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		_ = tx.Rollback()
+	}
+	return uptimeBuckets, nil
+}
+
 // InsertEndpointResult adds the observed result for the specified endpoint into the store
 func (s *Store) InsertEndpointResult(ep *endpoint.Endpoint, result *endpoint.Result) error {
 	tx, err := s.db.Begin()
@@ -932,6 +961,40 @@ func (s *Store) getEndpointHourlyAverageResponseTimes(tx *sql.Tx, endpointID int
 		hourlyAverageResponseTimes[unixTimestampFlooredAtHour] = int(float64(totalResponseTime) / float64(totalExecutions))
 	}
 	return hourlyAverageResponseTimes, nil
+}
+
+func (s *Store) getEndpointUptimeBuckets(tx *sql.Tx, endpointID int64, from, to time.Time) ([]common.UptimeBucket, error) {
+	rows, err := tx.Query(
+		`
+			SELECT hour_unix_timestamp, total_executions, successful_executions, total_response_time
+			FROM endpoint_uptimes
+			WHERE endpoint_id = $1
+				AND hour_unix_timestamp >= $2
+				AND hour_unix_timestamp <= $3
+			ORDER BY hour_unix_timestamp
+		`,
+		endpointID,
+		from.Unix(),
+		to.Unix(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	// The rows must be closed before any other query is executed within the same transaction, otherwise lib/pq
+	// fails with "unexpected Parse response" on the next query
+	defer rows.Close()
+	var uptimeBuckets []common.UptimeBucket
+	for rows.Next() {
+		var uptimeBucket common.UptimeBucket
+		if err = rows.Scan(&uptimeBucket.Timestamp, &uptimeBucket.TotalExecutions, &uptimeBucket.SuccessfulExecutions, &uptimeBucket.TotalResponseTime); err != nil {
+			return nil, err
+		}
+		uptimeBuckets = append(uptimeBuckets, uptimeBucket)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return uptimeBuckets, nil
 }
 
 func (s *Store) getEndpointID(tx *sql.Tx, ep *endpoint.Endpoint) (int64, error) {

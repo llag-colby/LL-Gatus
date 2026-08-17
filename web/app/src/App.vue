@@ -85,6 +85,19 @@
                        repaint this icon into a solid white box. -->
                   <span class="jira-ico" :style="{ backgroundImage: `url(${jiraIcon})` }"></span>
                 </router-link>
+                <router-link
+                  to="/ll-telemetry"
+                  class="inline-flex items-center justify-center h-9 w-9 rounded-md hover:bg-accent transition-colors"
+                  data-tooltip="Field-script telemetry"
+                  data-tip-pos="bottom"
+                  aria-label="Field-script telemetry"
+                >
+                  <!-- An inline lucide SVG, not an <img>: the header's custom-css
+                       rule (`header img { filter: brightness(0) invert(1) }`)
+                       only matches <img>, so this needs none of the
+                       background-image workaround the Jira icon requires. -->
+                  <SatelliteDish class="h-5 w-5" />
+                </router-link>
               </div>
 
               <!-- Optional configured navigation buttons -->
@@ -177,7 +190,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { LogIn, Maximize, Minimize, RefreshCw, Volume2, VolumeX } from 'lucide-vue-next'
+import { LogIn, Maximize, Minimize, RefreshCw, SatelliteDish, Volume2, VolumeX } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import SearchBar from './components/SearchBar.vue'

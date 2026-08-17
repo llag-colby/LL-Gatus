@@ -4,6 +4,7 @@ import EndpointDetailRouter from "@/views/EndpointDetailRouter";
 import SuiteDetails from '@/views/SuiteDetails';
 import JiraDetails from '@/views/JiraDetails';
 import SiteOverview from '@/views/SiteOverview';
+import TelemetryConsole from '@/views/TelemetryConsole';
 
 const routes = [
     {
@@ -32,6 +33,13 @@ const routes = [
         path: '/jira',
         name: 'Jira',
         component: JiraDetails
+    },
+    {
+        // LL-Telemetry operations console. The page itself is served by Gatus at
+        // /api/v1/telemetry/console and framed same-origin by this view.
+        path: '/ll-telemetry',
+        name: 'Telemetry',
+        component: TelemetryConsole
     }
 ];
 

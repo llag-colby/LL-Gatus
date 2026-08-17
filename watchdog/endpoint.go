@@ -8,6 +8,7 @@ import (
 	"github.com/TwiN/gatus/v5/config"
 	"github.com/TwiN/gatus/v5/config/endpoint"
 	"github.com/TwiN/gatus/v5/metrics"
+	"github.com/TwiN/gatus/v5/monitoring"
 	"github.com/TwiN/gatus/v5/storage/store"
 	"github.com/TwiN/logr"
 )
@@ -73,6 +74,13 @@ func executeEndpoint(ep *endpoint.Endpoint, cfg *config.Config, extraLabels []st
 	// If there's a connectivity checker configured, check if Gatus has internet connectivity
 	if cfg.Connectivity != nil && cfg.Connectivity.Checker != nil && !cfg.Connectivity.Checker.IsConnected() {
 		logr.Infof("[watchdog.executeEndpoint] No connectivity; skipping execution")
+		return nil
+	}
+	// If monitoring is paused for this endpoint, run no check at all: nothing is
+	// stored, no alert fires, no metric is recorded, and the existing history is
+	// left untouched so un-pausing resumes the same timeline.
+	if monitoring.IsPaused(ep.Key()) {
+		logr.Debugf("[watchdog.executeEndpoint] Monitoring paused; skipping execution of group=%s; endpoint=%s; key=%s", ep.Group, ep.Name, ep.Key())
 		return nil
 	}
 	logr.Debugf("[watchdog.executeEndpoint] Monitoring group=%s; endpoint=%s; key=%s", ep.Group, ep.Name, ep.Key())

@@ -9,6 +9,7 @@
           <span :data-tooltip="name" class="block truncate">{{ name }}</span>
         </CardTitle>
         <div class="flex-shrink-0 flex items-center gap-1">
+          <CardSettingsMenu :name="name" :rows="settingsRows" />
           <span v-if="isSimulated" class="text-[9px] font-bold uppercase tracking-wide px-1 py-0.5 rounded bg-amber-500 text-white" data-tooltip="Simulated (not real)">SIM</span>
           <StatusBadge :status="currentStatus" />
         </div>
@@ -16,8 +17,11 @@
     </CardHeader>
 
     <CardContent class="loc-content flex-1 pb-3 sm:pb-4 px-3 sm:px-5 pt-1">
-      <div class="loc-rows space-y-2">
-        <div v-for="(row, rowIdx) in displayRows" :key="row.key" class="loc-row flex items-center gap-2">
+      <!-- loc-dense: five or more rows (a site with UniFi) tightens the rhythm
+           and thins the fullscreen bars so the card doesn't outgrow its grid. -->
+      <div class="loc-rows space-y-1.5" :class="{ 'loc-dense': displayRows.length > 4 }">
+        <div v-for="(row, rowIdx) in displayRows" :key="row.key" class="loc-row flex items-center gap-2"
+          :class="{ 'opacity-50': row.paused }">
           <!-- Row label -->
           <div class="loc-rowlabel w-16 sm:w-[68px] shrink-0">
             <component
@@ -54,12 +58,23 @@
             />
           </div>
 
-          <!-- Trailing latency value (overall row only) -->
-          <span
-            v-if="row.isOverall"
-            class="w-12 shrink-0 text-right text-[11px] sm:text-xs text-muted-foreground tabular-nums"
-            :data-tooltip="'Current best latency across WANs'"
-          >{{ row.latencyLabel }}</span>
+          <!-- Trailing metric: latency on the link rows, live counts on the
+               UniFi rows, best-of latency on Overall. Same reserved width on
+               every row so all the bar sets stay perfectly aligned. -->
+          <div
+            class="loc-rowvalue w-14 sm:w-16 shrink-0 text-right"
+            :data-tooltip="row.isOverall ? 'Current best latency across WANs' : null"
+          >
+            <div
+              :class="[
+                'truncate text-[11px] sm:text-xs tabular-nums leading-tight',
+                row.valueBad ? 'text-destructive font-medium' : 'text-muted-foreground'
+              ]"
+            >{{ row.value }}</div>
+            <div v-if="row.valueSub" class="loc-meta truncate text-[11px] text-muted-foreground/70 tabular-nums leading-tight">
+              {{ row.valueSub }}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -77,7 +92,8 @@ import { useRouter } from 'vue-router'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { generatePrettyTimeAgo } from '@/utils/time'
-import { now, simulations, isFullscreen } from '@/store'
+import CardSettingsMenu from '@/components/CardSettingsMenu.vue'
+import { now, simulations, unifiSnapshots, isMonitored } from '@/store'
 
 const router = useRouter()
 
@@ -95,11 +111,13 @@ const LATENCY_WARN = 250
 
 const selectedKey = ref(null)
 
-// --- Classify endpoints into WAN 1 / WAN 2 / Phones by their group ---
+// --- Classify endpoints into the card's rows by their group ---
 const classify = (group) => {
   const g = (group || '').toLowerCase()
   if (/wan\s*1|primary/.test(g)) return 'wan1'
   if (/wan\s*2|backup|secondary/.test(g)) return 'wan2'
+  if (/firewall|gateway|edge/.test(g)) return 'firewall'
+  if (/wireless|wi-?fi|wlan|access\s*point/.test(g)) return 'wireless'
   if (/phone|voip|sip/.test(g)) return 'phones'
   return 'other'
 }
@@ -121,13 +139,15 @@ const shortLabel = (group) => {
   switch (classify(group)) {
     case 'wan1': return 'WAN 1'
     case 'wan2': return 'WAN 2'
+    case 'firewall': return 'Firewall'
+    case 'wireless': return 'Wireless'
     case 'phones': return 'Phones'
     default: return group || '—'
   }
 }
 
 const slots = computed(() => {
-  const s = { wan1: null, wan2: null, phones: null, others: [] }
+  const s = { wan1: null, wan2: null, firewall: null, wireless: null, phones: null, others: [] }
   for (const ep of props.endpoints) {
     const c = classify(ep.group)
     if (c === 'other') s.others.push(ep)
@@ -137,7 +157,8 @@ const slots = computed(() => {
   return s
 })
 
-const hasWanLayout = computed(() => !!(slots.value.wan1 || slots.value.wan2 || slots.value.phones))
+const hasWanLayout = computed(() =>
+  !!(slots.value.wan1 || slots.value.wan2 || slots.value.firewall || slots.value.wireless || slots.value.phones))
 
 // Pad an endpoint's results to maxResults (nulls at the front), like EndpointCard.
 const padResults = (endpoint) => {
@@ -147,25 +168,39 @@ const padResults = (endpoint) => {
 }
 
 // "Nothing reported" is a distinct failure from "reported and failing": a site
-// with 0 phones registered has no health signal at all, and painting that red
-// makes it look like 0-of-N phones dropped. The collector flags it with a fixed
-// error prefix (see collector/phone_collector.py) and it renders BLACK.
-const NOT_REPORTING = /^no phones reporting\b/i
+// with 0 phones registered, or a UniFi console we can't read, has no health
+// signal at all, and painting that red makes it look like an outage. Both
+// collectors flag it with a fixed error prefix — "no phones reporting" and
+// "no unifi reporting" — and it renders BLACK. Keep this in step with the
+// prefixes in collector/phone_collector.py and collector/unifi_collector.py.
+const NOT_REPORTING = /^no (phones|unifi) reporting\b/i
 const isNotReporting = (result) =>
   !!result && !result.success && (result.errors || []).some((e) => NOT_REPORTING.test(e))
+
+// A collector that reports three states (healthy / degraded / down) pushes
+// degraded as a PASS carrying its reason, so a partial problem doesn't fire a
+// down alert. A successful result with errors therefore means "passed, with a
+// warning" — 1 of 2 WAN uplinks down, 4 of 23 APs offline — and reads AMBER.
+// Painting it green would hide exactly the problems this dashboard exists for.
+const isWarning = (result) => !!result && result.success && (result.errors || []).length > 0
 
 const endpointRowCells = (endpoint) => {
   const padded = padResults(endpoint)
   return padded.map((result) => {
     if (!result) return { token: 'none', result: null }
-    if (result.success) return { token: 'green', result }
+    if (result.success) return { token: isWarning(result) ? 'amber' : 'green', result }
     return { token: isNotReporting(result) ? 'nodata' : 'red', result }
   })
 }
 
+// Paused endpoints are excluded from the site's rollup: the Overall row and the
+// header badge. Their own row still renders (muted) so you can see it is paused
+// rather than wondering where it went.
+const activeEndpoints = computed(() => props.endpoints.filter((ep) => isMonitored(ep.key)))
+
 // Overall Health row: best (lowest) latency across the location's WANs per slice.
 const overallCells = computed(() => {
-  const padded = props.endpoints.map(padResults)
+  const padded = activeEndpoints.value.map(padResults)
   const cells = []
   for (let i = 0; i < props.maxResults; i++) {
     const slice = padded.map((p) => p[i]).filter(Boolean)
@@ -189,14 +224,6 @@ const overallCells = computed(() => {
   return cells
 })
 
-// The Overall row also carries the trailing latency label, which eats into its
-// bar width. In fullscreen, drop 2 bars from this row so its bars stay exactly
-// as THICK as the WAN/Phones rows above it (rather than looking pinched).
-const overallDisplayCells = computed(() => {
-  const cells = overallCells.value
-  return isFullscreen.value ? cells.slice(2) : cells
-})
-
 const currentLatencyLabel = computed(() => {
   for (let i = overallCells.value.length - 1; i >= 0; i--) {
     const c = overallCells.value[i]
@@ -207,27 +234,103 @@ const currentLatencyLabel = computed(() => {
   return 'N/A'
 })
 
+// --- Trailing metrics -----------------------------------------------------
+// Every row carries a value at its right edge, not just Overall. The column was
+// already reserved on Overall, so filling it on the rows above costs no layout
+// and turns dead width into the numbers you'd otherwise have to drill in for.
+const latestResult = (endpoint) => {
+  const r = endpoint && endpoint.results
+  return r && r.length ? r[r.length - 1] : null
+}
+
+// Latency of the most recent check, or "down" when that check failed.
+const latencyOf = (endpoint) => {
+  const r = latestResult(endpoint)
+  if (!r) return { value: '', bad: false }
+  if (!r.success) return { value: 'down', bad: true }
+  return { value: r.duration ? `${Math.round(r.duration / 1000000)}ms` : '', bad: false }
+}
+
+// Firewall / Wireless read from the UniFi side channel, which carries counts an
+// external-endpoint's pass/fail cannot. Falls back to latency until the
+// collector has reported.
+const unifiCounts = (endpoint) => {
+  const snap = endpoint ? unifiSnapshots.value[endpoint.key] : null
+  return snap && snap.counts ? snap.counts : null
+}
+const unifiDetail = (endpoint) => {
+  const snap = endpoint ? unifiSnapshots.value[endpoint.key] : null
+  return snap && snap.detail ? snap.detail : null
+}
+
+const firewallMetric = (endpoint) => {
+  const c = unifiCounts(endpoint)
+  if (!c || c.wansTotal == null) return latencyOf(endpoint)
+  // The primary uplink's link type is the one extra fact worth the fullscreen
+  // sub-line: it tells you whether the site is on fibre or a coax backup.
+  const wans = (unifiDetail(endpoint) || {}).wans || []
+  const primary = wans[0] || {}
+  return {
+    value: `${c.wansUp}/${c.wansTotal} WAN`,
+    bad: c.wansUp < c.wansTotal,
+    sub: primary.speedType || '',
+    tooltip: `${c.wansUp} of ${c.wansTotal} WAN uplinks up`
+      + (primary.ip ? ` · ${primary.ip}` : ''),
+  }
+}
+const wirelessMetric = (endpoint) => {
+  const c = unifiCounts(endpoint)
+  if (!c || c.apsTotal == null) return latencyOf(endpoint)
+  return {
+    value: `${c.apsOnline}/${c.apsTotal} AP`,
+    bad: c.apsOnline < c.apsTotal,
+    sub: c.clients != null ? `${c.clients} cl` : '',
+    tooltip: `${c.apsOnline} of ${c.apsTotal} access points online`
+      + (c.clients != null ? ` · ${c.clients} clients` : ''),
+  }
+}
+
+const metricFor = (kind, endpoint) => {
+  if (!endpoint) return { value: '', bad: false }
+  if (kind === 'firewall') return firewallMetric(endpoint)
+  if (kind === 'wireless') return wirelessMetric(endpoint)
+  return latencyOf(endpoint)
+}
+
 const displayRows = computed(() => {
   const rows = []
   const s = slots.value
 
   const pushEndpointRow = (label, endpoint, keyName) => {
+    const metric = metricFor(keyName, endpoint)
+    const paused = !!endpoint && !isMonitored(endpoint.key)
     rows.push({
       key: keyName,
       label,
       endpointKey: endpoint ? endpoint.key : null,
       to: endpoint ? `/endpoints/${endpoint.key}` : null,
-      tooltip: endpoint ? (endpoint.group || endpoint.name) : `${label}: no data`,
+      tooltip: paused
+        ? `${label}: monitoring paused`
+        : endpoint ? (metric.tooltip || endpoint.group || endpoint.name) : `${label}: no data`,
       isp: endpoint ? ispFromGroup(endpoint.group) : '',
       ip: ipOf(endpoint),
       cells: endpoint ? endpointRowCells(endpoint) : Array.from({ length: props.maxResults }, () => ({ token: 'none', result: null })),
       isOverall: false,
+      paused,
+      // A paused row shows why it is quiet instead of a number nobody is watching.
+      value: paused ? 'paused' : metric.value,
+      valueBad: paused ? false : metric.bad,
+      valueSub: paused ? '' : (metric.sub || ''),
     })
   }
 
   if (hasWanLayout.value) {
     pushEndpointRow('WAN 1', s.wan1, 'wan1')
     pushEndpointRow('WAN 2', s.wan2, 'wan2')
+    // Firewall and Wireless appear only where a UniFi console is wired up, so
+    // sites without one don't grow two permanently empty rows.
+    if (s.firewall) pushEndpointRow('Firewall', s.firewall, 'firewall')
+    if (s.wireless) pushEndpointRow('Wireless', s.wireless, 'wireless')
     pushEndpointRow('Phones', s.phones, 'phones')
     s.others.forEach((ep, i) => pushEndpointRow(shortLabel(ep.group), ep, `other-${i}`))
   } else {
@@ -243,25 +346,38 @@ const displayRows = computed(() => {
     // Overall drills into the whole-site view rather than any one endpoint.
     to: `/sites/${encodeURIComponent(props.name)}`,
     tooltip: `Open the ${props.name} site overview`,
-    cells: overallDisplayCells.value,
+    cells: overallCells.value,
     isOverall: true,
-    latencyLabel: currentLatencyLabel.value,
+    value: currentLatencyLabel.value,
+    valueBad: false,
+    valueSub: '',
   })
 
   return rows
 })
 
+// Rows the card's settings menu can switch, in the order they appear. Overall is
+// a rollup of the others, not a monitor of its own, so it isn't switchable.
+const settingsRows = computed(() =>
+  displayRows.value
+    .filter((row) => !row.isOverall)
+    .map((row) => ({ key: row.key, label: row.label, endpointKey: row.endpointKey }))
+)
+
 // --- Current status for the badge (a simulation overrides the real status) ---
 const isSimulated = computed(() => !!simulations[props.name])
 const currentStatus = computed(() => {
   if (simulations[props.name]) return simulations[props.name]
-  const latest = props.endpoints
+  const latest = activeEndpoints.value
     .map((ep) => (ep.results && ep.results.length ? ep.results[ep.results.length - 1] : null))
     .filter(Boolean)
   if (latest.length === 0) return 'unknown'
   const upCount = latest.filter((r) => r.success).length
   if (upCount === 0) return 'unhealthy'
   if (upCount < latest.length) return 'degraded'
+  // Everything passed, but a pass carrying a reason is a warning (see isWarning),
+  // and the badge has to say so or the card claims healthy while a row is amber.
+  if (latest.some(isWarning)) return 'degraded'
   return 'healthy'
 })
 

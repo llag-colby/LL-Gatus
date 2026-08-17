@@ -8,6 +8,7 @@ import (
 	"github.com/TwiN/gatus/v5/config/endpoint"
 	"github.com/TwiN/gatus/v5/config/suite"
 	"github.com/TwiN/gatus/v5/storage"
+	"github.com/TwiN/gatus/v5/storage/store/common"
 	"github.com/TwiN/gatus/v5/storage/store/common/paging"
 	"github.com/TwiN/gatus/v5/storage/store/memory"
 	"github.com/TwiN/gatus/v5/storage/store/sql"
@@ -40,6 +41,12 @@ type Store interface {
 
 	// GetHourlyAverageResponseTimeByKey returns a map of hourly (key) average response time in milliseconds (value) during a time range
 	GetHourlyAverageResponseTimeByKey(key string, from, to time.Time) (map[int64]int, error)
+
+	// GetUptimeBucketsByKey returns every stored uptime aggregate during a time range, ordered from oldest to newest
+	//
+	// Buckets older than roughly 48 hours are merged into one bucket per day, so a range spanning more than 48 hours
+	// returns a mix of daily and hourly buckets. See common.UptimeBucket for more details.
+	GetUptimeBucketsByKey(key string, from, to time.Time) ([]common.UptimeBucket, error)
 
 	// InsertEndpointResult adds the observed result for the specified endpoint into the store
 	InsertEndpointResult(ep *endpoint.Endpoint, result *endpoint.Result) error

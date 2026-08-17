@@ -111,6 +111,118 @@ export function setDashboardView(value) {
   if (typeof localStorage !== 'undefined') localStorage.setItem('gatus:view', dashboardView.value)
 }
 
+// --- UniFi snapshots (the Firewall and Wireless rows) ---
+// An external-endpoint can only carry a pass/fail, so the collector pushes the
+// detail behind those two rows to a side channel. One request serves every card
+// on the page, which is why it lives here rather than inside LocationCard.
+// Keyed by endpoint key, e.g. "firewall_decatur-gmc".
+export const unifiSnapshots = ref({})
+export async function refreshUniFiSnapshots() {
+  try {
+    const response = await fetch('/api/v1/unifi', { cache: 'no-store' })
+    if (response.ok) unifiSnapshots.value = await response.json()
+  } catch (e) {
+    // non-fatal — keep the last snapshot rather than blanking the rows
+  }
+}
+refreshUniFiSnapshots()
+setInterval(refreshUniFiSnapshots, 20000)
+
+// --- Monitoring pause switches ---
+// Per-endpoint "monitor this or not", persisted server-side to /data so it
+// survives updates and applies to every browser. Pausing is real, not cosmetic:
+// the backend stops running the check, stops accepting collector pushes for it,
+// and stops alerting. Recorded history is kept, so un-pausing resumes the same
+// timeline rather than starting a new one.
+export const monitoringDisabled = ref(new Set())
+
+export function isMonitored(key) {
+  return !!key && !monitoringDisabled.value.has(key)
+}
+
+// Bumped by every local flip. A background poll that started before a flip is
+// stale by the time it lands, and applying it would visibly snap the switch back
+// for up to a full poll interval — so a poll only writes if nothing changed
+// underneath it while it was in flight.
+let monitoringGeneration = 0
+
+export async function refreshMonitoring() {
+  const startedAt = monitoringGeneration
+  try {
+    const response = await fetch('/api/v1/monitoring', { cache: 'no-store' })
+    if (response.ok) {
+      const data = await response.json()
+      if (monitoringGeneration === startedAt) {
+        monitoringDisabled.value = new Set(data.disabled || [])
+      }
+    }
+  } catch (e) {
+    // non-fatal — keep the switches we already know about
+  }
+}
+
+// Flips one endpoint. Optimistic so the toggle feels instant, reverted if the
+// server disagrees.
+export async function setMonitored(key, monitored) {
+  if (!key) return
+  monitoringGeneration++
+  const before = new Set(monitoringDisabled.value)
+  const next = new Set(before)
+  monitored ? next.delete(key) : next.add(key)
+  monitoringDisabled.value = next
+  try {
+    const response = await fetch(`/api/v1/monitoring/${encodeURIComponent(key)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ monitored: !!monitored }),
+    })
+    if (!response.ok) throw new Error(String(response.status))
+    const data = await response.json()
+    const confirmed = new Set(monitoringDisabled.value)
+    data.monitored ? confirmed.delete(key) : confirmed.add(key)
+    monitoringDisabled.value = confirmed
+    addToast(`${monitored ? 'Resumed' : 'Paused'} monitoring for ${key}`, monitored ? 'success' : 'info')
+  } catch (e) {
+    monitoringDisabled.value = before
+    addToast(`Couldn't change monitoring for ${key}`, 'error')
+  }
+}
+
+refreshMonitoring()
+setInterval(refreshMonitoring, 30000)
+
+// --- Shared history time range ---
+// One selection drives every drill-down, so moving from a site to an endpoint to
+// the phone panel keeps you in the same window instead of resetting to a default
+// on each page. Persisted, so it also survives a refresh.
+//
+// The list is constrained to what the backend actually serves: /v1/history and
+// /v1/endpoints/:key/uptime-series both accept exactly these five.
+export const HISTORY_RANGES = [
+  { value: '1h', label: '1h', ms: 3600000 },
+  { value: '6h', label: '6h', ms: 6 * 3600000 },
+  { value: '24h', label: '24h', ms: 24 * 3600000 },
+  { value: '7d', label: '7d', ms: 7 * 24 * 3600000 },
+  { value: '30d', label: '30d', ms: 30 * 24 * 3600000 },
+]
+
+const savedRange = typeof localStorage !== 'undefined' && localStorage.getItem('gatus:history-range')
+export const historyRange = ref(
+  HISTORY_RANGES.some(r => r.value === savedRange) ? savedRange : '24h'
+)
+
+export function setHistoryRange(value) {
+  if (!HISTORY_RANGES.some(r => r.value === value)) return
+  historyRange.value = value
+  if (typeof localStorage !== 'undefined') localStorage.setItem('gatus:history-range', value)
+}
+
+// Milliseconds covered by a range value, for callers that need a window start.
+export function historyRangeMs(value) {
+  const match = HISTORY_RANGES.find(r => r.value === value)
+  return match ? match.ms : 24 * 3600000
+}
+
 // Live clock anchored to the SERVER's time, so every browser computes the same
 // relative "x ago" labels regardless of its own (possibly wrong) local clock.
 let serverOffset = 0
