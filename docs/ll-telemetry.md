@@ -57,10 +57,24 @@ The routes are still registered under `protectedAPIRouter`, so if site-wide auth
 is ever enabled they inherit that second layer for free.
 
 **Telemetry fails closed.** If `TELEMETRY_UI_USER` and a password are not set,
-the proxy refuses everything and the page shows a not-configured notice. This
-matters more than usual: the telemetry API has no authentication of its own, so
-an unconfigured deployment that defaulted open would expose every machine
-transcript and the ingest-key management endpoints.
+the proxy refuses everything. This matters more than usual: the telemetry API
+has no authentication of its own, so an unconfigured deployment that defaulted
+open would expose every machine transcript and the ingest-key management
+endpoints.
+
+The not-configured page says only "This console is not available on this
+instance." It is reachable **without any credential**, on an instance that may be
+publicly exposed, so it deliberately names no environment variables, no internal
+hostnames and no ports. The remediation detail is written to the Gatus log at
+startup instead:
+
+```
+[api.telemetryCfg] LL-Telemetry is not configured (set TELEMETRY_UI_USER and
+TELEMETRY_UI_PASSWORD_BCRYPT or TELEMETRY_UI_PASSWORD)
+```
+
+The `unreachable` and `slow` states are not public: they can only be reached
+after authenticating, because the gate returns 401 first.
 
 ### Signing in
 

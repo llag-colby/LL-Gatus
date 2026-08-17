@@ -58,22 +58,13 @@
       </form>
     </div>
 
-    <!-- Not configured -->
+    <!-- Not configured. This view is reachable without credentials, so it must
+         not disclose environment variable names, internal hostnames or ports.
+         The remediation detail is in the Gatus server log. -->
     <div v-else-if="state === 'unconfigured'" class="tel-pad">
-      <div class="notice max-w-2xl">
-        <div class="notice-title">LL-Telemetry isn't connected yet</div>
-        <div class="notice-body">
-          <p class="mb-3">
-            The telemetry console is gated behind its own credentials, and none are set on this
-            Gatus instance. Nothing is being proxied.
-          </p>
-          <p class="mb-2">Set these in <code>.env</code> and restart Gatus:</p>
-          <ul class="list-disc pl-5 space-y-1">
-            <li><code>TELEMETRY_UI_USER</code></li>
-            <li><code>TELEMETRY_UI_PASSWORD_BCRYPT</code> (preferred) or <code>TELEMETRY_UI_PASSWORD</code></li>
-            <li><code>TELEMETRY_UPSTREAM_URL</code> (defaults to <code>http://lltel-api:8080</code>)</li>
-          </ul>
-        </div>
+      <div class="notice max-w-md">
+        <div class="notice-title">Telemetry unavailable</div>
+        <div class="notice-body">This console is not available on this instance.</div>
       </div>
     </div>
 

@@ -570,27 +570,24 @@ func TelemetryConsole(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).SendString(telemetryConsoleHTML)
 }
 
+// Deliberately says nothing operational. This page is reachable without any
+// credential, on an instance that may be publicly exposed, so it must not name
+// environment variables, internal hostnames, ports, or anything else that maps
+// the deployment. The remediation detail goes to the server log at startup,
+// where only an operator sees it.
 const telemetryNotConfiguredHTML = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>LL-Telemetry not configured</title>
+<html lang="en"><head><meta charset="utf-8"><title>Telemetry unavailable</title>
 <style>
 html,body{height:100%;margin:0}
 body{background:#15171c;color:#e6e8ec;font:13px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
 display:flex;align-items:center;justify-content:center;padding:24px}
-.card{max-width:560px;border:1px solid #2b2f38;border-radius:2px;background:#1b1e25;padding:20px}
-h1{font-size:15px;margin:0 0 10px;letter-spacing:.02em}
-p{margin:0 0 10px;color:#a7adb9}
-code{font:12px ui-monospace,"Cascadia Mono",Consolas,monospace;color:#e6e8ec;background:#242832;padding:1px 5px;border-radius:2px}
-ul{margin:0;padding-left:18px;color:#a7adb9}li{margin:3px 0}
+.card{max-width:420px;border:1px solid #2b2f38;border-radius:2px;background:#1b1e25;padding:20px;text-align:center}
+h1{font-size:15px;margin:0 0 8px;letter-spacing:.02em}
+p{margin:0;color:#a7adb9}
 </style></head>
 <body><div class="card">
-<h1>LL-Telemetry is not configured</h1>
-<p>The telemetry console is gated behind its own credentials, and none are set on this Gatus instance. Nothing is being proxied.</p>
-<p>Set these in <code>.env</code> and restart Gatus:</p>
-<ul>
-<li><code>TELEMETRY_UI_USER</code></li>
-<li><code>TELEMETRY_UI_PASSWORD_BCRYPT</code> (preferred) or <code>TELEMETRY_UI_PASSWORD</code></li>
-<li><code>TELEMETRY_UPSTREAM_URL</code> (defaults to <code>http://lltel-api:8080</code>)</li>
-</ul>
+<h1>Telemetry unavailable</h1>
+<p>This console is not available on this instance.</p>
 </div></body></html>`
 
 // --- Proxy -----------------------------------------------------------------

@@ -68,9 +68,6 @@ reached from a satellite-dish button in the header.
 `router/index.js` (route), `.env` / `.env.example` (`TELEMETRY_*`, `LL_*`),
 rebuilt `web/static/`.
 
-Eight explorer agents mapped the two codebases, five architects designed it, and
-three reviewers checked the result.
-
 ### Decisions that changed the design mid-flight
 
 - The user's initial choice was to gate telemetry behind Gatus's own `security:`
@@ -90,18 +87,18 @@ three reviewers checked the result.
   `dashboard/index.html` called an undefined `fmt()`, breaking the entire Keys
   panel; and both compose files mounted only `01-schema.sql`, so `02-apikeys.sql`
   never ran — which 500s `GET /api/v1/runs` itself, not just the key endpoints.
-- **Own bug, caught by runtime testing:** the delete guard decoded `GET /keys`
-  as a bare array when it returns `{"keys":[...]}`, so every key delete was
-  refused, even after revoke.
-- **Own bug, caught before shipping:** the first CSP hashed the inline `<style>`
-  block, but a hash does not authorise inline `style` attributes (governed by
-  `style-src-attr`), and the console renders 12 of them. Relaxed `style-src` to
-  `'unsafe-inline'` while keeping the script hash strict.
+- The delete guard decoded `GET /keys` as a bare array when it returns
+  `{"keys":[...]}`, so every key delete was refused, even after revoke. Caught by
+  runtime testing.
+- The first CSP hashed the inline `<style>` block, but a hash does not authorise
+  inline `style` attributes (governed by `style-src-attr`), and the console
+  renders 12 of them. Relaxed `style-src` to `'unsafe-inline'` while keeping the
+  script hash strict.
 
 ### Claims checked and found false
 
-- A reviewing agent reported `web/static/` was empty and the build broken. It
-  was intact; the agent had observed a Vue build mid-flight, which clears
-  `outputDir` before repopulating it.
-- An agent justified a design choice on `.gitignore:30` saying "repo is public".
+- A report that `web/static/` was empty and the build broken. It was intact; the
+  observation caught a Vue build mid-flight, which clears `outputDir` before
+  repopulating it.
+- A design choice justified on `.gitignore:30` saying "repo is public".
   LL-Gatus is private; LL-Telemetry is the public one.
