@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1
 # Build the go application into a binary
-FROM golang:alpine AS builder
+# Pinned, not `golang:alpine`: that tag floated to Go 1.27, which drops the
+# x/net/http2 symbols grpc v1.81.1 still references (http2.TrailerPrefix), and
+# the build fails. It broke prod while dev kept building from a cached 1.26
+# image. Track go.mod's `go 1.26.x` here; bump both together.
+FROM golang:1.26-alpine AS builder
 RUN apk --update add ca-certificates
 WORKDIR /app
 # Download modules first (cached unless go.mod/go.sum change) so source-only
