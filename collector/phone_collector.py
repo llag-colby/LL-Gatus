@@ -42,6 +42,11 @@ import urllib.request
 
 import wildix_s2s
 
+# A candidate's credential is either the name of an env var holding a Simple
+# Token, or this literal, meaning "use the S2S application registered for that
+# host". Both kinds are PBX-local.
+S2S_SPEC = "s2s"
+
 LOCATIONS = [
     {
         "key": "phones_ivory-tower",       # slug(group=Phones)_slug(name=Ivory Tower)
@@ -77,9 +82,15 @@ LOCATIONS = [
         # authenticates AND reports registered phones wins. Put a token issued
         # on longlewiscu in PHONES_CULLMAN_CU_TOKEN and it takes priority;
         # otherwise the general token is tried against both hosts.
+        # Both credential kinds are PBX-local. Measured: the LL-Monitor S2S app
+        # created on longlewiscl returns 200 there and 401 on all ten other
+        # PBXs, the network master included. So whichever kind is used, it has
+        # to be registered on longlewiscu for Cullman's phones to be readable.
         "pbx_candidates": [
             ("https://longlewiscu.wildixin.com", "PHONES_CULLMAN_CU_TOKEN"),
+            ("https://longlewiscu.wildixin.com", S2S_SPEC),
             ("https://longlewiscu.wildixin.com", "PHONES_CULLMAN_TOKEN"),
+            ("https://longlewiscl.wildixin.com", S2S_SPEC),
             ("https://longlewiscl.wildixin.com", "PHONES_CULLMAN_TOKEN"),
         ],
     },
@@ -189,7 +200,7 @@ def parse_useragent(ua):
     return model, firmware, mac
 
 
-def fetch_directory(pbx, token, label=""):
+def fetch_directory(fetch, label=""):
     """(ext -> {name, did, department, email}, home_pbx) — both best effort.
 
     home_pbx is the PBX host the directory says THIS site's users actually live
@@ -203,9 +214,9 @@ def fetch_directory(pbx, token, label=""):
     info, homes = {}, {}
     want = (label or "").strip().lower()
     try:
-        code, body = http(f"{pbx}/api/v1/PBX/Colleagues/", token)
+        code, body = fetch("/api/v1/PBX/Colleagues/")
         if code == 200:
-            for rec in (json.loads(body).get("result", {}) or {}).get("records", []):
+            for rec in ((body or {}).get("result", {}) or {}).get("records", []):
                 ext = str(rec.get("extension") or rec.get("login") or "")
                 if ext:
                     info[ext] = {
@@ -392,6 +403,34 @@ def pbx_host_is_up(host):
         return False
 
 
+def fetcher_for(pbx, token_env):
+    """A GET function for one (PBX, credential) pair, or None if unusable.
+
+    token_env is either the name of an env var holding a Simple Token, or the
+    literal "s2s" meaning "use the S2S application registered for this host".
+    Both credential kinds are PBX-local; this only decides which one opens the
+    door, so the rest of the collector does not care which was used.
+    """
+    host = host_of(pbx)
+    if token_env == S2S_SPEC:
+        if wildix_s2s.credentials(host) is None:
+            return None
+
+        def fetch(uri):
+            return wildix_s2s.s2s_request(host, "GET", uri)
+
+        return fetch
+    token = os.environ.get(token_env, "").strip()
+    if not token:
+        return None
+
+    def fetch(uri):
+        code, body = http(f"{pbx}{uri}", token)
+        return code, json.loads(body or b"{}")
+
+    return fetch
+
+
 def candidates_for(loc):
     """(pbx_url, token_env) pairs to try, in order. Almost every site has exactly
     one; a site whose PBX is disputed can list several."""
@@ -410,42 +449,43 @@ def resolve_pbx(loc):
     tried, first_ok = [], None
     for pbx, token_env in candidates_for(loc):
         host = host_of(pbx)
-        token = os.environ.get(token_env, "")
-        if not token:
+        kind = "s2s" if token_env == S2S_SPEC else "token"
+        fetch = fetcher_for(pbx, token_env)
+        if fetch is None:
             continue
         try:
-            code, _ = http(f"{pbx}/api/v1/PBX/version/", token)
+            code, _ = fetch("/api/v1/PBX/version/")
             if code != 200:
-                tried.append(f"{host} HTTP {code}")
+                tried.append(f"{host} {kind} HTTP {code}")
                 continue
         except urllib.error.HTTPError as exc:
-            tried.append(f"{host} HTTP {exc.code}")
+            tried.append(f"{host} {kind} HTTP {exc.code}")
             continue
-        except (urllib.error.URLError, OSError) as exc:
-            tried.append(f"{host} {type(exc).__name__}")
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            tried.append(f"{host} {kind} {type(exc).__name__}")
             continue
         if first_ok is None:
-            first_ok = (pbx, token)
+            first_ok = (pbx, fetch)
         try:
-            code, body = http(f"{pbx}/api/v1/PBX/Users/Sip/Registrations", token)
-            result = json.loads(body).get("result", {}) if code == 200 else {}
+            code, data = fetch("/api/v1/PBX/Users/Sip/Registrations")
+            result = data.get("result", {}) if code == 200 else {}
             count = len(result) if isinstance(result, dict) else 0
         except (urllib.error.URLError, OSError, ValueError):
             count = 0
-        tried.append(f"{host} {count} registered")
+        tried.append(f"{host} {kind} {count} registered")
         if count > 0:
-            return pbx, token, tried
+            return pbx, fetch, tried
     if first_ok:
         return first_ok[0], first_ok[1], tried
-    fallback_pbx, fallback_env = candidates_for(loc)[0]
-    return fallback_pbx, os.environ.get(fallback_env, ""), tried
+    return candidates_for(loc)[0][0], None, tried
 
 
 def run_location(loc, push_token, base):
     key = loc["key"]
-    pbx, token, tried = resolve_pbx(loc)
-    if not token:
-        print(f"ERROR: no token set for {key}; skipping", file=sys.stderr)
+    pbx, fetch, tried = resolve_pbx(loc)
+    if fetch is None:
+        print(f"ERROR: no usable credential for {key} "
+              f"[{'; '.join(tried) or 'nothing configured'}]", file=sys.stderr)
         return
     if len(candidates_for(loc)) > 1:
         print(f"{key}: resolved to {host_of(pbx)} [{'; '.join(tried) or 'none tried'}]")
@@ -459,7 +499,7 @@ def run_location(loc, push_token, base):
     # overhead (the Colleagues directory is ~800 records) and must NOT inflate it.
     reach_start = time.monotonic()
     try:
-        code, _ = http(f"{pbx}/api/v1/PBX/version/", token)
+        code, _ = fetch("/api/v1/PBX/version/")
         duration_ms = (time.monotonic() - reach_start) * 1000.0
         if code != 200:
             error, pbx_reachable = f"PBX API unreachable (HTTP {code})", False
@@ -483,18 +523,18 @@ def run_location(loc, push_token, base):
 
     if pbx_reachable:
         try:
-            code, body = http(f"{pbx}/api/v1/PBX/Users/Sip/Registrations", token)
+            code, body = fetch("/api/v1/PBX/Users/Sip/Registrations")
             # A non-200 here (bad/expired token -> 401/403) used to fall through as
             # an empty map, which read as "0 phones, all fine". Fail loudly instead.
             if code != 200:
                 raise ValueError(f"registrations HTTP {code}")
-            reg_result = json.loads(body).get("result", {})
+            reg_result = (body or {}).get("result", {})
             # Wildix (PHP json_encode) serializes an EMPTY registrations map as a
             # JSON array [] rather than {} — a PBX with zero registered phones.
             # Coerce any non-dict (i.e. []) to {} so build_inventory doesn't crash.
             if not isinstance(reg_result, dict):
                 reg_result = {}
-            directory, home_pbx = fetch_directory(pbx, token, loc["label"])
+            directory, home_pbx = fetch_directory(fetch, loc["label"])
             excluded = fetch_exclusions(base, key)
             phones = build_inventory(reg_result, directory, excluded)
         except (urllib.error.URLError, OSError, ValueError) as exc:

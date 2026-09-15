@@ -98,11 +98,30 @@ def build_jwt(app_id, secret, app_name, method, uri, host, get_params=None, post
     return signing_input + "." + _b64(signature), canonical
 
 
-def credentials():
-    """(app_id, secret, app_name) from the environment, or None if unset."""
-    app_id = (os.environ.get("WILDIX_S2S_APP_ID") or "").strip()
-    secret = (os.environ.get("WILDIX_S2S_SECRET") or "").strip()
-    name = (os.environ.get("WILDIX_S2S_APP_NAME") or "gatus").strip()
+def host_slug(host):
+    """longlewiscu.wildixin.com -> LONGLEWISCU, for building env var names."""
+    return host.split(".")[0].replace("-", "_").upper()
+
+
+def credentials(host=None):
+    """(app_id, secret, app_name) from the environment, or None if unset.
+
+    An S2S application is registered on ONE PBX and every other PBX rejects it:
+    measured across this estate, the LL-Monitor app created on longlewiscl
+    returns 200 there and 401 on all ten others, including the network master.
+    So credentials are looked up per host first -
+    WILDIX_S2S_APP_ID_LONGLEWISCU and friends - falling back to the unsuffixed
+    names, which is what the cloud endpoints use since they are company-scoped.
+    """
+    names = ["WILDIX_S2S_APP_ID", "WILDIX_S2S_SECRET", "WILDIX_S2S_APP_NAME"]
+    if host:
+        suffix = "_" + host_slug(host)
+        scoped = [os.environ.get(n + suffix, "").strip() for n in names]
+        if scoped[0] and scoped[1]:
+            return scoped[0], scoped[1], (scoped[2] or "gatus")
+    app_id = (os.environ.get(names[0]) or "").strip()
+    secret = (os.environ.get(names[1]) or "").strip()
+    name = (os.environ.get(names[2]) or "gatus").strip()
     if not app_id or not secret:
         return None
     return app_id, secret, name
@@ -119,9 +138,9 @@ def _ctx():
 
 def s2s_request(host, method, uri, body=None, get_params=None):
     """Issue one S2S-signed request. Returns (status, parsed_json)."""
-    creds = credentials()
+    creds = credentials(host)
     if creds is None:
-        raise ValueError("WILDIX_S2S_APP_ID / WILDIX_S2S_SECRET are not set")
+        raise ValueError(f"no S2S credentials for {host}")
     app_id, secret, app_name = creds
     token, _ = build_jwt(app_id, secret, app_name, method, uri, host,
                          get_params=get_params, post_params=body)
