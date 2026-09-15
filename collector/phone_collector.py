@@ -269,6 +269,40 @@ def build_inventory(reg_result, directory, excluded):
     return phones
 
 
+def roster_from_directory(directory, label, excluded):
+    """Every handset a site is SUPPOSED to have, from the shared directory.
+
+    The colleague directory is synced network-wide, so it lists a site's phones
+    even when that site's own PBX cannot be read. Live state is not in it, so
+    every entry is marked sipStatus=unknown rather than guessed: showing a real
+    roster with honest unknowns beats an empty drill-in, and claiming they are
+    up or down would both be inventions.
+
+    These entries never reach evaluate_health - the caller keeps the counts at
+    zero - so an unknown phone can neither raise an alarm nor silence one.
+    """
+    want = (label or "").strip().lower()
+    roster = []
+    for ext, d in sorted(directory.items()):
+        if str(d.get("department") or "").strip().lower() != want:
+            continue
+        roster.append({
+            "ext": ext,
+            "name": d.get("name", ""),
+            "did": d.get("did", ""),
+            "department": d.get("department", ""),
+            "email": d.get("email", ""),
+            "ip": "", "mac": "", "model": "", "firmware": "",
+            "sipStatus": "unknown",
+            "online": False,
+            "reachable": False,
+            "statusKnown": False,
+            "excluded": ext in excluded,
+            "source": "directory",
+        })
+    return roster
+
+
 def inventory_from_presence(directory, label, presence, excluded):
     """Build a phone list from company-scoped presence rather than local SIP
     registrations, for a site whose own PBX we cannot authenticate against.
@@ -584,10 +618,18 @@ def run_location(loc, push_token, base):
         if home and home != host_of(pbx):
             if pbx_host_is_up(home):
                 status = "degraded"
+                # Show the handsets the directory knows about, with their state
+                # marked unknown. Counts stay at zero so nothing here is treated
+                # as an outage or as an all-clear.
+                roster = roster_from_directory(directory, loc["label"], excluded)
+                if roster:
+                    phones = roster
                 reason_override = (
                     f"phone detail unavailable: {home} is up but no API token for it; "
                     f"the token in use is for {host_of(pbx)}, which hosts no "
-                    f"{loc['label']} phones")
+                    f"{loc['label']} phones"
+                    + (f". Listing {len(roster)} handsets from the directory with "
+                       f"unknown state" if roster else ""))
             else:
                 status = "down"
                 reason_override = f"no phones reporting ({home} is not answering)"
