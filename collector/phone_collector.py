@@ -332,6 +332,24 @@ def host_of(pbx):
     return pbx.split("//")[-1].strip("/").lower()
 
 
+def pbx_host_is_up(host):
+    """Does the PBX answer HTTPS at all, without a token?
+
+    The WMS login redirect is a perfectly good liveness signal: it proves the
+    box is serving even when we hold no credential for it. Used only to tell
+    "we cannot read this PBX" apart from "this PBX is down", which are very
+    different things to put on a wallboard.
+    """
+    try:
+        req = urllib.request.Request(f"https://{host}/", method="HEAD")
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_ctx()):
+            return True
+    except urllib.error.HTTPError:
+        return True  # it answered, just not with a 200
+    except (urllib.error.URLError, OSError):
+        return False
+
+
 def candidates_for(loc):
     """(pbx_url, token_env) pairs to try, in order. Almost every site has exactly
     one; a site whose PBX is disputed can list several."""
@@ -440,10 +458,38 @@ def run_location(loc, push_token, base):
     degraded_at, down_at = fetch_thresholds(base, key)
     status, counts = evaluate_health(phones, pbx_reachable, degraded_at, down_at)
 
+    # A site's phones can live on a PBX we hold no token for. An empty
+    # registration list from some OTHER node is then not this site's status, and
+    # reporting it as "0 phones" states something we do not know. Report what is
+    # actually knowable instead: whether that PBX is up.
+    #
+    # Up but unreadable is a PASS carrying its reason (amber) rather than a
+    # failure, because nothing is known to be broken; the monitoring is what is
+    # incomplete, and the reason says exactly what is missing. The moment a
+    # token for that PBX exists, resolve_pbx picks it and real data returns with
+    # no change here.
+    reason_override = None
+    if not phones:
+        home = home_pbx or host_of(candidates_for(loc)[0][0])
+        if home and home != host_of(pbx):
+            if pbx_host_is_up(home):
+                status = "degraded"
+                reason_override = (
+                    f"phone detail unavailable: {home} is up but no API token for it; "
+                    f"the token in use is for {host_of(pbx)}, which hosts no "
+                    f"{loc['label']} phones")
+            else:
+                status = "down"
+                reason_override = f"no phones reporting ({home} is not answering)"
+
     # 'degraded' is NOT a hard failure (no red alarm); only 'down' fails the check.
     success = status != "down"
-    reason = None
-    if status == "down":
+    reason = reason_override
+    if reason_override:
+        # The override already says exactly what is and is not known; the
+        # branches below would replace it with a phone tally we do not have.
+        pass
+    elif status == "down":
         # NOTE: the "no phones reporting" wording is a CONTRACT with the UI —
         # LocationCard.vue matches it to paint the bar BLACK (nothing reported)
         # instead of red (phones present but offline). Don't reword the prefix.
