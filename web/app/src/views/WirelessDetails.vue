@@ -216,8 +216,23 @@
         <!-- AP table -->
         <section v-if="aps.length" ref="tableSection">
           <div class="sec-head">
-            <div class="eyebrow">Access points · {{ apsOnline }} of {{ apsTotal }} online</div>
-            <span class="panel-note">showing {{ sortedAps.length }} of {{ aps.length }} listed</span>
+            <div class="eyebrow">
+              {{ showAllDevices ? 'All adopted devices' : 'Access points' }}
+              · {{ apsOnline }} of {{ apsTotal }} online
+            </div>
+            <div class="flex items-center gap-3">
+              <button
+                v-if="nonWirelessCount"
+                type="button"
+                class="panel-note underline underline-offset-2 hover:text-foreground"
+                @click="showAllDevices = !showAllDevices"
+              >
+                {{ showAllDevices
+                  ? 'radios only'
+                  : `show ${nonWirelessCount} switch/other device${nonWirelessCount === 1 ? '' : 's'}` }}
+              </button>
+              <span class="panel-note">showing {{ sortedAps.length }} of {{ aps.length }} listed</span>
+            </div>
           </div>
           <div class="overflow-x-auto rounded-lg border">
             <table class="w-full text-sm roster-table">
@@ -298,7 +313,22 @@ const tableSection = ref(null)
 const counts = computed(() => (snapshot.value && snapshot.value.counts) || {})
 const detail = computed(() => (snapshot.value && snapshot.value.detail) || {})
 const wlan = computed(() => detail.value.wlan || {})
-const aps = computed(() => (Array.isArray(detail.value.aps) ? detail.value.aps : []))
+// Everything adopted to the console, radios and otherwise. Absent on snapshots
+// pushed by a collector older than the auto-discovery change, hence the
+// fall-back to detail.aps below, which keeps this page working mid-rollout.
+const allDevices = computed(() =>
+  (Array.isArray(detail.value.devices) ? detail.value.devices : []))
+const showAllDevices = ref(false)
+const aps = computed(() => {
+  if (allDevices.value.length) {
+    return showAllDevices.value
+      ? allDevices.value
+      : allDevices.value.filter((d) => d.wireless)
+  }
+  return Array.isArray(detail.value.aps) ? detail.value.aps : []
+})
+const nonWirelessCount = computed(() =>
+  allDevices.value.filter((d) => !d.wireless).length)
 const controller = computed(() => detail.value.controller || '')
 
 const siteName = computed(() => {

@@ -184,6 +184,11 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	unprotectedAPIRouter.Get("/v1/unifi", GetUniFiSnapshots)
 	// COLLECTOR PUSH: no session gate, same reasoning as /external above.
 	unprotectedAPIRouter.Post("/v1/unifi/:key", SetUniFiSnapshot(cfg))
+	// Expected-uplink settings, read by the collector each sweep so an empty WAN
+	// port stops reading as an outage. Registered before the bare :key GET for
+	// the same reason as /v1/phones/sweep-pending above.
+	unprotectedAPIRouter.Get("/v1/unifi/:key/settings", GetUniFiSettings)
+	unprotectedAPIRouter.Post("/v1/unifi/:key/settings", requireOperator, SetUniFiSettings)
 	unprotectedAPIRouter.Get("/v1/unifi/:key", GetUniFiSnapshot)
 	// Collector metric history: the counts behind the phones, firewall and
 	// wireless rows, sampled over time. Raw for recent windows, hourly rollups

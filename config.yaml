@@ -292,6 +292,21 @@ external-endpoints:
   - name: Alabaster
     group: Firewall
     token: "${PHONES_PUSH_TOKEN}"
+  # Discovered by collector/unifi_collector.py, which now derives sites from the
+  # UniFi account rather than a hardcoded table. Bessemer and Ivory Tower both
+  # gained a gateway under the current key: Bessemer is a UDM Pro, and Ivory
+  # Tower is now a UDM Pro Max rather than the WAN-less UOS Server that used to
+  # justify suppressing its Firewall row.
+  #
+  # Both report a PRIVATE WAN address (10.15.100.104 and 10.15.102.159), so they
+  # sit behind something upstream. The row still reports gateway reachability and
+  # uplink state, which is the useful part.
+  - name: Bessemer
+    group: Firewall
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Ivory Tower
+    group: Firewall
+    token: "${PHONES_PUSH_TOKEN}"
   - name: Decatur KIA
     group: Firewall
     token: "${PHONES_PUSH_TOKEN}"

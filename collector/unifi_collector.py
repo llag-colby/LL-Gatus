@@ -74,37 +74,18 @@ HTTP_TIMEOUT = 25
 #
 # Keys must match config.yaml: slug(group)_slug(name).
 #   group "Firewall" + name "Decatur GMC" -> firewall_decatur-gmc
-SITES = [
-    {
-        "label": "Alabaster", "slug": "alabaster",
-        # UDM Pro with two uplinks — the dual-WAN case.
-        "gateway_host": "Alabaster",
-        # The Alabaster console manages only itself: 0 adopted wifi devices (205
-        # wired clients, no adopted APs or switches). A Wireless row there would
-        # sit permanently at "no access points", which reads as an outage. Set
-        # this to "Alabaster" once APs are adopted to that console.
-        "wireless_host": None,
-    },
-    {
-        # Both Decatur stores share one controller (23 APs) and sit behind the
-        # KIA Cloud Gateway Ultra, the way they share one PBX. The CloudKey
-        # named "Decatur (GMC & KIA)" is the controller, NOT the firewall.
-        "label": "Decatur GMC", "slug": "decatur-gmc",
-        "gateway_host": "BA-DCU-FWE-KIA",
-        "wireless_host": "Decatur (GMC & KIA)",
-    },
-    {
-        "label": "Decatur KIA", "slug": "decatur-kia",
-        "gateway_host": "BA-DCU-FWE-KIA",
-        "wireless_host": "Decatur (GMC & KIA)",
-    },
-    {
-        # UOS Server: a controller, no WAN uplink of its own -> wireless only.
-        "label": "Ivory Tower", "slug": "ivory-tower",
-        "gateway_host": None,
-        "wireless_host": "Ivory Tower Hosted",
-    },
-]
+# Console name in UniFi -> the dashboard card it belongs to. Only needed when
+# the two differ; anything not listed uses the console's own name. Name a
+# console after its site and it wires itself up with no entry here.
+SITE_ALIASES = {
+    # "BA-DCU-FWE-KIA": "Decatur KIA",
+}
+
+# Console names to ignore entirely, comma separated. Recorders and standalone
+# cameras register as hosts but are not a site.
+SKIP_CONSOLES = set(
+    n.strip() for n in os.environ.get("UNIFI_SKIP_CONSOLES", "").split(",") if n.strip()
+)
 
 # Console hardware that actually routes traffic. Everything else (UCKP CloudKey,
 # UNVR recorder, UOSSERVER) is a controller whose `wans` entry is a management
@@ -152,6 +133,120 @@ def push(url, token, body=None):
     req = urllib.request.Request(url, headers=headers, method="POST", data=data)
     with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
         return resp.getcode()
+
+
+def sanitize(s):
+    """Mirror of sanitize() in config/key/key.go.
+
+    A dashboard key is sanitize(group) + "_" + sanitize(name). This has to match
+    the Go side character for character or every push 404s, so keep the two in
+    step if that function ever gains a rule.
+    """
+    s = (s or "").strip().lower()
+    for ch in ("/", "_", ".", ",", " ", "#", "+", "&"):
+        s = s.replace(ch, "-")
+    return s
+
+
+def discover_sites(estate):
+    """Turn every console on the account into a site, giving each only the rows
+    it can actually fill.
+
+    This replaces a hand-maintained table. A site got a Firewall row if somebody
+    had typed a gateway_host and a Wireless row if somebody had typed a
+    wireless_host, so a newly adopted console stayed invisible until a human
+    noticed. The two deliberate suppressions in that table (Alabaster has no
+    adopted APs; Ivory Tower used to be a controller with no WAN of its own)
+    also had to be maintained by hand. Deriving both from the data reproduces
+    those suppressions on its own and undoes them the moment the hardware
+    changes underneath.
+    """
+    sites = []
+    for host in estate.hosts:
+        name = Estate._name(host)
+        if not name or name in SKIP_CONSOLES:
+            continue
+        label = SITE_ALIASES.get(name, name)
+        wans = [w for w in ((host.get("reportedState") or {}).get("wans") or [])
+                if w.get("enabled", True)]
+        devices = estate.devices_for_host(host)
+        sites.append({
+            "label": label,
+            "slug": sanitize(label),
+            "console": name,
+            # A Firewall row needs a box that routes and at least one WAN port.
+            "gateway_host": name if (is_gateway(host) and wans) else None,
+            # A Wireless row needs at least one adopted wireless device. An
+            # always-empty row reads as an outage, which is exactly why
+            # Alabaster never had one.
+            "wireless_host": name if any(is_wireless(d) for d in devices) else None,
+        })
+    sites.sort(key=lambda site: site["label"].lower())
+    return sites
+
+
+def fetch_uplink_settings(base, key):
+    """How many uplinks this site is expected to have carrying traffic.
+
+    0 means auto: expect exactly the ports that are plugged in, so an empty WAN2
+    is not a permanent amber. Operator-set, persisted server side and polled
+    once per row per sweep, the same shape as the phones collector's thresholds.
+    Best effort: any error falls back to auto rather than failing the row.
+    """
+    try:
+        req = urllib.request.Request(f"{base}/api/v1/unifi/{key}/settings",
+                                     headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+            data = json.loads(resp.read())
+        return int((data.get("effective") or {}).get("expectedWans") or 0)
+    except (urllib.error.URLError, OSError, ValueError, TypeError, AttributeError):
+        return 0
+
+
+def known_rows(base):
+    """Rows Gatus already holds a UniFi snapshot for.
+
+    Used only when the cloud API is unreachable: discovery returns nothing then,
+    and without this every row would keep showing stale data instead of going
+    black. Reading them back means a dead API still reports "nothing reported"
+    against exactly the rows that existed a minute ago.
+    """
+    try:
+        req = urllib.request.Request(f"{base}/api/v1/unifi",
+                                     headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+            data = json.loads(resp.read()) or {}
+        rows = []
+        for key, snap in data.items():
+            kind, _, slug = key.partition("_")
+            if kind in COLLECTORS and slug:
+                rows.append((kind, {"slug": slug,
+                                    "label": (snap or {}).get("site") or slug}))
+        return sorted(rows, key=lambda r: (r[1]["label"].lower(), r[0]))
+    except (urllib.error.URLError, OSError, ValueError, AttributeError):
+        return []
+
+
+def render_unregistered_yaml(rows):
+    """A paste-ready external-endpoints block for consoles Gatus does not know.
+
+    Gatus cannot register an external endpoint at runtime: the push handler
+    looks the key up in the parsed config and 404s if it is absent, and
+    config.yaml is baked into the image, so the file-watcher can never see a
+    change. Discovery therefore stops at telling you exactly what to add.
+    """
+    out = ["",
+           f"WARN: {len(rows)} UniFi row(s) have no external-endpoint in config.yaml and",
+           "      were rejected with 404. Gatus cannot create these at runtime. Paste",
+           "      this into the external-endpoints section of config.yaml, then run",
+           "      `docker compose down && docker compose up -d`:",
+           ""]
+    for kind, site in rows:
+        out.append(f"  - name: {site['label']}")
+        out.append(f"    group: {kind.capitalize()}")
+        out.append('    token: "${PHONES_PUSH_TOKEN}"')
+    out.append("")
+    return "\n".join(out)
 
 
 def num(value, digits=1):
@@ -226,8 +321,15 @@ def is_wireless(device):
 
 
 # --------------------------------------------------------------------------- #
-def collect_firewall(site, estate):
-    """Gateway + WAN uplinks. Returns (status, counts, detail, reason)."""
+def collect_firewall(site, estate, expected_wans=0):
+    """Gateway + WAN uplinks. Returns (status, counts, detail, reason).
+
+    expected_wans is the operator-set number of uplinks this site should have
+    carrying traffic; 0 means auto, which expects exactly the ports that are
+    plugged in. A gateway reports every physical WAN port whether or not
+    anything is in it, and counting empty ports parked Bessemer and Ivory Tower
+    on a permanent "1 of 2 WAN uplinks down" that nobody could clear.
+    """
     host = estate.host_by_name(site["gateway_host"])
     if host is None:
         return "down", {"wansUp": 0, "wansTotal": 0}, {}, \
@@ -260,7 +362,13 @@ def collect_firewall(site, estate):
     wans.sort(key=lambda w: (len(w["id"]), w["id"]))
 
     up = [w for w in wans if w["up"]]
-    counts = {"wansUp": len(up), "wansTotal": len(wans)}
+    plugged = [w for w in wans if w["plugged"]]
+    expected = expected_wans if expected_wans > 0 else len(plugged)
+    # wansTotal drives the "n/m WAN" label on the card, so it carries the
+    # EXPECTED count. The raw port census stays beside it for the drill-in.
+    counts = {"wansUp": len(up), "wansTotal": expected,
+              "wansPresent": len(wans), "wansPlugged": len(plugged),
+              "wansExpectedSource": 1 if expected_wans > 0 else 0}
     detail = {
         "gateway": {
             "name": Estate._name(host) or hardware.get("name") or "Gateway",
@@ -277,12 +385,16 @@ def collect_firewall(site, estate):
         return "down", counts, detail, f"gateway {Estate._name(host)} is not connected to UniFi"
     if not wans:
         return "down", counts, detail, "gateway reports no enabled WAN uplinks"
+    if expected == 0:
+        # Every port is empty. Nothing is configured to carry traffic, so there
+        # is nothing to call down; say that rather than invent an outage.
+        return "down", counts, detail, "no WAN uplink is plugged in"
     if not up:
         return "down", counts, detail, "all WAN uplinks down"
-    if len(up) < len(wans):
-        missing = ", ".join(w["id"] for w in wans if not w["up"])
-        return "degraded", counts, detail, \
-            f"{len(wans) - len(up)} of {len(wans)} WAN uplinks down ({missing})"
+    if len(up) < expected:
+        missing = ", ".join(w["id"] for w in wans if not w["up"]) or "an unplugged port"
+        return "degraded", counts, detail, (
+            f"{expected - len(up)} of {expected} WAN uplinks down ({missing})")
     return "healthy", counts, detail, None
 
 
@@ -323,9 +435,31 @@ def collect_wireless(site, estate):
         key=lambda a: a["name"].lower(),
     )
 
+    # Everything adopted to this console, not only the radios. is_wireless()
+    # filters switches, CloudKeys, recorders, PDUs and cameras out of the AP
+    # list above, but they are already in hand and a switch going dark matters,
+    # so the full roster ships alongside it. Radios sort first, then by name.
+    devices = sorted(
+        ({
+            "name": d.get("name") or d.get("model") or d.get("mac") or "?",
+            "model": d.get("shortname") or d.get("model") or "",
+            "ip": d.get("ip") or "",
+            "state": str(d.get("status") or "").upper(),
+            "version": d.get("version") or "",
+            "firmware": d.get("firmwareStatus") or "",
+            "since": d.get("startupTime") or "",
+            "mac": d.get("mac") or "",
+            "wireless": is_wireless(d),
+        } for d in estate.devices_for_host(host)),
+        key=lambda d: (not d["wireless"], d["name"].lower()),
+    )
+    devices_offline = sum(1 for d in devices if d["state"] != "ONLINE")
+
     counts = {
         "apsOnline": online_count,
         "apsTotal": total,
+        "devicesTotal": len(devices),
+        "devicesOffline": devices_offline,
         "clients": int(c.get("wifiClient") or 0),
         "guests": int(c.get("guestClient") or 0),
         "wiredClients": int(c.get("wiredClient") or 0),
@@ -335,6 +469,7 @@ def collect_wireless(site, estate):
         "site": (record.get("meta") or {}).get("desc") or Estate._name(host),
         "controller": Estate._name(host),
         "aps": aps,
+        "devices": devices,
         "wlan": {
             "offlineNames": offline_names,
             "totalDevices": int(c.get("totalDevice") or 0),
@@ -361,7 +496,14 @@ def collect_wireless(site, estate):
 COLLECTORS = {"firewall": collect_firewall, "wireless": collect_wireless}
 
 
-def run_row(kind, site, estate, push_token, base, fatal=None, api_ms=0.0):
+def run_row(kind, site, estate, push_token, base, fatal=None, api_ms=0.0,
+            discovery=None):
+    """Collect and push one row. Returns True if Gatus does not know this key.
+
+    A 404 from the snapshot push is not an error to shout about once per sweep:
+    it is how a console that nobody has added to config.yaml announces itself.
+    The caller gathers those and prints one paste-ready block at the end.
+    """
     key = f"{kind}_{site['slug']}"
     started = time.monotonic()
     if fatal:
@@ -370,7 +512,11 @@ def run_row(kind, site, estate, push_token, base, fatal=None, api_ms=0.0):
         status, counts, detail, reason = "down", {}, {}, f"no unifi reporting ({fatal})"
     else:
         try:
-            status, counts, detail, reason = COLLECTORS[kind](site, estate)
+            if kind == "firewall":
+                status, counts, detail, reason = collect_firewall(
+                    site, estate, fetch_uplink_settings(base, key))
+            else:
+                status, counts, detail, reason = collect_wireless(site, estate)
         except (urllib.error.URLError, OSError, ValueError, KeyError) as exc:
             status, counts, detail, reason = "down", {}, {}, f"no unifi reporting ({exc})"
     # Response time = the UniFi API round-trip. One estate read serves every row,
@@ -384,10 +530,22 @@ def run_row(kind, site, estate, push_token, base, fatal=None, api_ms=0.0):
     print(f"{key}: status={status} counts={counts} dur={int(duration_ms)}ms"
           + (f" reason={reason}" if reason else ""))
 
+    # What discovery saw this sweep rides along on every snapshot, so the UI can
+    # diff it against the keys it already holds and say "2 consoles found that
+    # are not on the dashboard" without another route or another poll.
+    if discovery is not None:
+        detail = dict(detail)
+        detail["discovery"] = discovery
+
     body = {"kind": kind, "status": status, "site": site["label"],
             "counts": counts, "detail": detail}
     try:
         push(f"{base}/api/v1/unifi/{key}", push_token, body)
+    except urllib.error.HTTPError as exc:
+        # HTTPError subclasses URLError, so this has to be caught first.
+        if exc.code == 404:
+            return True
+        print(f"WARN: snapshot push failed for {key}: {exc}", file=sys.stderr)
     except (urllib.error.URLError, OSError) as exc:
         print(f"WARN: snapshot push failed for {key}: {exc}", file=sys.stderr)
     q = {"success": "true" if success else "false", "duration": f"{int(duration_ms)}ms"}
@@ -398,8 +556,13 @@ def run_row(kind, site, estate, push_token, base, fatal=None, api_ms=0.0):
         q["error"] = reason
     try:
         push(f"{base}/api/v1/endpoints/{key}/external?{urllib.parse.urlencode(q)}", push_token)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return True
+        print(f"WARN: result push failed for {key}: {exc}", file=sys.stderr)
     except (urllib.error.URLError, OSError) as exc:
         print(f"WARN: result push failed for {key}: {exc}", file=sys.stderr)
+    return False
 
 
 def sweep_once():
@@ -426,16 +589,36 @@ def sweep_once():
         print(f"ERROR: {fatal}", file=sys.stderr)
     api_ms = (time.monotonic() - api_started) * 1000.0
 
-    for site in SITES:
-        for kind in ("firewall", "wireless"):
-            # A site only gets a row for what it actually has: no gateway means
-            # no Firewall row, no adopted APs means no Wireless row.
-            if not site.get(f"{'gateway' if kind == 'firewall' else 'wireless'}_host"):
-                continue
-            try:
-                run_row(kind, site, estate, push_token, base, fatal, api_ms)
-            except Exception as exc:  # never let one row kill the sweep
-                print(f"ERROR running {kind}_{site['slug']}: {exc}", file=sys.stderr)
+    if fatal:
+        # Discovery needs the API that just failed, so fall back to the rows
+        # Gatus already holds. Without this a dead cloud API would leave every
+        # row showing stale data instead of going black.
+        rows = known_rows(base)
+        discovery = None
+    else:
+        sites = discover_sites(estate)
+        rows = [(kind, site) for site in sites for kind in ("firewall", "wireless")
+                if site.get("gateway_host" if kind == "firewall" else "wireless_host")]
+        discovery = {
+            "consoles": [{"label": site["label"], "slug": site["slug"],
+                          "firewall": bool(site["gateway_host"]),
+                          "wireless": bool(site["wireless_host"])}
+                         for site in sites],
+            "sweptAt": int(time.time()),
+        }
+        print(f"discovered {len(sites)} console(s), {len(rows)} row(s): "
+              + ", ".join(f"{k}_{s['slug']}" for k, s in rows))
+
+    unregistered = []
+    for kind, site in rows:
+        try:
+            if run_row(kind, site, estate, push_token, base, fatal, api_ms, discovery):
+                unregistered.append((kind, site))
+        except Exception as exc:  # never let one row kill the sweep
+            print(f"ERROR running {kind}_{site['slug']}: {exc}", file=sys.stderr)
+
+    if unregistered:
+        print(render_unregistered_yaml(unregistered), file=sys.stderr)
 
 
 def main():
