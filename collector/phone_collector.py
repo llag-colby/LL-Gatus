@@ -40,6 +40,8 @@ import time
 import urllib.error
 import urllib.request
 
+import wildix_s2s
+
 LOCATIONS = [
     {
         "key": "phones_ivory-tower",       # slug(group=Phones)_slug(name=Ivory Tower)
@@ -256,6 +258,46 @@ def build_inventory(reg_result, directory, excluded):
     return phones
 
 
+def inventory_from_presence(directory, label, presence, excluded):
+    """Build a phone list from company-scoped presence rather than local SIP
+    registrations, for a site whose own PBX we cannot authenticate against.
+
+    Presence carries less than a registration does: no model, firmware, MAC or
+    contact IP, because those live in the SIP registration on the home PBX. Those
+    fields stay empty rather than being invented. The liveness signal, which is
+    what the row is actually about, is just as good.
+
+    One honest difference: local registrations are filtered to desk phones by
+    user agent, and presence has no user agent, so a user with only a softphone
+    counts here where they would not on a locally-read site. The reason line
+    says so, and every phone is tagged source=presence.
+    """
+    want = (label or "").strip().lower()
+    phones = []
+    for ext, d in sorted(directory.items()):
+        if str(d.get("department") or "").strip().lower() != want:
+            continue
+        seen = presence.get(str(ext))
+        if seen is None:
+            continue
+        online = bool(seen.get("registered"))
+        phones.append({
+            "ext": ext,
+            "name": d.get("name", ""),
+            "did": d.get("did", ""),
+            "department": d.get("department", ""),
+            "email": d.get("email", ""),
+            "ip": "", "mac": "", "model": "", "firmware": "",
+            "sipStatus": "registered" if online else "unregistered",
+            "online": online,
+            "reachable": online,
+            "excluded": ext in excluded,
+            "source": "presence",
+            "telephony": seen.get("telephony", ""),
+        })
+    return phones
+
+
 def fetch_exclusions(base, key):
     """Excluded extensions for this endpoint (persisted server-side)."""
     try:
@@ -408,6 +450,9 @@ def run_location(loc, push_token, base):
     if len(candidates_for(loc)) > 1:
         print(f"{key}: resolved to {host_of(pbx)} [{'; '.join(tried) or 'none tried'}]")
     error, phones, pbx_reachable, home_pbx = None, [], True, ""
+    # Bound up front: the presence fallback below reads them even on the path
+    # where the PBX was never reachable and the block that fills them is skipped.
+    directory, excluded = {}, set()
 
     # Response time = ONLY the PBX API reachability call (how responsive the phone
     # system is). The registrations/Colleagues fetches below are data-gathering
@@ -469,6 +514,31 @@ def run_location(loc, push_token, base):
     # token for that PBX exists, resolve_pbx picks it and real data returns with
     # no change here.
     reason_override = None
+    if not phones:
+        home = home_pbx or host_of(candidates_for(loc)[0][0])
+        if home and home != host_of(pbx):
+            # Registrations are local to the home PBX, but wda.wildix.com keys
+            # presence on the COMPANY, so it reaches a PBX we hold no token for.
+            # It needs S2S credentials; without them, fall through to reporting
+            # whether that PBX is merely alive.
+            if wildix_s2s.credentials() and directory:
+                try:
+                    exts = [e for e, d in directory.items()
+                            if str(d.get("department") or "").strip().lower()
+                            == loc["label"].strip().lower()]
+                    seen = wildix_s2s.query_presence(
+                        exts, company=os.environ.get("WILDIX_COMPANY_ID") or None)
+                    if seen:
+                        phones = inventory_from_presence(
+                            directory, loc["label"], seen, excluded)
+                        status, counts = evaluate_health(
+                            phones, True, degraded_at, down_at)
+                        print(f"{key}: presence fallback via {wildix_s2s.WDA_HOST} "
+                              f"covered {len(seen)} of {len(exts)} extensions")
+                except (urllib.error.URLError, OSError, ValueError, KeyError) as exc:
+                    print(f"WARN: presence fallback failed for {key}: {exc}",
+                          file=sys.stderr)
+
     if not phones:
         home = home_pbx or host_of(candidates_for(loc)[0][0])
         if home and home != host_of(pbx):
