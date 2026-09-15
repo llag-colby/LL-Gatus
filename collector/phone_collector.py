@@ -334,6 +334,20 @@ def run_location(loc, push_token, base):
         duration_ms = (time.monotonic() - reach_start) * 1000.0
         if code != 200:
             error, pbx_reachable = f"PBX API unreachable (HTTP {code})", False
+    except urllib.error.HTTPError as exc:
+        duration_ms = (time.monotonic() - reach_start) * 1000.0
+        # 401 is not "unreachable" — the PBX answered and rejected the token,
+        # which almost always means the token was issued on a DIFFERENT PBX.
+        # Naming the host here puts the diagnosis on the dashboard instead of
+        # leaving a bare 401 that reads like an outage. HTTPError subclasses
+        # URLError, so this has to be caught first.
+        host = loc["pbx"].replace("https://", "").replace("http://", "")
+        if exc.code in (401, 403):
+            error = (f"token rejected by {host} (HTTP {exc.code}) - the token must "
+                     f"be issued on THIS PBX, not another one")
+        else:
+            error = f"PBX API unreachable (HTTP {exc.code})"
+        pbx_reachable = False
     except (urllib.error.URLError, OSError) as exc:
         duration_ms = (time.monotonic() - reach_start) * 1000.0
         error, pbx_reachable = f"PBX API unreachable ({exc})", False
