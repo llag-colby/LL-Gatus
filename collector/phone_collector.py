@@ -70,6 +70,16 @@ LOCATIONS = [
         "label": "Cullman",
         "pbx": "https://longlewiscu.wildixin.com",
         "token_env": "PHONES_CULLMAN_TOKEN",
+        # Which host serves Cullman has been contested, so stop asserting it and
+        # let the registrations decide. Tried in order; the first that both
+        # authenticates AND reports registered phones wins. Put a token issued
+        # on longlewiscu in PHONES_CULLMAN_CU_TOKEN and it takes priority;
+        # otherwise the general token is tried against both hosts.
+        "pbx_candidates": [
+            ("https://longlewiscu.wildixin.com", "PHONES_CULLMAN_CU_TOKEN"),
+            ("https://longlewiscu.wildixin.com", "PHONES_CULLMAN_TOKEN"),
+            ("https://longlewiscl.wildixin.com", "PHONES_CULLMAN_TOKEN"),
+        ],
     },
     # Decatur GMC and Decatur KIA share ONE PBX (longlewisde) and one token, so
     # both cards will always show the same phone inventory. Two entries because
@@ -318,11 +328,67 @@ def push_result(base, key, success, error, duration_ms, push_token):
 
 
 # --------------------------------------------------------------------------- #
+def host_of(pbx):
+    return pbx.split("//")[-1].strip("/").lower()
+
+
+def candidates_for(loc):
+    """(pbx_url, token_env) pairs to try, in order. Almost every site has exactly
+    one; a site whose PBX is disputed can list several."""
+    return list(loc.get("pbx_candidates") or [(loc["pbx"], loc["token_env"])])
+
+
+def resolve_pbx(loc):
+    """Pick the PBX that actually holds this site's phones.
+
+    A candidate that authenticates AND reports registrations wins outright. If
+    none reports any, the first that merely authenticates is used, so the row
+    reads "reachable, 0 registered" against a real PBX rather than a 401 nobody
+    can act on. Returns (pbx, token, tried), where tried is a short account of
+    what each candidate did so the dashboard can show the evidence.
+    """
+    tried, first_ok = [], None
+    for pbx, token_env in candidates_for(loc):
+        host = host_of(pbx)
+        token = os.environ.get(token_env, "")
+        if not token:
+            continue
+        try:
+            code, _ = http(f"{pbx}/api/v1/PBX/version/", token)
+            if code != 200:
+                tried.append(f"{host} HTTP {code}")
+                continue
+        except urllib.error.HTTPError as exc:
+            tried.append(f"{host} HTTP {exc.code}")
+            continue
+        except (urllib.error.URLError, OSError) as exc:
+            tried.append(f"{host} {type(exc).__name__}")
+            continue
+        if first_ok is None:
+            first_ok = (pbx, token)
+        try:
+            code, body = http(f"{pbx}/api/v1/PBX/Users/Sip/Registrations", token)
+            result = json.loads(body).get("result", {}) if code == 200 else {}
+            count = len(result) if isinstance(result, dict) else 0
+        except (urllib.error.URLError, OSError, ValueError):
+            count = 0
+        tried.append(f"{host} {count} registered")
+        if count > 0:
+            return pbx, token, tried
+    if first_ok:
+        return first_ok[0], first_ok[1], tried
+    fallback_pbx, fallback_env = candidates_for(loc)[0]
+    return fallback_pbx, os.environ.get(fallback_env, ""), tried
+
+
 def run_location(loc, push_token, base):
-    key, token = loc["key"], os.environ.get(loc["token_env"], "")
+    key = loc["key"]
+    pbx, token, tried = resolve_pbx(loc)
     if not token:
-        print(f"ERROR: {loc['token_env']} not set; skipping {key}", file=sys.stderr)
+        print(f"ERROR: no token set for {key}; skipping", file=sys.stderr)
         return
+    if len(candidates_for(loc)) > 1:
+        print(f"{key}: resolved to {host_of(pbx)} [{'; '.join(tried) or 'none tried'}]")
     error, phones, pbx_reachable, home_pbx = None, [], True, ""
 
     # Response time = ONLY the PBX API reachability call (how responsive the phone
@@ -330,7 +396,7 @@ def run_location(loc, push_token, base):
     # overhead (the Colleagues directory is ~800 records) and must NOT inflate it.
     reach_start = time.monotonic()
     try:
-        code, _ = http(f"{loc['pbx']}/api/v1/PBX/version/", token)
+        code, _ = http(f"{pbx}/api/v1/PBX/version/", token)
         duration_ms = (time.monotonic() - reach_start) * 1000.0
         if code != 200:
             error, pbx_reachable = f"PBX API unreachable (HTTP {code})", False
@@ -341,7 +407,7 @@ def run_location(loc, push_token, base):
         # Naming the host here puts the diagnosis on the dashboard instead of
         # leaving a bare 401 that reads like an outage. HTTPError subclasses
         # URLError, so this has to be caught first.
-        host = loc["pbx"].replace("https://", "").replace("http://", "")
+        host = host_of(pbx)
         if exc.code in (401, 403):
             error = (f"token rejected by {host} (HTTP {exc.code}) - the token must "
                      f"be issued on THIS PBX, not another one")
@@ -354,7 +420,7 @@ def run_location(loc, push_token, base):
 
     if pbx_reachable:
         try:
-            code, body = http(f"{loc['pbx']}/api/v1/PBX/Users/Sip/Registrations", token)
+            code, body = http(f"{pbx}/api/v1/PBX/Users/Sip/Registrations", token)
             # A non-200 here (bad/expired token -> 401/403) used to fall through as
             # an empty map, which read as "0 phones, all fine". Fail loudly instead.
             if code != 200:
@@ -365,7 +431,7 @@ def run_location(loc, push_token, base):
             # Coerce any non-dict (i.e. []) to {} so build_inventory doesn't crash.
             if not isinstance(reg_result, dict):
                 reg_result = {}
-            directory, home_pbx = fetch_directory(loc["pbx"], token, loc["label"])
+            directory, home_pbx = fetch_directory(pbx, token, loc["label"])
             excluded = fetch_exclusions(base, key)
             phones = build_inventory(reg_result, directory, excluded)
         except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -385,7 +451,9 @@ def run_location(loc, push_token, base):
             reason = error
         elif not phones:
             detail = "PBX reachable, 0 desk phones registered"
-            queried = loc["pbx"].split("//")[-1].lower()
+            if len(candidates_for(loc)) > 1 and tried:
+                detail += f" (tried {'; '.join(tried)})"
+            queried = host_of(pbx)
             if home_pbx and home_pbx != queried:
                 # The wrong-tenant case: say where the phones actually are
                 # instead of leaving someone to rediscover it.
