@@ -174,15 +174,35 @@ def discover_sites(estate):
             "label": label,
             "slug": sanitize(label),
             "console": name,
-            # A Firewall row needs a box that routes and at least one WAN port.
-            "gateway_host": name if (is_gateway(host) and wans) else None,
+            # A Firewall row needs a box that routes. Deliberately NOT gated on
+            # having an enabled WAN as well: a gateway whose uplinks have all
+            # been disabled would then lose its row and go quiet, showing stale
+            # bars instead of a fault. collect_firewall reports that case as
+            # down, which is what it is.
+            "gateway_host": name if is_gateway(host) else None,
             # A Wireless row needs at least one adopted wireless device. An
             # always-empty row reads as an outage, which is exactly why
             # Alabaster never had one.
             "wireless_host": name if any(is_wireless(d) for d in devices) else None,
         })
     sites.sort(key=lambda site: site["label"].lower())
-    return sites
+
+    # Two consoles can sanitize to one slug ("Decatur KIA" and "Decatur-KIA",
+    # or an alias colliding with another console's own name). Both would push to
+    # the same key and the last would win, silently, showing one site's devices
+    # under the other's name.
+    seen = {}
+    unique = []
+    for site in sites:
+        clash = seen.get(site["slug"])
+        if clash:
+            print(f"WARN: consoles {clash!r} and {site['console']!r} both map to "
+                  f"slug {site['slug']!r}; ignoring {site['console']!r}. Set a "
+                  f"SITE_ALIASES entry to separate them.", file=sys.stderr)
+            continue
+        seen[site["slug"]] = site["console"]
+        unique.append(site)
+    return unique
 
 
 def fetch_uplink_settings(base, key):
@@ -193,14 +213,54 @@ def fetch_uplink_settings(base, key):
     once per row per sweep, the same shape as the phones collector's thresholds.
     Best effort: any error falls back to auto rather than failing the row.
     """
+    safe_key = urllib.parse.quote(key, safe="")
     try:
-        req = urllib.request.Request(f"{base}/api/v1/unifi/{key}/settings",
+        req = urllib.request.Request(f"{base}/api/v1/unifi/{safe_key}/settings",
                                      headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
             data = json.loads(resp.read())
         return int((data.get("effective") or {}).get("expectedWans") or 0)
+    except urllib.error.HTTPError as exc:
+        # Falling back to auto is right, but doing it silently is not: the
+        # symptom is "I set expected WANs to 2 and the row is still green".
+        # HTTPError subclasses URLError, so this has to be caught first.
+        print(f"WARN: cannot read uplink settings for {key} (HTTP {exc.code}), "
+              f"falling back to auto", file=sys.stderr)
+        return 0
     except (urllib.error.URLError, OSError, ValueError, TypeError, AttributeError):
         return 0
+
+
+SITE_CACHE_PATH = os.environ.get("UNIFI_SITE_CACHE",
+                                 os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                              ".unifi_sites.json"))
+
+
+def save_site_cache(rows):
+    """Remember which rows discovery produced, so the next sweep can black them
+    out if the cloud API has gone away.
+
+    This is a cache, not a baseline: it is overwritten wholesale by every
+    successful sweep and never accumulates. It exists only so that the
+    "nothing reported" contract survives a restart.
+    """
+    try:
+        payload = [{"kind": kind, "slug": site["slug"], "label": site["label"]}
+                   for kind, site in rows]
+        with open(SITE_CACHE_PATH, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh)
+    except (OSError, TypeError, ValueError) as exc:
+        print(f"WARN: cannot write site cache: {exc}", file=sys.stderr)
+
+
+def load_site_cache():
+    try:
+        with open(SITE_CACHE_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return [(r["kind"], {"slug": r["slug"], "label": r.get("label") or r["slug"]})
+                for r in data if r.get("kind") in COLLECTORS and r.get("slug")]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
 
 
 def known_rows(base):
@@ -223,11 +283,12 @@ def known_rows(base):
                 rows.append((kind, {"slug": slug,
                                     "label": (snap or {}).get("site") or slug}))
         return sorted(rows, key=lambda r: (r[1]["label"].lower(), r[0]))
-    except (urllib.error.URLError, OSError, ValueError, AttributeError):
+    except (urllib.error.URLError, OSError, ValueError, AttributeError) as exc:
+        print(f"WARN: cannot read back known rows: {exc}", file=sys.stderr)
         return []
 
 
-def render_unregistered_yaml(rows):
+def render_unregistered_yaml(rows, token_var="PHONES_PUSH_TOKEN"):
     """A paste-ready external-endpoints block for consoles Gatus does not know.
 
     Gatus cannot register an external endpoint at runtime: the push handler
@@ -244,7 +305,10 @@ def render_unregistered_yaml(rows):
     for kind, site in rows:
         out.append(f"  - name: {site['label']}")
         out.append(f"    group: {kind.capitalize()}")
-        out.append('    token: "${PHONES_PUSH_TOKEN}"')
+        # Whichever variable this deployment actually pushes with. Emitting the
+        # wrong one turns a 404 into a 401, which is a worse failure and one
+        # this block will not re-diagnose.
+        out.append(f'    token: "${{{token_var}}}"')
     out.append("")
     return "\n".join(out)
 
@@ -364,10 +428,18 @@ def collect_firewall(site, estate, expected_wans=0):
     up = [w for w in wans if w["up"]]
     plugged = [w for w in wans if w["plugged"]]
     expected = expected_wans if expected_wans > 0 else len(plugged)
-    # wansTotal drives the "n/m WAN" label on the card, so it carries the
-    # EXPECTED count. The raw port census stays beside it for the drill-in.
-    counts = {"wansUp": len(up), "wansTotal": expected,
-              "wansPresent": len(wans), "wansPlugged": len(plugged),
+    # wansTotal stays the physical enabled-port census it has always been. Every
+    # numeric count here is written to the history sidecar and charted, so
+    # redefining one mid-flight would splice two different quantities together
+    # and show a hardware step-change that never happened. The expectation
+    # ships beside it under its own name.
+    #
+    # wansExpected is floored at the number actually up so the card can never
+    # render "3/2 WAN" when an operator sets a count below the real uplinks.
+    counts = {"wansUp": len(up),
+              "wansTotal": len(wans),
+              "wansExpected": max(expected, len(up)),
+              "wansPlugged": len(plugged),
               "wansExpectedSource": 1 if expected_wans > 0 else 0}
     detail = {
         "gateway": {
@@ -497,7 +569,7 @@ COLLECTORS = {"firewall": collect_firewall, "wireless": collect_wireless}
 
 
 def run_row(kind, site, estate, push_token, base, fatal=None, api_ms=0.0,
-            discovery=None):
+            discovery=None, expected_wans=0):
     """Collect and push one row. Returns True if Gatus does not know this key.
 
     A 404 from the snapshot push is not an error to shout about once per sweep:
@@ -505,6 +577,11 @@ def run_row(kind, site, estate, push_token, base, fatal=None, api_ms=0.0,
     The caller gathers those and prints one paste-ready block at the end.
     """
     key = f"{kind}_{site['slug']}"
+    # The key is built from a console name now, not a hardcoded slug, and
+    # sanitize() deliberately mirrors the Go function rather than making names
+    # URL-safe. Anything it leaves behind (% and ? in particular) is structural
+    # in a URL and has to be escaped here.
+    safe_key = urllib.parse.quote(key, safe="")
     started = time.monotonic()
     if fatal:
         # Contract with LocationCard.vue: this prefix paints the bar BLACK
@@ -514,7 +591,7 @@ def run_row(kind, site, estate, push_token, base, fatal=None, api_ms=0.0,
         try:
             if kind == "firewall":
                 status, counts, detail, reason = collect_firewall(
-                    site, estate, fetch_uplink_settings(base, key))
+                    site, estate, expected_wans)
             else:
                 status, counts, detail, reason = collect_wireless(site, estate)
         except (urllib.error.URLError, OSError, ValueError, KeyError) as exc:
@@ -540,7 +617,7 @@ def run_row(kind, site, estate, push_token, base, fatal=None, api_ms=0.0,
     body = {"kind": kind, "status": status, "site": site["label"],
             "counts": counts, "detail": detail}
     try:
-        push(f"{base}/api/v1/unifi/{key}", push_token, body)
+        push(f"{base}/api/v1/unifi/{safe_key}", push_token, body)
     except urllib.error.HTTPError as exc:
         # HTTPError subclasses URLError, so this has to be caught first.
         if exc.code == 404:
@@ -555,7 +632,8 @@ def run_row(kind, site, estate, push_token, base, fatal=None, api_ms=0.0,
     if reason:
         q["error"] = reason
     try:
-        push(f"{base}/api/v1/endpoints/{key}/external?{urllib.parse.urlencode(q)}", push_token)
+        push(f"{base}/api/v1/endpoints/{safe_key}/external?{urllib.parse.urlencode(q)}",
+             push_token)
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             return True
@@ -590,15 +668,32 @@ def sweep_once():
     api_ms = (time.monotonic() - api_started) * 1000.0
 
     if fatal:
-        # Discovery needs the API that just failed, so fall back to the rows
-        # Gatus already holds. Without this a dead cloud API would leave every
-        # row showing stale data instead of going black.
-        rows = known_rows(base)
+        # Discovery needs the API that just failed, so fall back to the rows the
+        # last good sweep saw. Without this a dead cloud API leaves every row
+        # showing stale data instead of going black.
+        #
+        # The on-disk cache is tried FIRST and the readback second: Gatus keeps
+        # its UniFi snapshots in an in-process map that is wiped on restart, so
+        # if both came up while the cloud API was already down the readback is
+        # empty and nothing would be pushed at all.
+        rows = load_site_cache() or known_rows(base)
         discovery = None
+        if not rows:
+            print("WARN: UniFi API is down and no cached rows are known, so no "
+                  "row can be marked as not reporting this sweep", file=sys.stderr)
     else:
-        sites = discover_sites(estate)
+        try:
+            sites = discover_sites(estate)
+        except Exception as exc:  # one malformed console must not end the sweep
+            print(f"ERROR: discovery failed, falling back to known rows: {exc}",
+                  file=sys.stderr)
+            sites = []
         rows = [(kind, site) for site in sites for kind in ("firewall", "wireless")
                 if site.get("gateway_host" if kind == "firewall" else "wireless_host")]
+        if rows:
+            save_site_cache(rows)
+        else:
+            rows = load_site_cache() or known_rows(base)
         discovery = {
             "consoles": [{"label": site["label"], "slug": site["slug"],
                           "firewall": bool(site["gateway_host"]),
@@ -609,16 +704,29 @@ def sweep_once():
         print(f"discovered {len(sites)} console(s), {len(rows)} row(s): "
               + ", ".join(f"{k}_{s['slug']}" for k, s in rows))
 
+    # Read every firewall row's expected-uplink setting up front. Doing it
+    # inside run_row put a localhost round-trip inside the window that the row's
+    # reported latency is measured over, which made the Firewall row's chart
+    # partly a measurement of Gatus's own responsiveness.
+    settings = {}
+    for kind, site in rows:
+        if kind == "firewall":
+            key = f"{kind}_{site['slug']}"
+            settings[key] = fetch_uplink_settings(base, key)
+
     unregistered = []
     for kind, site in rows:
         try:
-            if run_row(kind, site, estate, push_token, base, fatal, api_ms, discovery):
+            if run_row(kind, site, estate, push_token, base, fatal, api_ms, discovery,
+                       settings.get(f"{kind}_{site['slug']}", 0)):
                 unregistered.append((kind, site))
         except Exception as exc:  # never let one row kill the sweep
             print(f"ERROR running {kind}_{site['slug']}: {exc}", file=sys.stderr)
 
     if unregistered:
-        print(render_unregistered_yaml(unregistered), file=sys.stderr)
+        token_var = ("UNIFI_PUSH_TOKEN" if os.environ.get("UNIFI_PUSH_TOKEN")
+                     else "PHONES_PUSH_TOKEN")
+        print(render_unregistered_yaml(unregistered, token_var), file=sys.stderr)
 
 
 def main():
@@ -627,7 +735,12 @@ def main():
         lo = int(os.environ.get("SWEEP_MIN", "30"))
         hi = int(os.environ.get("SWEEP_MAX", "60"))
         while True:
-            sweep_once()
+            try:
+                sweep_once()
+            except Exception as exc:
+                # The loop IS the retry. Exiting here would take the container
+                # down and stop every row, not just the one that failed.
+                print(f"ERROR: sweep failed: {exc}", file=sys.stderr)
             time.sleep(random.uniform(lo, hi))
     else:
         sweep_once()

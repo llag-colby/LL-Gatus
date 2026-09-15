@@ -300,12 +300,26 @@ const firewallMetric = (endpoint) => {
   // sub-line: it tells you whether the site is on fibre or a coax backup.
   const wans = (unifiDetail(endpoint) || {}).wans || []
   const primary = wans[0] || {}
+  // wansTotal is the physical enabled-port census; the row is judged against
+  // what the site is EXPECTED to have carrying traffic. Older snapshots have no
+  // wansExpected, so fall back to the census and behave as before.
+  const expected = c.wansExpected != null ? c.wansExpected : c.wansTotal
+  // In auto mode the expectation is "whatever is plugged in", which cannot tell
+  // a never-used port from one whose link just dropped. Say so in the tooltip
+  // rather than letting a quietly de-linked WAN read as a clean full house.
+  const auto = c.wansExpectedSource === 0
+  const idle = c.wansPlugged != null ? c.wansTotal - c.wansPlugged : 0
   return {
-    value: `${c.wansUp}/${c.wansTotal} WAN`,
-    bad: c.wansUp < c.wansTotal,
+    value: `${c.wansUp}/${expected} WAN`,
+    bad: c.wansUp < expected,
     sub: primary.speedType || '',
-    tooltip: `${c.wansUp} of ${c.wansTotal} WAN uplinks up`
-      + (primary.ip ? ` · ${primary.ip}` : ''),
+    tooltip: `${c.wansUp} of ${expected} WAN uplinks up`
+      + (primary.ip ? ` · ${primary.ip}` : '')
+      + (auto && idle > 0
+        ? ` · expected count is automatic, and ${idle} unplugged port`
+          + `${idle === 1 ? ' is' : 's are'} not counted`
+        : '')
+      + (auto ? '' : ' · expected count set by an operator'),
   }
 }
 const wirelessMetric = (endpoint) => {

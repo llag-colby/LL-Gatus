@@ -185,8 +185,9 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	// COLLECTOR PUSH: no session gate, same reasoning as /external above.
 	unprotectedAPIRouter.Post("/v1/unifi/:key", SetUniFiSnapshot(cfg))
 	// Expected-uplink settings, read by the collector each sweep so an empty WAN
-	// port stops reading as an outage. Registered before the bare :key GET for
-	// the same reason as /v1/phones/sweep-pending above.
+	// port stops reading as an outage. These carry an extra path segment, so
+	// unlike /v1/phones/sweep-pending they cannot actually be swallowed by the
+	// bare :key route; kept above it as a matter of habit, not necessity.
 	unprotectedAPIRouter.Get("/v1/unifi/:key/settings", GetUniFiSettings)
 	unprotectedAPIRouter.Post("/v1/unifi/:key/settings", requireOperator, SetUniFiSettings)
 	unprotectedAPIRouter.Get("/v1/unifi/:key", GetUniFiSnapshot)

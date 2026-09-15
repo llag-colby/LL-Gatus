@@ -38,3 +38,6 @@ science-resp.log
 
 # Python
 __pycache__/
+
+# UniFi discovery row cache (rebuilt every successful sweep)
+collector/.unifi_sites.json

@@ -58,9 +58,15 @@ func ensureUniFiSettingsLoaded() {
 		if json.Unmarshal(b, &f) == nil {
 			// 0 is a meaningful value here (auto), so unlike the phones
 			// thresholds there is no ">0" guard on adopting the stored global.
-			unSettingsGlobal = f.Global
+			// Clamp on the way in as well as on write: the file is
+			// hand-editable, and an out-of-range value would otherwise be
+			// served to the collector until the next write for that key.
+			unSettingsGlobal = clampUplinks(f.Global)
 			if f.Overrides != nil {
-				unSettingsOverride = f.Overrides
+				unSettingsOverride = make(map[string]unifiUplinks, len(f.Overrides))
+				for k, v := range f.Overrides {
+					unSettingsOverride[k] = clampUplinks(v)
+				}
 			}
 		}
 	}
@@ -69,10 +75,22 @@ func ensureUniFiSettingsLoaded() {
 func persistUniFiSettings() {
 	// caller holds unSettingsMu
 	f := unifiSettingsFile{Global: unSettingsGlobal, Overrides: unSettingsOverride}
-	if b, err := json.MarshalIndent(f, "", "  "); err == nil {
-		if err := os.WriteFile(unifiSettingsPath, b, 0o644); err != nil {
-			logr.Errorf("[api.persistUniFiSettings] write %s: %s", unifiSettingsPath, err.Error())
-		}
+	b, err := json.MarshalIndent(f, "", "  ")
+	if err != nil {
+		logr.Errorf("[api.persistUniFiSettings] marshal: %s", err.Error())
+		return
+	}
+	// Write to a sibling and rename, so a crash mid-write cannot leave a
+	// truncated file behind. A truncated file still parses as no file at all
+	// and silently reverts every override to auto, which is a quiet way to lose
+	// an operator's setting.
+	tmp := unifiSettingsPath + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		logr.Errorf("[api.persistUniFiSettings] write %s: %s", tmp, err.Error())
+		return
+	}
+	if err := os.Rename(tmp, unifiSettingsPath); err != nil {
+		logr.Errorf("[api.persistUniFiSettings] rename %s: %s", unifiSettingsPath, err.Error())
 	}
 }
 
