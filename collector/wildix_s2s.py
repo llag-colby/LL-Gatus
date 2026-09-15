@@ -162,9 +162,59 @@ def s2s_request(host, method, uri, body=None, get_params=None):
         return resp.getcode(), json.loads(resp.read() or b"{}")
 
 
+def company_api_key():
+    """A Wildix Company API Key, or None.
+
+    Format is "wsk-v1-" plus 93 characters. Unlike a Simple Token or an S2S
+    application - both of which are registered on ONE PBX and rejected by every
+    other one - this is scoped to the COMPANY, so it reaches every PBX in the
+    network no matter where it was created. That is what makes it the only way
+    to see a PBX whose own WMS we cannot get into.
+
+    It needs the stream:QueryPresences scope (or stream:read, or stream:*) to
+    read presence. Company API Keys only reach PBX routes on WMS 7.09+, but the
+    presence API is a CLOUD service and is available from 7.04+, so 7.08 is
+    fine for this particular use.
+    """
+    key = (os.environ.get("WILDIX_COMPANY_API_KEY")
+           or os.environ.get("WILDIX_API_KEY") or "").strip()
+    return key or None
+
+
+def _cloud_request(uri, body):
+    """POST to the cloud stream API, preferring a Company API Key over S2S.
+
+    Both header spellings are tried because Wildix documents Bearer for API keys
+    while several of their own services accept X-API-KEY, and a wrong guess is
+    an indistinguishable 401.
+    """
+    key = company_api_key()
+    if key:
+        last = None
+        for headers in ({"Authorization": f"Bearer {key}"}, {"X-API-KEY": key}):
+            req = urllib.request.Request(
+                f"https://{WDA_HOST}{uri}",
+                headers=dict(headers, **{"Content-Type": "application/json",
+                                         "Accept": "application/json"}),
+                method="POST", data=json.dumps(body).encode())
+            try:
+                with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_ctx()) as r:
+                    return json.loads(r.read() or b"{}")
+            except urllib.error.HTTPError as exc:
+                last = exc
+        if last is not None and credentials(WDA_HOST) is None:
+            raise last
+    return s2s_request(WDA_HOST, "POST", uri, body=body)[1]
+
+
 # Telephony states that mean "this handset is talking to the PBX right now".
 # RT is a Wildix relay state and still means the device is attached.
 REGISTERED_STATES = {"REGISTERED", "RINGING", "TALKING", "RT"}
+
+
+def presence_available():
+    """Whether anything is configured that could answer a presence query."""
+    return company_api_key() is not None or credentials(WDA_HOST) is not None
 
 
 def query_presence(extensions, company=None):
@@ -180,8 +230,7 @@ def query_presence(extensions, company=None):
         chunk = exts[start:start + 500]
         filt = [({"company": company, "extension": e} if company else {"extension": e})
                 for e in chunk]
-        _, data = s2s_request(WDA_HOST, "POST", "/v2/stream/presence/query_multiple",
-                              body={"filter": filt})
+        data = _cloud_request("/v2/stream/presence/query_multiple", {"filter": filt})
         for p in (data.get("presences") or []):
             ext = str(p.get("extension") or "")
             if not ext:

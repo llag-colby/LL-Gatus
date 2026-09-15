@@ -561,7 +561,7 @@ def run_location(loc, push_token, base):
             # presence on the COMPANY, so it reaches a PBX we hold no token for.
             # It needs S2S credentials; without them, fall through to reporting
             # whether that PBX is merely alive.
-            if wildix_s2s.credentials() and directory:
+            if wildix_s2s.presence_available() and directory:
                 try:
                     exts = [e for e, d in directory.items()
                             if str(d.get("department") or "").strip().lower()
