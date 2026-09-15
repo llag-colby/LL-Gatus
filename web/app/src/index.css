@@ -164,6 +164,12 @@
 }
 .bar-appear { animation: il-bar-grow var(--dur-3) var(--ease-out-quart) backwards; animation-delay: calc(var(--i, 0) * 9ms); }
 
+/* A status bar cut into slices — one per underlying check, stacked inside the
+   SAME footprint so the row keeps the height of every other row on the card.
+   The 1px gap is the cut: the parent has no background of its own, so the card
+   shows through and the bar reads as one bar divided rather than as N bars. */
+.loc-slices { gap: 1px; }
+
 /* Router-view crossfade (global — App.vue's scoped styles can't reach child roots) */
 .route-enter-active { transition: opacity var(--dur-3) var(--ease-out-quart), transform var(--dur-3) var(--ease-out-quart); }
 .route-leave-active { transition: opacity var(--dur-1) ease, transform var(--dur-1) ease; }

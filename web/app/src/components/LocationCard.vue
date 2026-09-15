@@ -33,7 +33,9 @@
                 'block truncate text-[11px] sm:text-xs font-medium',
                 row.isOverall
                   ? (row.to ? 'text-foreground hover:text-primary cursor-pointer' : 'text-foreground')
-                  : (row.to ? 'text-muted-foreground hover:text-primary cursor-pointer' : 'text-muted-foreground/40')
+                  : row.to ? 'text-muted-foreground hover:text-primary cursor-pointer'
+                  : row.segmented ? 'text-muted-foreground'
+                  : 'text-muted-foreground/40'
               ]"
             >
               {{ row.label }}
@@ -47,15 +49,35 @@
 
           <!-- Status bars -->
           <div class="loc-bars flex-1 flex gap-0.5">
-            <div
-              v-for="(cell, cellIdx) in row.cells"
-              :key="cellIdx"
-              :class="[cellClass(effectiveToken(cell.token, rowIdx, cellIdx), `${rowIdx}:${cellIdx}` === selectedKey), 'ping-cell bar-appear']"
-              :style="{ '--i': cellIdx }"
-              @mouseenter="cell.result && handleMouseEnter(cell.result, $event)"
-              @mouseleave="cell.result && handleMouseLeave($event)"
-              @click.stop="cell.result && handleClick(cell.result, $event, rowIdx, cellIdx)"
-            />
+            <template v-for="(cell, cellIdx) in row.cells" :key="cellIdx">
+              <!-- Sliced bar: one segment per underlying endpoint, stacked
+                   inside the SAME bar footprint, so the row keeps the height
+                   and rhythm of every other row while still saying which of
+                   the three is the one that went away. -->
+              <div
+                v-if="row.segmented"
+                class="ping-cell bar-appear loc-slices flex-1 h-6 sm:h-8 rounded-sm overflow-hidden flex flex-col"
+                :style="{ '--i': cellIdx }"
+              >
+                <div
+                  v-for="(seg, segIdx) in cell.segments"
+                  :key="segIdx"
+                  :class="sliceClass(effectiveToken(seg.token, rowIdx, cellIdx * 4 + segIdx), `${rowIdx}:${cellIdx}:${segIdx}` === selectedKey)"
+                  :data-tooltip="seg.label"
+                  @mouseenter="seg.result && handleMouseEnter(seg.result, $event)"
+                  @mouseleave="seg.result && handleMouseLeave($event)"
+                  @click.stop="seg.result && handleClick(seg.result, $event, rowIdx, `${cellIdx}:${segIdx}`)"
+                />
+              </div>
+              <div
+                v-else
+                :class="[cellClass(effectiveToken(cell.token, rowIdx, cellIdx), `${rowIdx}:${cellIdx}` === selectedKey), 'ping-cell bar-appear']"
+                :style="{ '--i': cellIdx }"
+                @mouseenter="cell.result && handleMouseEnter(cell.result, $event)"
+                @mouseleave="cell.result && handleMouseLeave($event)"
+                @click.stop="cell.result && handleClick(cell.result, $event, rowIdx, cellIdx)"
+              />
+            </template>
           </div>
 
           <!-- Trailing metric: latency on the link rows, live counts on the
@@ -119,8 +141,15 @@ const classify = (group) => {
   if (/firewall|gateway|edge/.test(g)) return 'firewall'
   if (/wireless|wi-?fi|wlan|access\s*point/.test(g)) return 'wireless'
   if (/phone|voip|sip/.test(g)) return 'phones'
+  // DNS groups are collected rather than slotted: several of them collapse into
+  // one row (see pushSegmentedRow), so the group carries which resolver it is —
+  // "DNS MS-DC01" — and the prefix is stripped off for the segment label.
+  if (/^dns\b/.test(g)) return 'dns'
   return 'other'
 }
+
+// "DNS MS-DC01" -> "MS-DC01". What is left identifies the slice.
+const segmentLabel = (group) => (group || '').replace(/^dns[\s:_-]*/i, '').trim() || 'DNS'
 
 // ISP name is the text in parentheses of the group, e.g. "WAN 1 (Comcast Fiber)".
 const ispFromGroup = (group) => {
@@ -147,10 +176,11 @@ const shortLabel = (group) => {
 }
 
 const slots = computed(() => {
-  const s = { wan1: null, wan2: null, firewall: null, wireless: null, phones: null, others: [] }
+  const s = { wan1: null, wan2: null, firewall: null, wireless: null, phones: null, dns: [], others: [] }
   for (const ep of props.endpoints) {
     const c = classify(ep.group)
     if (c === 'other') s.others.push(ep)
+    else if (c === 'dns') s.dns.push(ep)
     else if (!s[c]) s[c] = ep
     else s.others.push(ep)
   }
@@ -290,6 +320,43 @@ const wirelessMetric = (endpoint) => {
   }
 }
 
+// A row backed by several endpoints reports a tally instead of a latency, and
+// names the offenders on the fullscreen sub-line — a 10px slice is enough to
+// tell you something is wrong from across the room, but not which one.
+const segmentedMetric = (endpoints) => {
+  const reported = endpoints
+    .map((ep) => ({ ep, r: latestResult(ep) }))
+    .filter((x) => x.r)
+  if (!reported.length) return { value: '', bad: false, tooltip: 'No data yet' }
+  const down = reported.filter((x) => !x.r.success).map((x) => segmentLabel(x.ep.group))
+  const up = reported.length - down.length
+  return {
+    value: `${up}/${endpoints.length}`,
+    bad: down.length > 0,
+    sub: down.join(' '),
+    tooltip: down.length
+      ? `Not resolving: ${down.join(', ')}`
+      : `All ${endpoints.length} resolvers answering`,
+  }
+}
+
+// Transpose several endpoints' padded results into one cell per time slice,
+// each carrying a segment per endpoint. Same time axis as every other row, so
+// slice N here lines up with slice N above it.
+const segmentedRowCells = (endpoints) => {
+  const perEndpoint = endpoints.map(endpointRowCells)
+  const cells = []
+  for (let i = 0; i < props.maxResults; i++) {
+    cells.push({
+      segments: perEndpoint.map((cellsForEp, si) => ({
+        ...cellsForEp[i],
+        label: segmentLabel(endpoints[si].group),
+      })),
+    })
+  }
+  return cells
+}
+
 const metricFor = (kind, endpoint) => {
   if (!endpoint) return { value: '', bad: false }
   if (kind === 'firewall') return firewallMetric(endpoint)
@@ -324,6 +391,37 @@ const displayRows = computed(() => {
     })
   }
 
+  // One row, several endpoints, bars cut into a slice each.
+  const pushSegmentedRow = (label, endpoints, keyName) => {
+    const metric = segmentedMetric(endpoints)
+    // Only "paused" once every slice is paused — otherwise the row is still
+    // reporting something and dimming the whole thing would hide it.
+    const paused = endpoints.every((ep) => !isMonitored(ep.key))
+    rows.push({
+      key: keyName,
+      label,
+      segmented: true,
+      // No single endpoint to drill into, so the label isn't a link and the
+      // settings menu gets one switch per slice instead of one for the row.
+      endpointKey: null,
+      to: null,
+      segmentRows: endpoints.map((ep) => ({
+        key: `${keyName}-${ep.key}`,
+        label: `${label} · ${segmentLabel(ep.group)}`,
+        endpointKey: ep.key,
+      })),
+      tooltip: paused ? `${label}: monitoring paused` : metric.tooltip,
+      isp: '',
+      ip: '',
+      cells: segmentedRowCells(endpoints),
+      isOverall: false,
+      paused,
+      value: paused ? 'paused' : metric.value,
+      valueBad: paused ? false : metric.bad,
+      valueSub: paused ? '' : (metric.sub || ''),
+    })
+  }
+
   if (hasWanLayout.value) {
     pushEndpointRow('WAN 1', s.wan1, 'wan1')
     pushEndpointRow('WAN 2', s.wan2, 'wan2')
@@ -334,10 +432,14 @@ const displayRows = computed(() => {
     pushEndpointRow('Phones', s.phones, 'phones')
     s.others.forEach((ep, i) => pushEndpointRow(shortLabel(ep.group), ep, `other-${i}`))
   } else {
-    // No WAN layout (e.g. a standalone monitor) — one row per endpoint.
-    const list = s.others.length ? s.others : props.endpoints
+    // No WAN layout (e.g. a standalone monitor) — one row per endpoint. The
+    // fall-back to props.endpoints is only for a card with nothing classified
+    // at all; DNS endpoints have their own row below and must not double up.
+    const list = (s.others.length || s.dns.length) ? s.others : props.endpoints
     list.forEach((ep, i) => pushEndpointRow(shortLabel(ep.group) || ep.name, ep, `ep-${i}`))
   }
+
+  if (s.dns.length) pushSegmentedRow('DNS', s.dns, 'dns')
 
   rows.push({
     key: 'overall',
@@ -361,7 +463,11 @@ const displayRows = computed(() => {
 const settingsRows = computed(() =>
   displayRows.value
     .filter((row) => !row.isOverall)
-    .map((row) => ({ key: row.key, label: row.label, endpointKey: row.endpointKey }))
+    .flatMap((row) =>
+      row.segmentRows
+        ? row.segmentRows
+        : [{ key: row.key, label: row.label, endpointKey: row.endpointKey }]
+    )
 )
 
 // --- Current status for the badge (a simulation overrides the real status) ---
@@ -423,8 +529,14 @@ const effectiveToken = (token, rowIdx, cellIdx) => {
 }
 
 // --- Cell styling ---
-const cellClass = (token, selected) => {
-  const base = 'flex-1 h-6 sm:h-8 rounded-sm transition-all'
+// Slices share the colour vocabulary but not the geometry: the parent bar owns
+// the height and the rounded corners, each slice just takes an equal share of
+// it. The hairline border-bottom is the "cut" — it reads as one bar divided,
+// not as three bars that happen to touch.
+const sliceClass = (token, selected) =>
+  cellClass(token, selected, 'flex-1 min-h-0 transition-all loc-slice')
+
+const cellClass = (token, selected, base = 'flex-1 h-6 sm:h-8 rounded-sm transition-all') => {
   if (token === 'none') return `${base} bg-gray-200 dark:bg-gray-700`
   const cursor = ' cursor-pointer'
   const sel = selected ? ' sel' : ''

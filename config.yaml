@@ -153,13 +153,76 @@ endpoints:
     conditions: ["[CONNECTED] == true"]
 
   # ---------- Decatur KIA ----------
-  # NOTE: same IP as Decatur GMC above — both cards will always show identical
-  # status. Correct if the two stores sit behind one shared Spectrum circuit.
+  # KIA moved off the shared Decatur circuit onto its own. Confirmed against the
+  # UniFi Site Manager API: the console named "Decatur KIA" is a UDM Pro whose
+  # single WAN (eth8) reports ipv4 32.143.101.130, so the gateway and this ping
+  # target now agree. It no longer mirrors Decatur GMC.
+  #
+  # KNOWN RED: this address currently drops all inbound traffic. The gateway is
+  # up (UniFi reports state=connected, WAN plugged), but ICMP and tcp/80/443/8443
+  # all time out from outside, so the row stays down until "Respond to ping" is
+  # enabled for the WAN on the Decatur KIA UDM Pro. The Firewall row below reads
+  # the same uplink out of the UniFi cloud API and is not affected.
   - name: Decatur KIA
-    group: WAN 1 (Spectrum Fiber)
-    url: "icmp://71.86.70.190"
+    group: WAN 1
+    url: "icmp://32.143.101.130"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
+
+
+  # ---------- Domain Controllers ----------
+  # Not a rooftop: this card is the AD/DNS tier, so its rows are servers rather
+  # than WAN links. None of these groups match the WAN / Firewall / Wireless /
+  # Phones patterns in LocationCard.classify(), so each renders as its own row
+  # labelled with the group verbatim.
+  - name: Domain Controllers
+    group: MS-DC01
+    url: "icmp://10.6.102.120"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+  - name: Domain Controllers
+    group: HV-DC01
+    url: "icmp://10.16.102.77"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+  - name: Domain Controllers
+    group: CU-DC01
+    url: "icmp://10.28.106.55"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+
+  # DNS is one endpoint per DC (Gatus queries one resolver at a time), but the
+  # card folds every group starting with "DNS" into a SINGLE row whose bars are
+  # sliced one segment per DC, top to bottom in the order below. So this reads
+  # as one DNS row while still showing WHICH resolver went away.
+  #
+  # Resolving the domain A record is the real test — every healthy DC registers
+  # it — so a DC that still answers ping but has stopped serving DNS shows up
+  # here rather than hiding behind a green ICMP row above.
+  - name: Domain Controllers
+    group: DNS MS-DC01
+    url: "10.6.102.120"
+    dns:
+      query-name: "longlewis.local"
+      query-type: "A"
+    interval: 60s
+    conditions: ["[CONNECTED] == true", "[DNS_RCODE] == NOERROR"]
+  - name: Domain Controllers
+    group: DNS HV-DC01
+    url: "10.16.102.77"
+    dns:
+      query-name: "longlewis.local"
+      query-type: "A"
+    interval: 60s
+    conditions: ["[CONNECTED] == true", "[DNS_RCODE] == NOERROR"]
+  - name: Domain Controllers
+    group: DNS CU-DC01
+    url: "10.28.106.55"
+    dns:
+      query-name: "longlewis.local"
+      query-type: "A"
+    interval: 60s
+    conditions: ["[CONNECTED] == true", "[DNS_RCODE] == NOERROR"]
 
 # Push-based receivers. Gatus does NOT call these — an external collector
 # (collector/phone_collector.py, run by cron) does the PBX check and POSTs a
@@ -221,10 +284,12 @@ external-endpoints:
   # The push token is deliberately PHONES_PUSH_TOKEN rather than a new secret:
   # it is the same collector trust boundary, and every deployed box already has
   # it set. NOTE: external-endpoints only (re)load on `docker compose down && up -d`.
+  # Decatur GMC has NO Firewall or Wireless row. Its console lived on the old
+  # UniFi account (gateway "BA-DCU-FWE-KIA", controller "Decatur (GMC & KIA)");
+  # neither exists under the current UNIFI_API_KEY, which sees Alabaster,
+  # Bessemer, Decatur KIA and Ivory Tower. GMC keeps its WAN ping and Phones
+  # rows. Re-add these two once GMC has a console on the current account.
   - name: Alabaster
-    group: Firewall
-    token: "${PHONES_PUSH_TOKEN}"
-  - name: Decatur GMC
     group: Firewall
     token: "${PHONES_PUSH_TOKEN}"
   - name: Decatur KIA
@@ -232,9 +297,6 @@ external-endpoints:
     token: "${PHONES_PUSH_TOKEN}"
   # No Alabaster Wireless row: that console has no adopted APs (see the
   # collector's SITES note), and an always-empty row reads as an outage.
-  - name: Decatur GMC
-    group: Wireless
-    token: "${PHONES_PUSH_TOKEN}"
   - name: Decatur KIA
     group: Wireless
     token: "${PHONES_PUSH_TOKEN}"
