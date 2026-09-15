@@ -474,13 +474,20 @@ const displayRows = computed(() => {
 
 // Rows the card's settings menu can switch, in the order they appear. Overall is
 // a rollup of the others, not a monitor of its own, so it isn't switchable.
+// One entry per ROW, so the menu matches what the card draws. A sliced row is
+// several endpoints behind one switch rather than several switches, which is
+// what stops DNS from being one row here and three over there.
 const settingsRows = computed(() =>
   displayRows.value
     .filter((row) => !row.isOverall)
-    .flatMap((row) =>
+    .map((row) =>
       row.segmentRows
-        ? row.segmentRows
-        : [{ key: row.key, label: row.label, endpointKey: row.endpointKey }]
+        ? {
+            key: row.key,
+            label: row.label,
+            endpointKeys: row.segmentRows.map((seg) => seg.endpointKey).filter(Boolean),
+          }
+        : { key: row.key, label: row.label, endpointKey: row.endpointKey }
     )
 )
 

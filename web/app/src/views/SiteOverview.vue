@@ -282,7 +282,36 @@ const UPTIME_WARN_BELOW = 0.9999
 // on-site gear, then the phones riding on top. One map so the feed strips, the
 // lanes, the charts and the settings menu all list the same feeds in the same
 // sequence — two lists in different orders is how you toggle the wrong switch.
-const FEED_ORDER = { 'WAN 1': 0, 'WAN 2': 1, 'Firewall': 2, 'Wireless': 3, 'Phones': 4 }
+const FEED_ORDER = { 'WAN 1': 0, 'WAN 2': 1, 'Firewall': 2, 'Wireless': 3, 'Phones': 4, 'DNS': 5 }
+
+// Worst-first, so collapsing a group of feeds keeps the one you need to see.
+const STATE_RANK = { down: 0, none: 1, degraded: 2, up: 3 }
+
+// DNS arrives as one endpoint per resolver, because a DNS check queries exactly
+// one server. The card already draws it as a single sliced row, so this page
+// has to agree: otherwise the same thing is one row on the dashboard and three
+// strips here. The merged strip reports how many resolvers are answering and
+// carries the worst one's lane, uptime and drill-in link, so clicking it lands
+// on the resolver actually in trouble.
+const condenseDns = (list) => {
+  const dns = list.filter((feed) => feed.role === 'DNS')
+  if (dns.length < 2) return list
+  const rest = list.filter((feed) => feed.role !== 'DNS')
+  const worst = dns.reduce((acc, feed) =>
+    ((STATE_RANK[feed.state] ?? 9) < (STATE_RANK[acc.state] ?? 9) ? feed : acc))
+  const up = dns.filter((feed) => feed.state === 'up').length
+  const merged = {
+    ...worst,
+    role: 'DNS',
+    carrier: `${dns.length} resolvers`,
+    primaryValue: `${up}/${dns.length}`,
+    primaryUnit: 'resolving',
+    // Three resolvers have three addresses; none of them belongs on one line.
+    address: '',
+    paused: dns.every((feed) => feed.paused),
+  }
+  return [...rest, merged].sort((a, b) => a.order - b.order || a.role.localeCompare(b.role))
+}
 const orderOf = (role) => (FEED_ORDER[role] !== undefined ? FEED_ORDER[role] : 9)
 
 const siteName = computed(() => decodeURIComponent(route.params.name || ''))
@@ -319,6 +348,7 @@ const roleOf = (group) => {
   if (/firewall|gateway|edge/.test(g)) return 'Firewall'
   if (/wireless|wi-?fi|wlan|access\s*point/.test(g)) return 'Wireless'
   if (/phone|voip|sip/.test(g)) return 'Phones'
+  if (/^dns\b/.test(g)) return 'DNS'
   return group || 'Feed'
 }
 const carrierOf = (group) => {
@@ -527,7 +557,7 @@ const laneColumns = computed(() => (bucketed.value ? bucketAxis.value.length : r
 
 const feeds = computed(() => {
   const useBuckets = bucketed.value
-  return [...endpoints.value]
+  const built = [...endpoints.value]
     .map((ep) => {
       const results = ep.results || []
       const latest = results.length ? results[results.length - 1] : null
@@ -578,16 +608,31 @@ const feeds = computed(() => {
       }
     })
     .sort((a, b) => a.order - b.order || a.role.localeCompare(b.role))
+  return condenseDns(built)
 })
 
 // One pause switch per endpoint at this site, in feed order. Built from the raw
 // endpoints rather than from feeds.value so the menu never depends on the
 // display shaping — a feed you can see is a feed you can pause.
-const settingsRows = computed(() =>
-  endpoints.value
-    .map((ep) => ({ key: ep.key, label: roleOf(ep.group), endpointKey: ep.key }))
-    .sort((a, b) => orderOf(a.label) - orderOf(b.label) || a.label.localeCompare(b.label))
-)
+const settingsRows = computed(() => {
+  const rows = []
+  const dnsKeys = []
+  for (const ep of endpoints.value) {
+    const label = roleOf(ep.group)
+    // DNS is one switch driving every resolver, matching its single strip.
+    if (label === 'DNS') {
+      dnsKeys.push(ep.key)
+      continue
+    }
+    rows.push({ key: ep.key, label, endpointKey: ep.key })
+  }
+  if (dnsKeys.length === 1) {
+    rows.push({ key: dnsKeys[0], label: 'DNS', endpointKey: dnsKeys[0] })
+  } else if (dnsKeys.length > 1) {
+    rows.push({ key: 'dns', label: 'DNS', endpointKeys: dnsKeys })
+  }
+  return rows.sort((a, b) => orderOf(a.label) - orderOf(b.label) || a.label.localeCompare(b.label))
+})
 
 const feedGridClass = computed(() => {
   const n = feeds.value.length

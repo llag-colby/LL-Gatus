@@ -39,19 +39,22 @@
         </div>
 
         <ul class="pop-rows">
-          <li v-for="row in rows" :key="row.key" class="pop-row" :class="{ unset: !row.endpointKey }">
+          <li v-for="row in rows" :key="row.key" class="pop-row" :class="{ unset: !keysOf(row).length }">
             <div class="row-text">
               <span class="row-label">{{ row.label }}</span>
-              <span v-if="!row.endpointKey" class="row-note">No endpoint configured</span>
+              <span v-if="!keysOf(row).length" class="row-note">No endpoint configured</span>
+              <span v-else-if="keysOf(row).length > 1" class="row-note">
+                {{ keysOf(row).length }} checks
+              </span>
             </div>
 
             <button
-              v-if="row.endpointKey"
+              v-if="keysOf(row).length"
               type="button"
               class="sw"
-              :class="{ on: isMonitored(row.endpointKey) }"
+              :class="{ on: rowMonitored(row) }"
               role="switch"
-              :aria-checked="isMonitored(row.endpointKey) ? 'true' : 'false'"
+              :aria-checked="rowMonitored(row) ? 'true' : 'false'"
               :aria-label="`Monitor ${row.label} at ${name}`"
               :disabled="!allowed"
               :aria-disabled="!allowed ? 'true' : 'false'"
@@ -117,14 +120,28 @@ const FALLBACK_WIDTH = 250
 // paused, it just cannot be changed.
 const allowed = computed(() => can('operator'))
 
-const configuredRows = computed(() => props.rows.filter((r) => r && r.endpointKey))
+// A row may stand for several endpoints — DNS is one query per resolver but a
+// single row on the card, so it gets a single switch here that moves all of
+// them together. Rows carrying a lone endpointKey keep working unchanged.
+const keysOf = (row) => (row && row.endpointKeys) || (row && row.endpointKey ? [row.endpointKey] : [])
+
+const configuredRows = computed(() => props.rows.filter((r) => keysOf(r).length > 0))
+// Counts are per CHECK, not per row: "2 of 7 checks paused" has to stay true
+// when one of those rows is three checks wearing one switch.
+const configuredKeys = computed(() => configuredRows.value.flatMap(keysOf))
+// A grouped switch reads ON only when every check behind it is running, so a
+// partial pause is visible rather than hidden behind a lit switch.
+const rowMonitored = (row) => {
+  const keys = keysOf(row)
+  return keys.length > 0 && keys.every((k) => isMonitored(k))
+}
 const allPaused = computed(() =>
-  configuredRows.value.length > 0 && configuredRows.value.every((r) => !isMonitored(r.endpointKey))
+  configuredKeys.value.length > 0 && configuredKeys.value.every((k) => !isMonitored(k))
 )
-const pausedCount = computed(() => configuredRows.value.filter((r) => !isMonitored(r.endpointKey)).length)
+const pausedCount = computed(() => configuredKeys.value.filter((k) => !isMonitored(k)).length)
 
 const footNote = computed(() => {
-  const total = configuredRows.value.length
+  const total = configuredKeys.value.length
   if (total === 0) return 'This card has no endpoints to monitor.'
   const paused = pausedCount.value
   if (paused === 0) return `All ${total} checks are running.`
@@ -237,9 +254,11 @@ const toggleOpen = () => {
 
 // Both writers re-check the permission themselves: disabled markup is a hint,
 // the guard is what actually stops the request.
-const toggleRow = (row) => {
-  if (!can('operator') || !row.endpointKey) return
-  setMonitored(row.endpointKey, !isMonitored(row.endpointKey))
+const toggleRow = async (row) => {
+  const keys = keysOf(row)
+  if (!can('operator') || keys.length === 0) return
+  const next = !rowMonitored(row)
+  for (const key of keys) await setMonitored(key, next)
 }
 
 const toggleAll = async () => {
@@ -247,7 +266,7 @@ const toggleAll = async () => {
   const monitored = allPaused.value
   busy.value = true
   try {
-    for (const row of configuredRows.value) await setMonitored(row.endpointKey, monitored)
+    for (const key of configuredKeys.value) await setMonitored(key, monitored)
   } finally {
     busy.value = false
     place()
