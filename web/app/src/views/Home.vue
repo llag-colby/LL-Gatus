@@ -141,6 +141,17 @@ const resultPageSize = 50
 // readable from a distance; more in the normal grid where cards are smaller.
 const barsToShow = computed(() => isFullscreen.value ? 8 : 20)
 
+// Cards that are not a rooftop sort to the end of the wall, whatever order is
+// selected. Domain Controllers is the AD and DNS tier rather than a site, and
+// left to the alphabet it lands between Decatur KIA and Florence, buried in the
+// run of dealerships where nobody looks for it.
+//
+// This deliberately outranks the health sort too: the tier keeps a fixed place
+// on the wall so people learn where to find it, rather than moving when it
+// breaks. Flip the pinRank comparison below if a failing tier should jump.
+const PINNED_LAST = new Set(['Domain Controllers'])
+const pinRank = (name) => (PINNED_LAST.has(name) ? 1 : 0)
+
 // --- helpers ---
 const latestFailed = (ep) => {
   if (!ep.results || ep.results.length === 0) return false
@@ -179,13 +190,17 @@ const locations = computed(() => {
 
   if (controls.sortBy === 'health') {
     list.sort((a, b) => {
+      const ap = pinRank(a.name)
+      const bp = pinRank(b.name)
+      if (ap !== bp) return ap - bp // pinned cards last, even when unhealthy
       const au = a.endpoints.some(latestFailed) ? 1 : 0
       const bu = b.endpoints.some(latestFailed) ? 1 : 0
       if (au !== bu) return bu - au // unhealthy first
       return a.name.localeCompare(b.name)
     })
   } else {
-    list.sort((a, b) => a.name.localeCompare(b.name))
+    list.sort((a, b) =>
+      pinRank(a.name) - pinRank(b.name) || a.name.localeCompare(b.name))
   }
 
   return list
