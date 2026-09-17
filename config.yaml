@@ -170,6 +170,15 @@ endpoints:
     conditions: ["[CONNECTED] == true"]
 
 
+  # ---------- Todd Oue ----------
+  # WAN 1 only — no WAN 2 and no phone system here, so those rows on the card
+  # stay empty (same shape as Alabaster Body Shop above).
+  - name: Todd Oue
+    group: WAN 1
+    url: "icmp://71.207.197.73"
+    interval: 60s
+    conditions: ["[CONNECTED] == true"]
+
   # ---------- Domain Controllers ----------
   # Not a rooftop: this card is the AD/DNS tier, so its rows are servers rather
   # than WAN links. None of these groups match the WAN / Firewall / Wireless /
