@@ -9,14 +9,17 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// Session sign-in for the dashboard's own controls.
+// Session sign-in for the dashboard's own controls. DORMANT: none of these
+// handlers is routed and RequireRole is attached to nothing. The dashboard has
+// no sign-in, /v1/auth/* does not exist, and main.go never opens the accounts
+// database, so auth.Enabled() is false and RequireRole would fail open anyway.
+// The file is kept so sign-in can be restored by registering it again.
 //
-// This is a separate mechanism from Gatus's built-in `security:` block and the
-// two are deliberately not wired together: `security:` puts one shared
+// It describes a separate mechanism from Gatus's built-in `security:` block, and
+// the two were deliberately not wired together: `security:` puts one shared
 // credential in front of whole route groups, which is the wrong shape for "any
 // of these three people may pause an endpoint, and only one of them may add an
-// account". Where `security:` is configured it still applies; nothing in this
-// file registers with it or reads from it.
+// account". `security:` is not installed either (see api.go).
 //
 // Collector pushes (/v1/endpoints/:key/external, /v1/phones/:key and
 // /v1/unifi/:key) authenticate with the bearer token configured on their
@@ -44,10 +47,10 @@ func currentUser(c *fiber.Ctx) *auth.User {
 	return user
 }
 
-// RequireRole returns middleware that refuses callers below minimum. Attach it
-// to the individual routes that change state; every GET stays anonymous on
-// purpose, because the wallboards run with no session and nobody is standing in
-// front of them to sign one in.
+// RequireRole returns middleware that refuses callers below minimum. Unused: it
+// is attached to no route. If sign-in returns, attach it to the individual
+// routes that change state and leave every GET anonymous, because the wallboards
+// run with no session and nobody is standing in front of them to sign one in.
 func RequireRole(minimum auth.Role) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		// Fail OPEN when the auth database could not be opened. Every control

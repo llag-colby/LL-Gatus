@@ -8,6 +8,22 @@ Customized fork of [TwiN/gatus](https://github.com/TwiN/gatus) for Long Lewis.
 > Legend: `+` added · `-` removed/changed · `~` fixed
 
 ## Unreleased
+- **Sign-in removed.** The dashboard is open to anyone who can reach it: no
+  login dialog, no user menu, no accounts page, no roles. Every control that
+  used to need operator (pause monitoring, force ping, force sweep, phone
+  exclusions, phone thresholds) is now available to everyone. `/api/v1/auth/*`
+  and `/api/v1/users` are gone, `/data/auth.db` is no longer created or read,
+  and no bootstrap admin password is generated at startup.
+- **LL-Telemetry disabled.** The satellite-dish header button, the
+  `/ll-telemetry` page and the `/api/v1/telemetry/*` proxy are no longer routed;
+  they answer 404. The code, the vendored console, `docker-compose.telemetry.yml`
+  and [docs/ll-telemetry.md](docs/ll-telemetry.md) all stay in the tree, so
+  re-enabling is a routing change rather than a rebuild of the integration.
+- Per-browser preferences (status colours, sound, layout, refresh interval,
+  ranges) are unchanged: they were already `localStorage` only. `/settings` now
+  shows what is paused, globally, and says where the preferences live.
+- Unchanged: the collectors. Their per-endpoint `Bearer` push token was never
+  part of the login and is still the one credential the server checks.
 + `update.sh` — one-command Ubuntu updater: force-syncs to origin/main (kills
   stale code), rebuilds, restarts, and verifies the running build.
 + Baked build version (git SHA) exposed at `/api/v1/version` and in the footer.

@@ -4,7 +4,6 @@ import EndpointDetailRouter from "@/views/EndpointDetailRouter";
 import SuiteDetails from '@/views/SuiteDetails';
 import JiraDetails from '@/views/JiraDetails';
 import SiteOverview from '@/views/SiteOverview';
-import TelemetryConsole from '@/views/TelemetryConsole';
 import SettingsView from '@/views/SettingsView';
 
 const routes = [
@@ -36,15 +35,8 @@ const routes = [
         component: JiraDetails
     },
     {
-        // LL-Telemetry operations console. The page itself is served by Gatus at
-        // /api/v1/telemetry/console and framed same-origin by this view.
-        path: '/ll-telemetry',
-        name: 'Telemetry',
-        component: TelemetryConsole
-    },
-    {
-        // Account, users, monitoring overview and the role reference. The page
-        // renders per role: the admin sections are absent, not disabled.
+        // Which checks are paused, globally, plus a note on where the
+        // per-browser preferences live.
         path: '/settings',
         name: 'Settings',
         component: SettingsView

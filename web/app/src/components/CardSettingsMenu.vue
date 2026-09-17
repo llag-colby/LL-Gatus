@@ -35,7 +35,6 @@
           <p :id="hintId" class="pop-hint">
             Turning a row off stops its checks and alerts. Recorded history is kept.
           </p>
-          <p v-if="!allowed" class="pop-locked">Sign in to change monitoring.</p>
         </div>
 
         <ul class="pop-rows">
@@ -56,8 +55,6 @@
               role="switch"
               :aria-checked="rowMonitored(row) ? 'true' : 'false'"
               :aria-label="`Monitor ${row.label} at ${name}`"
-              :disabled="!allowed"
-              :aria-disabled="!allowed ? 'true' : 'false'"
               @click="toggleRow(row)"
               @keydown.space.prevent="toggleRow(row)"
               @keydown.enter.prevent="toggleRow(row)"
@@ -69,12 +66,7 @@
         </ul>
 
         <div class="pop-foot">
-          <!-- Pause all is hidden rather than disabled for viewers. It is the one
-               bulk action here, and a dead full-width button under a column of
-               dead switches reads as a broken panel; the line above the rows
-               already says what is missing and why. -->
           <Button
-            v-if="allowed"
             variant="outline"
             size="sm"
             class="w-full text-xs h-8"
@@ -94,7 +86,7 @@
 import { computed, nextTick, onUnmounted, ref, useId } from 'vue'
 import { Settings } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import { can, isMonitored, setMonitored } from '@/store'
+import { isMonitored, setMonitored } from '@/store'
 
 const props = defineProps({
   name: { type: String, required: true },
@@ -114,11 +106,6 @@ const panelEl = ref(null)
 const MARGIN = 8
 const GAP = 6
 const FALLBACK_WIDTH = 250
-
-// Every switch in here writes, so the whole panel needs operator. Reading the
-// current state stays open: the panel still says what is running and what is
-// paused, it just cannot be changed.
-const allowed = computed(() => can('operator'))
 
 // A row may stand for several endpoints — DNS is one query per resolver but a
 // single row on the card, so it gets a single switch here that moves all of
@@ -252,17 +239,14 @@ const toggleOpen = () => {
   else openMenu()
 }
 
-// Both writers re-check the permission themselves: disabled markup is a hint,
-// the guard is what actually stops the request.
 const toggleRow = async (row) => {
   const keys = keysOf(row)
-  if (!can('operator') || keys.length === 0) return
+  if (keys.length === 0) return
   const next = !rowMonitored(row)
   for (const key of keys) await setMonitored(key, next)
 }
 
 const toggleAll = async () => {
-  if (!can('operator')) return
   const monitored = allPaused.value
   busy.value = true
   try {
@@ -339,14 +323,6 @@ onUnmounted(removeListeners)
   line-height: 1.35;
   color: hsl(var(--muted-foreground));
 }
-.pop-locked {
-  margin: 0.3rem 0 0;
-  font-size: 0.7rem;
-  line-height: 1.35;
-  font-weight: 600;
-  color: hsl(var(--foreground));
-}
-
 /* --- rows --- */
 .pop-rows {
   list-style: none;
@@ -405,8 +381,6 @@ onUnmounted(removeListeners)
 .sw.on { background: rgb(90 160 107 / 0.28); border-color: rgb(90 160 107 / 0.65); }
 .sw.on .knob { background: #5aa06b; transform: translateX(14px); }
 .sw:hover { border-color: hsl(var(--muted-foreground) / 0.55); }
-.sw:disabled { cursor: not-allowed; opacity: 0.5; }
-.sw:disabled:hover { border-color: hsl(var(--border)); }
 .sw:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 @media (prefers-reduced-motion: no-preference) {
   .sw { transition: background 0.16s ease, border-color 0.16s ease; }

@@ -1,5 +1,46 @@
 # History
 
+## 1.8.0 - Login removed, telemetry disabled
+
+The dashboard no longer has a sign-in. No login dialog, no user menu, no
+accounts page, no roles, no session cookie. Every control that used to require
+operator - pause monitoring, force ping, force sweep, phone exclusions, phone
+thresholds - is available to anyone who can reach the port.
+
+**Server.** `api/api.go` lost the `/v1/auth/*` routes, the `/v1/users` group,
+the six per-route role gates and the protected/unprotected router split; the two
+groups collapsed into one `apiV1Router`, and `cfg.Security`'s middleware is no
+longer installed. `main.go` no longer opens `/data/auth.db` or calls
+`EnsureAdmin`, so the database is not created and no bootstrap admin password is
+generated. The `auth` and `security` packages stay in the tree, unwired, and
+their tests still pass.
+
+**LL-Telemetry disabled.** The five telemetry route registrations, the
+`/ll-telemetry` SPA deep link, the router entry, the satellite-dish header
+button and the view import are gone; `/api/v1/telemetry/*` answers 404.
+`api/telemetry.go` and `api/assets/telemetry-console.html` stay put on purpose -
+that file's `init()` prepares the embedded console and must keep compiling.
+`docker-compose.telemetry.yml` and `docs/ll-telemetry.md` also stay, the doc now
+carrying a DISABLED banner. The two local containers were stopped.
+
+**Client.** `can()` is now a constant `true` and the module-load `refreshAuth()`
+is gone. The role gates, disabled states and every "Sign in to ..." string came
+out of `MonitorToggle`, `CardSettingsMenu`, `EndpointDetails` and `PhoneDetails`.
+`SettingsView` was rewritten: the session readout, password form, clearance
+matrix and user roster are gone, leaving the paused-checks list and a note that
+preferences are per-browser. `LoginDialog.vue`, `UserMenu.vue` and
+`TelemetryConsole.vue` remain on disk, unreferenced.
+
+**Unchanged: the collectors.** Their per-endpoint `Bearer` push token was never
+part of the login and is still the only credential the server checks.
+
+**What this accepts.** Six endpoints are now unauthenticated writes: monitoring
+pause, phone exclusions, phone thresholds, unifi settings, sweep request and
+force-check. None could move client-side - the collectors and the watchdog read
+them server-side. Force-check is an outbound-probe amplifier guarded only by its
+3s per-key cooldown, and `GET /v1/phones/sweep-pending` was already an open
+mutating GET.
+
 ## 1.2.0 — Telemetry sign-in screen, console fixes, site mapping
 
 Replaced the browser's native basic-auth dialog with a proper sign-in screen,

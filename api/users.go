@@ -8,9 +8,13 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// Account administration. Every route in this file is registered behind
-// RequireRole(auth.RoleAdmin) in api.go; none of these handlers re-check the
-// caller's role, so keep that gate on anything added under /v1/users.
+// Account administration. DORMANT: none of these handlers is routed any more —
+// the dashboard has no sign-in and /v1/users does not exist. The file is kept so
+// accounts can be restored without rewriting them.
+//
+// If they are ever registered again, note that NONE of them checks the caller's
+// role itself. They relied entirely on a RequireRole(auth.RoleAdmin) gate on the
+// group in api.go, so that gate has to come back with them.
 //
 // Usernames and roles are validated here rather than left to the auth package.
 // Its errors for "no username" and "unknown role" are plain errors with no

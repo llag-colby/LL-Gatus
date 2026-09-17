@@ -957,7 +957,7 @@ const fetchAll = async () => {
   try {
     // Discovery pass, deliberately shallow: it returns every endpoint in the
     // fleet and is only asked which ones carry this site's name.
-    const res = await fetch(`/api/v1/endpoints/statuses?page=1&pageSize=${DISCOVERY_RESULTS}`, { credentials: 'include' })
+    const res = await fetch(`/api/v1/endpoints/statuses?page=1&pageSize=${DISCOVERY_RESULTS}`)
     if (res.status !== 200) throw new Error(await res.text())
     const all = await res.json()
     if (generation !== fetchGeneration) return
@@ -973,14 +973,14 @@ const fetchAll = async () => {
       const [detail, series, inventory] = await Promise.all([
         // Per-feed rather than one deep bulk call: 1600 results across 38 fleet
         // endpoints would be tens of thousands of rows to render five lanes.
-        fetch(`/api/v1/endpoints/${encoded}/statuses?page=1&pageSize=${depth}`, { credentials: 'include' })
+        fetch(`/api/v1/endpoints/${encoded}/statuses?page=1&pageSize=${depth}`)
           .then((r) => (r.ok ? r.json() : null))
           .catch(() => null),
-        fetch(`/api/v1/endpoints/${encoded}/uptime-series?range=${wanted}`, { credentials: 'include' })
+        fetch(`/api/v1/endpoints/${encoded}/uptime-series?range=${wanted}`)
           .then((r) => (r.ok ? r.json() : null))
           .catch(() => null),
         isPhoneFeed(ep)
-          ? fetch(`/api/v1/phones/${encoded}`, { credentials: 'include' })
+          ? fetch(`/api/v1/phones/${encoded}`)
               .then((r) => (r.ok ? r.json() : null))
               .catch(() => null)
           : Promise.resolve(null),

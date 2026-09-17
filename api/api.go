@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/TwiN/gatus/v5/auth"
 	"github.com/TwiN/gatus/v5/config"
 	"github.com/TwiN/gatus/v5/config/ui"
 	"github.com/TwiN/gatus/v5/config/web"
@@ -107,104 +106,82 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	}
 	// Define main router
 	apiRouter := app.Group("/api")
-	// Role gates for the routes that change state, from the local accounts in the
-	// auth package (see api/auth.go). This is a SEPARATE mechanism from Gatus's
-	// own `security:` block below: that one is a single shared credential in front
-	// of whole groups, this one is per-person and per-role, and the two are kept
-	// apart on purpose. Built once and shared rather than per route, so a gate is
-	// one value the route table points at instead of a closure per line.
+	// Every route is open. The dashboard carries no sign-in: it is served on the
+	// internal network and read by unattended wallboards, so there is no session
+	// to hold and nothing to gate on. One credential remains, and it belongs to a
+	// machine rather than a person: the per-endpoint bearer token the collectors
+	// push with, checked inside the handlers that accept a push.
 	//
-	// Both fail open when the auth database is unavailable, so a broken SQLite
-	// file costs the login screen and nothing else.
-	requireOperator := RequireRole(auth.RoleOperator)
-	requireAdmin := RequireRole(auth.RoleAdmin)
-	////////////////////////
-	// UNPROTECTED ROUTES //
-	////////////////////////
-	unprotectedAPIRouter := apiRouter.Group("/")
-	unprotectedAPIRouter.Get("/v1/config", ConfigHandler{securityConfig: cfg.Security, config: cfg}.GetConfig)
-	unprotectedAPIRouter.Get("/v1/version", VersionHandler)
-	unprotectedAPIRouter.Get("/v1/time", TimeHandler)
-	// Sign-in. Registered here, before ApplySecurityMiddleware, because
-	// /v1/auth/me must answer on every page load whether or not anybody is signed
-	// in: the frontend reads it to decide what to render, and a 401 from the
-	// site-wide security middleware would be indistinguishable from the server
-	// being down.
-	unprotectedAPIRouter.Post("/v1/auth/login", AuthLogin)
-	unprotectedAPIRouter.Post("/v1/auth/logout", AuthLogout)
-	unprotectedAPIRouter.Get("/v1/auth/me", AuthMe)
-	unprotectedAPIRouter.Post("/v1/auth/password", AuthChangePassword)
-	// Account administration. Grouped so the admin gate covers everything under
-	// /v1/users, including anything added later.
-	usersRouter := unprotectedAPIRouter.Group("/v1/users", requireAdmin)
-	usersRouter.Get("/", ListUsers)
-	usersRouter.Post("/", CreateUser)
-	usersRouter.Patch("/:id", UpdateUser)
-	usersRouter.Delete("/:id", DeleteUser)
-	unprotectedAPIRouter.Get("/v1/endpoints/:key/health/badge.svg", HealthBadge)
-	unprotectedAPIRouter.Get("/v1/endpoints/:key/health/badge.shields", HealthBadgeShields)
-	unprotectedAPIRouter.Get("/v1/endpoints/:key/uptimes/:duration", UptimeRaw)
-	unprotectedAPIRouter.Get("/v1/endpoints/:key/uptimes/:duration/badge.svg", UptimeBadge)
-	unprotectedAPIRouter.Get("/v1/endpoints/:key/response-times/:duration", ResponseTimeRaw)
-	unprotectedAPIRouter.Get("/v1/endpoints/:key/response-times/:duration/badge.svg", ResponseTimeBadge(cfg))
-	unprotectedAPIRouter.Get("/v1/endpoints/:key/response-times/:duration/chart.svg", ResponseTimeChart)
-	unprotectedAPIRouter.Get("/v1/endpoints/:key/response-times/:duration/history", ResponseTimeHistory)
+	// The auth and security packages are still in the tree but nothing wires them
+	// up. Re-enabling means registering their middleware here, nothing else.
+	apiV1Router := apiRouter.Group("/")
+	apiV1Router.Get("/v1/config", ConfigHandler{securityConfig: cfg.Security, config: cfg}.GetConfig)
+	apiV1Router.Get("/v1/version", VersionHandler)
+	apiV1Router.Get("/v1/time", TimeHandler)
+	apiV1Router.Get("/v1/endpoints/:key/health/badge.svg", HealthBadge)
+	apiV1Router.Get("/v1/endpoints/:key/health/badge.shields", HealthBadgeShields)
+	apiV1Router.Get("/v1/endpoints/:key/uptimes/:duration", UptimeRaw)
+	apiV1Router.Get("/v1/endpoints/:key/uptimes/:duration/badge.svg", UptimeBadge)
+	apiV1Router.Get("/v1/endpoints/:key/response-times/:duration", ResponseTimeRaw)
+	apiV1Router.Get("/v1/endpoints/:key/response-times/:duration/badge.svg", ResponseTimeBadge(cfg))
+	apiV1Router.Get("/v1/endpoints/:key/response-times/:duration/chart.svg", ResponseTimeChart)
+	apiV1Router.Get("/v1/endpoints/:key/response-times/:duration/history", ResponseTimeHistory)
 	// Uptime as a series of buckets over a range, rather than the single ratio
 	// /uptimes/:duration returns. Hourly for roughly the last 48h, daily beyond,
 	// because the store compacts older buckets: the response says which.
-	unprotectedAPIRouter.Get("/v1/endpoints/:key/uptime-series", GetUptimeSeries)
+	apiV1Router.Get("/v1/endpoints/:key/uptime-series", GetUptimeSeries)
 	// This endpoint requires authz with bearer token, so technically it is protected.
 	// COLLECTOR PUSH: no session gate, and it must stay that way. It authenticates
 	// on the per-endpoint bearer token inside CreateExternalEndpointResult, which
 	// is a different mechanism with a different threat model. Nothing is signed in
 	// on the collector box, so requiring a cookie here takes the dashboard's whole
 	// data feed down.
-	unprotectedAPIRouter.Post("/v1/endpoints/:key/external", CreateExternalEndpointResult(cfg))
+	apiV1Router.Post("/v1/endpoints/:key/external", CreateExternalEndpointResult(cfg))
 	// Phones inventory side-channel: collector POSTs the rich per-phone table
 	// (token-auth'd like /external); the phones drill-in GETs it.
 	// COLLECTOR PUSH: no session gate, same reasoning as /external above.
-	unprotectedAPIRouter.Post("/v1/phones/:key", SetPhonesInventory(cfg))
+	apiV1Router.Post("/v1/phones/:key", SetPhonesInventory(cfg))
 	// Force-sweep: static route registered BEFORE the :key GET so it isn't
 	// swallowed by :key="sweep-pending". Collector claims pending sweeps here.
-	unprotectedAPIRouter.Get("/v1/phones/sweep-pending", ClaimPhonesSweeps)
-	unprotectedAPIRouter.Post("/v1/phones/:key/sweep", requireOperator, RequestPhonesSweep)
-	unprotectedAPIRouter.Get("/v1/phones/:key", GetPhonesInventory)
-	unprotectedAPIRouter.Get("/v1/phones/:key/exclusions", GetPhonesExclusions)
-	unprotectedAPIRouter.Post("/v1/phones/:key/exclusions", requireOperator, SetPhonesExclusion)
-	unprotectedAPIRouter.Get("/v1/phones/:key/settings", GetPhonesSettings)
-	unprotectedAPIRouter.Post("/v1/phones/:key/settings", requireOperator, SetPhonesSettings)
+	apiV1Router.Get("/v1/phones/sweep-pending", ClaimPhonesSweeps)
+	apiV1Router.Post("/v1/phones/:key/sweep", RequestPhonesSweep)
+	apiV1Router.Get("/v1/phones/:key", GetPhonesInventory)
+	apiV1Router.Get("/v1/phones/:key/exclusions", GetPhonesExclusions)
+	apiV1Router.Post("/v1/phones/:key/exclusions", SetPhonesExclusion)
+	apiV1Router.Get("/v1/phones/:key/settings", GetPhonesSettings)
+	apiV1Router.Post("/v1/phones/:key/settings", SetPhonesSettings)
 	// Pause monitoring, per endpoint key. Static route first so it isn't
 	// swallowed by :key (same reason as /v1/phones/sweep-pending above).
-	unprotectedAPIRouter.Get("/v1/monitoring", GetMonitoring)
-	unprotectedAPIRouter.Get("/v1/monitoring/:key", GetMonitoringForKey)
-	unprotectedAPIRouter.Post("/v1/monitoring/:key", requireOperator, SetMonitoringForKey(cfg))
+	apiV1Router.Get("/v1/monitoring", GetMonitoring)
+	apiV1Router.Get("/v1/monitoring/:key", GetMonitoringForKey)
+	apiV1Router.Post("/v1/monitoring/:key", SetMonitoringForKey(cfg))
 	// UniFi side-channel: the collector POSTs per-site firewall/wireless
 	// snapshots; the dashboard GETs them all at once for the card rows.
 	// Static route first so it isn't swallowed by :key.
-	unprotectedAPIRouter.Get("/v1/unifi", GetUniFiSnapshots)
+	apiV1Router.Get("/v1/unifi", GetUniFiSnapshots)
 	// COLLECTOR PUSH: no session gate, same reasoning as /external above.
-	unprotectedAPIRouter.Post("/v1/unifi/:key", SetUniFiSnapshot(cfg))
+	apiV1Router.Post("/v1/unifi/:key", SetUniFiSnapshot(cfg))
 	// Expected-uplink settings, read by the collector each sweep so an empty WAN
 	// port stops reading as an outage. These carry an extra path segment, so
 	// unlike /v1/phones/sweep-pending they cannot actually be swallowed by the
 	// bare :key route; kept above it as a matter of habit, not necessity.
-	unprotectedAPIRouter.Get("/v1/unifi/:key/settings", GetUniFiSettings)
-	unprotectedAPIRouter.Post("/v1/unifi/:key/settings", requireOperator, SetUniFiSettings)
-	unprotectedAPIRouter.Get("/v1/unifi/:key", GetUniFiSnapshot)
+	apiV1Router.Get("/v1/unifi/:key/settings", GetUniFiSettings)
+	apiV1Router.Post("/v1/unifi/:key/settings", SetUniFiSettings)
+	apiV1Router.Get("/v1/unifi/:key", GetUniFiSnapshot)
 	// Collector metric history: the counts behind the phones, firewall and
 	// wireless rows, sampled over time. Raw for recent windows, hourly rollups
 	// beyond; the response says which resolution it served.
-	unprotectedAPIRouter.Get("/v1/history/:key", GetMetricHistory)
+	apiV1Router.Get("/v1/history/:key", GetMetricHistory)
 	// Jira service-desk metrics, refreshed by the background jira poller.
-	unprotectedAPIRouter.Get("/v1/jira/metrics", GetJiraMetrics)
+	apiV1Router.Get("/v1/jira/metrics", GetJiraMetrics)
 	// Jira ticket drill-down: fetches one issue's detail on demand.
-	unprotectedAPIRouter.Get("/v1/jira/issue/:key", GetJiraIssue)
+	apiV1Router.Get("/v1/jira/issue/:key", GetJiraIssue)
 	// Jira live stream (SSE): pushes a fresh snapshot on every poll.
-	unprotectedAPIRouter.Get("/v1/jira/live", JiraLive)
+	apiV1Router.Get("/v1/jira/live", JiraLive)
 	// Jira Kanban: the agile boards themselves (columns, WIP limits, cards).
-	unprotectedAPIRouter.Get("/v1/jira/boards", GetJiraBoards)
-	unprotectedAPIRouter.Get("/v1/jira/board/:id", GetJiraBoard)
-	unprotectedAPIRouter.Get("/v1/jira/board/:id/live", JiraBoardLive)
+	apiV1Router.Get("/v1/jira/boards", GetJiraBoards)
+	apiV1Router.Get("/v1/jira/board/:id", GetJiraBoard)
+	apiV1Router.Get("/v1/jira/board/:id/live", JiraBoardLive)
 	// SPA
 	app.Get("/", SinglePageApplication(cfg.UI))
 	app.Get("/endpoints/:key", SinglePageApplication(cfg.UI))
@@ -212,7 +189,6 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	app.Get("/sites/:name", SinglePageApplication(cfg.UI))
 	app.Get("/jira", SinglePageApplication(cfg.UI))
 	app.Get("/settings", SinglePageApplication(cfg.UI))
-	app.Get("/ll-telemetry", SinglePageApplication(cfg.UI))
 	// Health endpoint
 	healthHandler := health.Handler().WithJSON(true)
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -237,43 +213,26 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 		Index:  "index.html",
 		Browse: true,
 	}))
-	//////////////////////
-	// PROTECTED ROUTES //
-	//////////////////////
-	// ORDER IS IMPORTANT: all routes applied AFTER the security middleware will require authn
-	protectedAPIRouter := apiRouter.Group("/")
-	if cfg.Security != nil {
-		if err := cfg.Security.RegisterHandlers(app); err != nil {
-			panic(err)
-		}
-		if err := cfg.Security.ApplySecurityMiddleware(protectedAPIRouter); err != nil {
-			panic(err)
-		}
-	}
-	protectedAPIRouter.Get("/v1/endpoints/statuses", EndpointStatuses(cfg))
-	protectedAPIRouter.Get("/v1/endpoints/:key/statuses", EndpointStatus(cfg))
+	// These used to sit behind the site-wide security middleware, which is why
+	// they are registered down here rather than with the rest of the v1 table.
+	// Nothing depends on that position now — the static filesystem above calls
+	// Next() on a miss — so they are open like everything else, and moving them
+	// up would be a safe tidy-up rather than a behaviour change.
+	apiV1Router.Get("/v1/endpoints/statuses", EndpointStatuses(cfg))
+	apiV1Router.Get("/v1/endpoints/:key/statuses", EndpointStatus(cfg))
 	// Force ping: runs one out-of-band check now instead of waiting out the
 	// endpoint's interval (the "Force ping" button on the endpoint drill-in).
-	protectedAPIRouter.Post("/v1/endpoints/:key/check", requireOperator, ForceEndpointCheck(cfg))
-	protectedAPIRouter.Get("/v1/suites/statuses", SuiteStatuses(cfg))
-	protectedAPIRouter.Get("/v1/suites/:key/statuses", SuiteStatus(cfg))
+	apiV1Router.Post("/v1/endpoints/:key/check", ForceEndpointCheck(cfg))
+	apiV1Router.Get("/v1/suites/statuses", SuiteStatuses(cfg))
+	apiV1Router.Get("/v1/suites/:key/statuses", SuiteStatus(cfg))
 	// Live status stream (SSE) — a single broadcaster pushes the same snapshot
 	// to every connected client so all screens stay in sync without refreshing.
-	protectedAPIRouter.Get("/v1/live", newSSEHub().Handler)
-	// LL-Telemetry: the vendored operations console plus a deny-by-default
-	// proxy to the telemetry API. TelemetryGate authenticates these routes on
-	// its own credentials, independent of cfg.Security — the telemetry upstream
-	// has no auth of its own, and gating it via cfg.Security would also put the
-	// SSE stream behind a login and break unattended wallboards. Sitting under
-	// protectedAPIRouter means it additionally inherits site-wide auth if that
-	// is ever enabled.
-	//
-	// The console route is registered BEFORE the wildcard so it is not
-	// swallowed by it (same trap as /v1/phones/sweep-pending above).
-	telemetryRouter := protectedAPIRouter.Group("/v1/telemetry", TelemetryGate)
-	telemetryRouter.Post("/session", TelemetryLogin)
-	telemetryRouter.Delete("/session", TelemetryLogout)
-	telemetryRouter.Get("/console", TelemetryConsole)
-	telemetryRouter.All("/*", TelemetryProxy)
+	apiV1Router.Get("/v1/live", newSSEHub().Handler)
+	// LL-Telemetry is disabled: the console and its proxy are no longer routed,
+	// so /api/v1/telemetry/* is a 404. api/telemetry.go and its vendored console
+	// asset stay in the tree (that file's init() prepares the embedded HTML and
+	// must keep compiling). Re-enabling means these five registrations, the
+	// app.Get("/ll-telemetry", ...) SPA deep link removed from the block above,
+	// and the frontend route and header button.
 	return app
 }

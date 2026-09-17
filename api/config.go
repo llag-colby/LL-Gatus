@@ -14,6 +14,11 @@ type ConfigHandler struct {
 	config         *config.Config
 }
 
+// GetConfig serves the announcements, plus two vestigial keys. There is no
+// sign-in: ApplySecurityMiddleware is never installed, so "authenticated" says
+// nothing about the caller and "oidc" says nothing about whether a login exists.
+// They are kept at their upstream shape because the frontend stopped reading
+// them and an external consumer may not have.
 func (handler ConfigHandler) GetConfig(c *fiber.Ctx) error {
 	hasOIDC := false
 	isAuthenticated := true // Default to true if no security config is set

@@ -25,7 +25,14 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// LL-Telemetry integration.
+// LL-Telemetry integration. DISABLED: none of these handlers is routed, so
+// /api/v1/telemetry/* answers 404 and the console is unreachable. The file stays
+// because its init() below prepares the embedded console HTML and the //go:embed
+// of assets/telemetry-console.html is compile-time; deleting the asset without
+// deleting this file breaks the build. To re-enable, restore the five route
+// registrations in api.go (the comment where they were says which) and the
+// frontend entry points. The rest of this comment describes how it worked, and
+// still would.
 //
 // Gatus serves the LL-Telemetry operations console itself and reverse-proxies
 // the console's API calls to the telemetry FastAPI. Two things make that safe:
@@ -35,9 +42,7 @@ import (
 //     telemetry route sits behind telemetryGate below. The gate is deliberately
 //     independent of cfg.Security: Gatus's own security block is all-or-nothing
 //     across /api, and switching it on would put the SSE stream behind a login
-//     and break unattended wallboards. Registering under protectedAPIRouter as
-//     well means telemetry picks up that second layer for free if it is ever
-//     enabled.
+//     and break unattended wallboards.
 //
 //  2. The proxy is a deny-by-default allowlist, not a pass-through. Notably
 //     POST /runs (ingest) is NOT proxied — field scripts post to the telemetry

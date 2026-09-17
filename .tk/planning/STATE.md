@@ -1,77 +1,50 @@
 # State
 
-**Version:** 1.2.0
-**Active task:** none (LL-Telemetry integration + sign-in screen complete, uncommitted)
-
-## Open decision for the user
-
-Eight of twelve sites still resolve as **unmapped**. The WAN-egress layer added
-to `SITE_MAP` cannot fire: telemetry is internal-only and field PCs reach it over
-the tunnel. Only LAN subnets work, and only four are known. Getting the remaining
-eight subnets is a two-minute change and the only real fix.
+**Version:** 1.8.0
+**Active task:** none (login removal + telemetry disable complete)
 
 ## What just landed
 
-The LL-Telemetry operations console, reachable from a satellite-dish button in
-the Gatus header at `/ll-telemetry`.
+The dashboard has no sign-in. Accounts, roles, sessions and the login UI are
+unwired, and the LL-Telemetry console is unrouted. Both bodies of code are still
+in the tree, dormant, so either can be switched back on without rewriting it.
 
-Shape: Gatus serves the vendored console HTML and reverse-proxies its API calls
-to the telemetry FastAPI. A same-origin iframe isolates the console's OKLCH
-design system from Tailwind. See `docs/ll-telemetry.md` for the full guide.
+See `.tk/planning/HISTORY.md` 1.8.0 for the file-by-file account.
 
 ## Load-bearing decisions
 
-- **Telemetry has its own auth gate**, separate from Gatus's `security:` block.
-  Gatus's built-in security is all-or-nothing across `/api`; enabling it would
-  put `/api/v1/live` behind a login, and EventSource cannot carry a basic
-  credential, so unattended wallboards would silently reconnect-loop forever.
-  `TelemetryGate` gates only telemetry and leaves every existing screen alone.
-- **Fails closed.** No credentials configured means nothing is proxied. The
-  upstream FastAPI has no auth of its own, so defaulting open would expose every
-  machine transcript and the ingest-key endpoints.
-- **`POST /runs` is not proxied.** Ingest stays with the field scripts and their
-  `llk_` keys.
-- **The console is vendored byte-identical** to upstream; its API base is
-  rewritten at serve time, with a startup assertion that panics if the expected
-  string is not found exactly once.
-- **The local telemetry stack is a separate compose file**, not the main one and
-  not `docker-compose.override.yml` (which would auto-load and break the prod
-  box, where `../LL-Telemetry` does not exist).
-
-## Review outcome
-
-Three reviewers (bugs, security, conventions) produced 2 blockers, 1 real
-exploitable security finding, and ~20 smaller items. All fixed and re-verified.
-The security finding was CSRF on the state-changing proxy routes: Basic
-credentials have no SameSite, and `POST /keys/{id}/revoke` is a simple request,
-so a cross-site form could have killed ingest fleet-wide. Now requires
-`Sec-Fetch-Site: same-origin` or a matching `Origin` on any non-GET.
-
-`api/telemetry_test.go` covers the allowlist (including the lowercase-method
-bypass the reviewer could not rule out locally), basic-auth parsing, fail-closed
-config, and the startup console/CSP assertions. `go vet ./api/...` is clean.
-
-## Verified at runtime
-
-Auth 401 without credentials / 200 with; console 200; `POST /runs` via proxy
-403; traversal (`%2e%2e`, literal `../`, encoded slash) all 403; key mint →
-revoke → delete lifecycle including the active-key delete refusal; CSP script
-hash independently recomputed and matched; run data readable through the
-proxy.
-
-**Not verified:** visual rendering in a real browser. Signing in triggers
-a credential prompt the browser-automation session could not complete safely.
-Needs a human eyeball.
+- **Nothing was deleted.** `auth/`, `security/`, `api/telemetry.go`,
+  `api/assets/telemetry-console.html`, `LoginDialog.vue`, `UserMenu.vue`,
+  `TelemetryConsole.vue`, `docker-compose.telemetry.yml` and
+  `docs/ll-telemetry.md` all remain. They are unreferenced, not removed.
+- **`api/telemetry.go` must stay while its asset does.** Its `init()` rewrites
+  the embedded console's API base and panics if the expected string is not found
+  exactly once, and the `//go:embed` is compile-time. Deleting one without the
+  other breaks the build or the boot.
+- **`can()` returns a constant `true`.** It stays exported as the one hook a
+  future gate would need, and because returning true is what makes the app
+  behave exactly like a deployment that never had accounts.
+- **The collector push token is untouched.** It is machine auth checked inside
+  the handlers, was never part of the login, and is now the only credential the
+  server checks.
+- **Six writes are open on purpose.** Monitoring pause, phone exclusions, phone
+  thresholds, unifi settings, sweep request, force-check. None can move to the
+  browser: the collectors and the watchdog read that state server-side.
+- **`cfg.Security` is still parsed.** The config field and its validation stay
+  so the upstream config contract and its tests are unchanged; only
+  `ApplySecurityMiddleware` is no longer installed. README says so in place.
 
 ## Open items
 
-- Uncommitted. The working tree also holds substantial unrelated pre-existing
-  work (monitoring pause, UniFi views, uptime series, metric history).
-- LL-Telemetry upstream fixes sit on branch `fix/keys-panel-and-schema-mount`,
-  committed but not pushed.
-- `llag-colby/LL-Telemetry` is a PUBLIC GitHub repo containing real internal
-  CIDRs, the telemetry hostname/IP, and the security model. Worth making private.
-- `api/api.go:161` mounts static files with `Browse: true`; a missing deep link
-  yields a directory listing. Pre-existing, not touched.
-- `.gitignore:30` claims "repo is public" - LL-Gatus is actually private.
-- `.env` defines `PHONES_PUSH_TOKEN` twice.
+- `/data/auth.db` (plus `-shm`/`-wal`) is now an orphan on this box and on prod.
+  Nothing creates, reads or deletes it. Safe to remove by hand whenever.
+- `.env` still carries `TELEMETRY_*` and `LL_*` keys. They are inert now that the
+  gate is unrouted. `.env.bak.20260915-132627` and `.env.bak.cullman.144439`
+  contain a plaintext telemetry password and are worth scrubbing.
+- `config/ui`'s `LoginSubtitle` field survives for upstream parity. It is no
+  longer injected into `window.config` and nothing renders it.
+- `api/config.go` still returns `oidc` and `authenticated`. Both are vestigial
+  with no middleware installed; kept at the upstream shape for any external
+  consumer, and commented as such.
+- The UI was verified by API probe and by grepping the served bundle, not in a
+  browser: Chrome could not reach the local port from the automation extension.

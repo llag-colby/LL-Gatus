@@ -290,9 +290,7 @@ const fetchData = async () => {
     loading.value = true
   }
   try {
-    const endpointResponse = await fetch(`/api/v1/endpoints/statuses?page=1&pageSize=${resultPageSize}`, {
-      credentials: 'include'
-    })
+    const endpointResponse = await fetch(`/api/v1/endpoints/statuses?page=1&pageSize=${resultPageSize}`)
     if (endpointResponse.status === 200) {
       const data = await endpointResponse.json()
       endpointStatuses.value = data
@@ -300,9 +298,7 @@ const fetchData = async () => {
       console.error('[Home][fetchData] Error fetching endpoints:', await endpointResponse.text())
     }
 
-    const suiteResponse = await fetch(`/api/v1/suites/statuses?page=1&pageSize=${resultPageSize}`, {
-      credentials: 'include'
-    })
+    const suiteResponse = await fetch(`/api/v1/suites/statuses?page=1&pageSize=${resultPageSize}`)
     if (suiteResponse.status === 200) {
       const suiteData = await suiteResponse.json()
       suiteStatuses.value = suiteData || []

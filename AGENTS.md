@@ -35,7 +35,8 @@ Guidance for AI coding agents working in this repository.
 - `watchdog/` — Monitoring loop; spawns a goroutine per endpoint with semaphore-based concurrency control
 - `client/` — HTTP/gRPC client used for health checks
 - `storage/store/` — Storage abstraction with `memory/`, `sql/` (SQLite + PostgreSQL) implementations
-- `security/` — Authentication (basic + OIDC) and security middleware
+- `security/` — Upstream basic/OIDC middleware. Present but NOT wired up: this
+  fork serves the dashboard with no sign-in at all (see `auth/`, same status)
 - `web/app/` — Vue 3 frontend source; builds to `web/static/` (embedded into the Go binary)
 - `vendor/` — Vendored Go dependencies (committed to repo)
 
@@ -70,8 +71,11 @@ Use `alerting/provider/slack/` as the reference implementation. Every new provid
 
 ## API Routes (`api/api.go`)
 
-- Unprotected routes are registered **before** `ApplySecurityMiddleware`
-- Protected routes are registered **after** — placement order matters
+- There is no authentication. Every route is open to anyone who can reach the
+  port, except the collector push endpoints, which check a per-endpoint bearer
+  token inside their handlers
+- Static routes must still be registered **before** `:key` wildcards that would
+  otherwise swallow them (e.g. `/v1/phones/sweep-pending` before `/v1/phones/:key`)
 
 ## Testing
 

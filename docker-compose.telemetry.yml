@@ -18,6 +18,10 @@
 # is the only thing standing in front of it, and it has no authentication of its
 # own; here Gatus is the boundary, via TelemetryGate in api/telemetry.go.
 # Caddy is therefore not run at all: Gatus terminates auth and serves the console.
+#
+# DISABLED: Gatus no longer routes /api/v1/telemetry/*, so bringing this stack
+# up gives you an API nothing can reach and no console. See docs/ll-telemetry.md
+# for what to restore first.
 
 services:
   # MariaDB. Reachable only from lltel-api, on an internal network with no

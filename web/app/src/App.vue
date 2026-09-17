@@ -6,7 +6,7 @@
     </div>
 
     <!-- Main App Container -->
-    <div v-else-if="!config || !config.oidc || config.authenticated" class="relative">
+    <div v-else class="relative">
       <!-- Header -->
       <header class="sticky top-0 z-40 border-b bg-card/70 backdrop-blur supports-[backdrop-filter]:bg-card/60">
         <div class="w-full px-4 sm:px-6 py-3">
@@ -86,19 +86,17 @@
                   <span class="jira-ico" :style="{ backgroundImage: `url(${jiraIcon})` }"></span>
                 </router-link>
                 <router-link
-                  to="/ll-telemetry"
+                  to="/settings"
                   class="inline-flex items-center justify-center h-9 w-9 rounded-md hover:bg-accent transition-colors"
-                  data-tooltip="Field-script telemetry"
+                  data-tooltip="Settings"
                   data-tip-pos="bottom"
-                  aria-label="Field-script telemetry"
+                  aria-label="Settings"
                 >
                   <!-- An inline lucide SVG, not an <img>: the header's custom-css
                        rule (`header img { filter: brightness(0) invert(1) }`)
-                       only matches <img>, so this needs none of the
-                       background-image workaround the Jira icon requires. -->
-                  <SatelliteDish class="h-5 w-5" />
+                       only matches <img>, so this needs no workaround. -->
+                  <SlidersHorizontal class="h-5 w-5" />
                 </router-link>
-                <UserMenu />
               </div>
 
               <!-- Optional configured navigation buttons -->
@@ -140,46 +138,6 @@
       </footer>
     </div>
 
-    <!-- OIDC Login Screen -->
-    <div v-else id="login-container" class="flex items-center justify-center min-h-screen p-4">
-      <Card class="w-full max-w-md">
-        <CardHeader class="text-center">
-          <div v-if="logo" class="flex items-center justify-center gap-4 mb-4">
-            <img :src="logo" alt="" class="w-20 h-20 object-contain" />
-            <div class="w-px h-12 bg-border"></div>
-            <img src="./assets/logo.svg" alt="Gatus" class="w-20 h-20" />
-          </div>
-          <img v-else src="./assets/logo.svg" alt="Gatus" class="w-20 h-20 mx-auto mb-4" />
-          <CardTitle class="text-3xl">{{ header }}</CardTitle>
-          <p class="text-muted-foreground mt-2">{{ loginSubtitle }}</p>
-        </CardHeader>
-        <CardContent>
-          <div v-if="route && route.query.error" class="mb-6">
-            <div class="p-3 rounded-md bg-destructive/10 border border-destructive/20">
-              <p class="text-sm text-destructive text-center">
-                <span v-if="route.query.error === 'access_denied'">
-                  You do not have access to this status page
-                </span>
-                <span v-else>{{ route.query.error }}</span>
-              </p>
-            </div>
-          </div>
-          
-          <a
-            :href="`/oidc/login`"
-            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-8 w-full"
-            @click="isOidcLoading = true"
-          >
-            <Loading v-if="isOidcLoading" size="xs" />
-            <template v-else>
-              <LogIn class="mr-2 h-4 w-4" />
-              Login with OIDC
-            </template>
-          </a>
-        </CardContent>
-      </Card>
-    </div>
-
     <!-- Tooltip -->
     <Tooltip :result="tooltip.result" :event="tooltip.event" :isPersistent="tooltipIsPersistent" />
 
@@ -191,15 +149,13 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { LogIn, Maximize, Minimize, RefreshCw, SatelliteDish, Volume2, VolumeX } from 'lucide-vue-next'
+import { Maximize, Minimize, RefreshCw, SlidersHorizontal, Volume2, VolumeX } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import SearchBar from './components/SearchBar.vue'
 import SimulatePanel from './components/SimulatePanel.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import Social from './components/Social.vue'
 import Tooltip from './components/Tooltip.vue'
-import UserMenu from './components/UserMenu.vue'
 import Loading from './components/Loading.vue'
 import jiraIcon from '@/assets/jira.png'
 import { requestRefresh, soundEnabled, setSoundEnabled, applyStatusColors, isFullscreen } from '@/store'
@@ -210,10 +166,8 @@ const route = useRoute()
 
 // State
 const retrievedConfig = ref(false)
-const config = ref({ oidc: false, authenticated: true })
 const announcements = ref([])
 const tooltip = ref({})
-const isOidcLoading = ref(false)
 const tooltipIsPersistent = ref(false)
 let configInterval = null
 
@@ -262,25 +216,16 @@ const logo = computed(() => {
   return window.config && window.config.logo && window.config.logo !== '{{ .UI.Logo }}' ? window.config.logo : ""
 })
 
-const header = computed(() => {
-  return window.config && window.config.header && window.config.header !== '{{ .UI.Header }}' ? window.config.header : "Gatus"
-})
-
 const buttons = computed(() => {
   return window.config && window.config.buttons ? window.config.buttons : []
-})
-
-const loginSubtitle = computed(() => {
-  return window.config && window.config.loginSubtitle && window.config.loginSubtitle !== '{{ .UI.LoginSubtitle }}' ? window.config.loginSubtitle : "System Monitoring Dashboard"
 })
 
 // Methods
 const fetchConfig = async () => {
   try {
-    const response = await fetch(`/api/v1/config`, { credentials: 'include' })
+    const response = await fetch(`/api/v1/config`)
     if (response.status === 200) {
       const data = await response.json()
-      config.value = data
       announcements.value = data.announcements || []
     }
     retrievedConfig.value = true

@@ -319,7 +319,7 @@ const firewallMetric = (endpoint) => {
         ? ` · expected count is automatic, and ${idle} unplugged port`
           + `${idle === 1 ? ' is' : 's are'} not counted`
         : '')
-      + (auto ? '' : ' · expected count set by an operator'),
+      + (auto ? '' : ' · expected count set manually'),
   }
 }
 const wirelessMetric = (endpoint) => {

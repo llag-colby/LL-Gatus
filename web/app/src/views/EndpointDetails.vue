@@ -31,10 +31,9 @@
             </Button>
             <!-- Tooltip on the wrapper: a disabled Button has pointer-events
                  none, so a bubble bound to the button itself never shows. -->
-            <span class="inline-flex" :data-tooltip="canWrite ? 'Force ping now' : 'Sign in to force a ping'"
-              data-tip-pos="bottom">
+            <span class="inline-flex" data-tooltip="Force ping now" data-tip-pos="bottom">
               <Button variant="ghost" size="icon" class="h-9 w-9" @click="forcePing"
-                :disabled="isPinging || !canWrite" :aria-disabled="!canWrite ? 'true' : 'false'">
+                :disabled="isPinging" :aria-disabled="isPinging ? 'true' : 'false'">
                 <Zap class="h-5 w-5" :class="{ 'animate-pulse text-primary': isPinging }" />
               </Button>
             </span>
@@ -247,7 +246,7 @@ import MonitorToggle from '@/components/MonitorToggle.vue'
 import Settings from '@/components/Settings.vue'
 import RangeSelector from '@/components/RangeSelector.vue'
 import HistoryChart from '@/components/HistoryChart.vue'
-import { addToast, can, historyRange, setHistoryRange } from '@/store'
+import { addToast, historyRange, setHistoryRange } from '@/store'
 import Loading from '@/components/Loading.vue'
 import ResponseTimeChart from '@/components/ResponseTimeChart.vue'
 import { generatePrettyTimeAgo, generatePrettyTimeDifference } from '@/utils/time'
@@ -255,10 +254,6 @@ import { generatePrettyTimeAgo, generatePrettyTimeDifference } from '@/utils/tim
 const router = useRouter()
 const route = useRoute()
 const emit = defineEmits(['showTooltip'])
-
-// Force ping is the only control on this page that changes anything: everything
-// else reads. Pausing has its own guard inside MonitorToggle.
-const canWrite = computed(() => can('operator'))
 
 const endpointStatus = ref(null) // For paginated historical data
 const currentStatus = ref(null) // For current/latest status (always page 1)
@@ -360,9 +355,7 @@ const fetchUptimeSeries = async () => {
   const requestId = ++uptimeRequestId
   uptimeLoading.value = true
   try {
-    const response = await fetch(`/api/v1/endpoints/${route.params.key}/uptime-series?range=${historyRange.value}`, {
-      credentials: 'include'
-    })
+    const response = await fetch(`/api/v1/endpoints/${route.params.key}/uptime-series?range=${historyRange.value}`)
     if (requestId !== uptimeRequestId) return
     if (response.status === 200) {
       const data = await response.json()
@@ -513,9 +506,7 @@ const lastCheckTime = computed(() => {
 const fetchData = async () => {
   isRefreshing.value = true
   try {
-    const response = await fetch(`/api/v1/endpoints/${route.params.key}/statuses?page=${currentPage.value}&pageSize=${resultPageSize}`, {
-      credentials: 'include'
-    })
+    const response = await fetch(`/api/v1/endpoints/${route.params.key}/statuses?page=${currentPage.value}&pageSize=${resultPageSize}`)
     
     if (response.status === 200) {
       const data = await response.json()
@@ -586,15 +577,11 @@ const fetchData = async () => {
 // re-fetch afterwards to pull it into the timeline.
 const isPinging = ref(false)
 const forcePing = async () => {
-  // Guarded here too: the disabled button is a hint, this is what stops a stale
-  // render or a console call from firing a check the viewer may not run.
-  if (!can('operator')) return
   if (isPinging.value) return
   isPinging.value = true
   try {
     const res = await fetch(`/api/v1/endpoints/${route.params.key}/check`, {
-      method: 'POST',
-      credentials: 'include'
+      method: 'POST'
     })
     const data = await res.json().catch(() => ({}))
     if (res.status === 429) {

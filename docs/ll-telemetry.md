@@ -1,5 +1,14 @@
 # LL-Telemetry console (`/ll-telemetry`)
 
+> **DISABLED.** The routes described here are not registered: the header button
+> and the `/ll-telemetry` page are gone, and `/api/v1/telemetry/*` answers 404.
+> Nothing was deleted — `api/telemetry.go`, the vendored console asset and
+> `docker-compose.telemetry.yml` are all still here, and the rest of this
+> document still describes them accurately. To switch it back on, restore the
+> five route registrations in `api/api.go` (see the comment where they used to
+> be), the `/ll-telemetry` SPA deep link, the router entry and the header link
+> in `App.vue`, then rebuild the frontend.
+
 The field-script telemetry console, reachable from the satellite-dish button in
 the Gatus header. It is the operations console from the
 [LL-Telemetry](https://github.com/llag-colby/LL-Telemetry) project, served by

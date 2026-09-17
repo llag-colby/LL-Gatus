@@ -7,17 +7,17 @@ import (
 
 	"github.com/TwiN/gatus/v5/config"
 	"github.com/TwiN/gatus/v5/config/ui"
-	"github.com/TwiN/gatus/v5/security"
+	"github.com/TwiN/gatus/v5/storage"
 	"github.com/gofiber/fiber/v2"
 )
 
 func TestNew(t *testing.T) {
 	type Scenario struct {
 		Name         string
+		Method       string // defaults to GET
 		Path         string
 		ExpectedCode int
 		Gzip         bool
-		WithSecurity bool
 	}
 	scenarios := []Scenario{
 		{
@@ -79,44 +79,69 @@ func TestNew(t *testing.T) {
 			ExpectedCode: fiber.StatusMovedPermanently,
 		},
 		{
-			Name:         "index-should-return-200-even-if-not-authenticated",
-			Path:         "/",
-			ExpectedCode: fiber.StatusOK,
-			WithSecurity: true,
-		},
-		{
-			Name:         "endpoints-should-return-401-if-not-authenticated",
-			Path:         "/api/v1/endpoints/statuses",
-			ExpectedCode: fiber.StatusUnauthorized,
-			WithSecurity: true,
-		},
-		{
-			Name:         "config-should-return-200-even-if-not-authenticated",
-			Path:         "/api/v1/config",
-			ExpectedCode: fiber.StatusOK,
-			WithSecurity: true,
-		},
-		{
 			Name:         "config-should-always-return-200",
 			Path:         "/api/v1/config",
 			ExpectedCode: fiber.StatusOK,
-			WithSecurity: false,
+		},
+		// There is no sign-in. Statuses used to sit behind the site-wide security
+		// middleware and answer 401 to an anonymous caller; every caller is
+		// anonymous now, so it has to answer normally.
+		{
+			Name:         "endpoints-statuses-are-open",
+			Path:         "/api/v1/endpoints/statuses",
+			ExpectedCode: fiber.StatusOK,
+		},
+		// The routes that made up the login are gone, not merely unenforced. A
+		// 200 from any of these would mean the accounts API came back.
+		{
+			Name:         "auth-me-is-gone",
+			Path:         "/api/v1/auth/me",
+			ExpectedCode: fiber.StatusNotFound,
+		},
+		{
+			Name:         "auth-login-is-gone",
+			Method:       "POST",
+			Path:         "/api/v1/auth/login",
+			ExpectedCode: fiber.StatusNotFound,
+		},
+		{
+			Name:         "users-is-gone",
+			Path:         "/api/v1/users",
+			ExpectedCode: fiber.StatusNotFound,
+		},
+		// Telemetry is disabled: unrouted, so 404 rather than the gate's 401/503.
+		{
+			Name:         "telemetry-console-is-gone",
+			Path:         "/api/v1/telemetry/console",
+			ExpectedCode: fiber.StatusNotFound,
+		},
+		{
+			Name:         "telemetry-proxy-is-gone",
+			Path:         "/api/v1/telemetry/health",
+			ExpectedCode: fiber.StatusNotFound,
+		},
+		// The SPA deep link went with it, while the other deep links stayed.
+		{
+			Name:         "ll-telemetry-spa-route-is-gone",
+			Path:         "/ll-telemetry",
+			ExpectedCode: fiber.StatusNotFound,
+		},
+		{
+			Name:         "settings-spa-route-still-serves",
+			Path:         "/settings",
+			ExpectedCode: fiber.StatusOK,
 		},
 	}
 	for _, scenario := range scenarios {
 		t.Run(scenario.Name, func(t *testing.T) {
-			cfg := &config.Config{Metrics: true, UI: &ui.Config{}}
-			if scenario.WithSecurity {
-				cfg.Security = &security.Config{
-					Basic: &security.BasicConfig{
-						Username:                        "john.doe",
-						PasswordBcryptHashBase64Encoded: "JDJhJDA4JDFoRnpPY1hnaFl1OC9ISlFsa21VS09wOGlPU1ZOTDlHZG1qeTFvb3dIckRBUnlHUmNIRWlT",
-					},
-				}
-			}
+			cfg := &config.Config{Metrics: true, UI: &ui.Config{}, Storage: &storage.Config{}}
 			api := New(cfg)
 			router := api.Router()
-			request := httptest.NewRequest("GET", scenario.Path, http.NoBody)
+			method := scenario.Method
+			if method == "" {
+				method = "GET"
+			}
+			request := httptest.NewRequest(method, scenario.Path, http.NoBody)
 			if scenario.Gzip {
 				request.Header.Set("Accept-Encoding", "gzip")
 			}

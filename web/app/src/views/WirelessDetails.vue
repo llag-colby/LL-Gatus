@@ -635,7 +635,7 @@ const fetchMetricHistory = async () => {
   try {
     const res = await fetch(
       `/api/v1/history/${encodeURIComponent(routeKey.value)}?range=${range.value}`,
-      { credentials: 'include', cache: 'no-store' })
+      { cache: 'no-store' })
     if (!res.ok) {
       metricSeries.value = {}
       metricResolution.value = ''
@@ -657,7 +657,7 @@ const fetchUptimeSeries = async () => {
   try {
     const res = await fetch(
       `/api/v1/endpoints/${encodeURIComponent(routeKey.value)}/uptime-series?range=${range.value}`,
-      { credentials: 'include', cache: 'no-store' })
+      { cache: 'no-store' })
     if (!res.ok) {
       uptimeSeries.value = { timestamps: [], values: [] }
       uptimeResolution.value = ''
@@ -709,7 +709,7 @@ const fetchResults = async () => {
   try {
     const res = await fetch(
       `/api/v1/endpoints/${routeKey.value}/statuses?page=1&pageSize=${RESULT_WINDOW}`,
-      { credentials: 'include', cache: 'no-store' })
+      { cache: 'no-store' })
     if (res.ok) {
       const data = await res.json()
       results.value = Array.isArray(data.results) ? data.results : []

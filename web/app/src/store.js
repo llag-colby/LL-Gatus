@@ -244,11 +244,13 @@ async function syncServerTime() {
 syncServerTime()
 setInterval(syncServerTime, 60000)
 
-// --- Sign-in, session and roles ---
-// The session cookie is HttpOnly, so the browser can never read it. Everything
-// the UI knows about who is signed in comes from /auth/me, which always answers
-// 200 (never 401) precisely so a signed-out page is a normal state rather than
-// an error to handle at every call site.
+// --- Sign-in, session and roles (DISABLED) ---
+// The dashboard has no sign-in. The server no longer serves /api/v1/auth/*, so
+// none of the calls below can succeed; they are kept so turning accounts back on
+// is a matter of routing them again rather than rewriting the client. The only
+// importers left are LoginDialog.vue and UserMenu.vue, which are themselves
+// unreferenced and so never reach the bundle. refreshAuth() is no longer run at
+// module load, which is what used to make every page start with a fetch.
 //
 // Roles are ordered: viewer < operator < admin.
 export const ROLES = ['viewer', 'operator', 'admin']
@@ -338,15 +340,13 @@ export const currentRole = computed(() => {
   return ROLES.includes(role) ? role : 'viewer'
 })
 
-// The single permission helper. When auth is switched off (or the backend that
-// serves it is missing) this returns true for everything, so a deployment
-// without auth behaves exactly as it did before auth existed rather than
-// disabling every control on the page.
-export function can(minimumRole = 'viewer') {
-  if (!authState.enabled) return true
-  const required = ROLES.indexOf(minimumRole)
-  if (required === -1) return false // unknown role name: deny rather than grant
-  return ROLES.indexOf(currentRole.value) >= required
+// The single permission helper, now a constant. Every visitor is anonymous and
+// every control is theirs to use. It stays exported because it is the one hook
+// a future gate would need, and because returning true here is what keeps the
+// behaviour identical to a deployment that never had accounts.
+//
+// It takes no argument on purpose: a leftover can('operator') would otherwise
+// read as a gate while granting everything. There are no call sites left.
+export function can() {
+  return true
 }
-
-refreshAuth()

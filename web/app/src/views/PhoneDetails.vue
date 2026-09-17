@@ -47,8 +47,7 @@
               <div class="flex items-center justify-between gap-2">
                 <span class="text-sm">Degraded when ≥</span>
                 <div class="flex items-center gap-1.5">
-                  <input type="number" min="1" v-model.number="form.degradedAt" :disabled="!canWrite"
-                    :aria-disabled="!canWrite ? 'true' : 'false'"
+                  <input type="number" min="1" v-model.number="form.degradedAt"
                     class="w-14 text-sm text-right bg-background border rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed" />
                   <span class="text-xs text-muted-foreground">offline</span>
                 </div>
@@ -56,20 +55,16 @@
               <div class="flex items-center justify-between gap-2">
                 <span class="text-sm">Down when ≥</span>
                 <div class="flex items-center gap-1.5">
-                  <input type="number" min="1" v-model.number="form.downAt" :disabled="!canWrite"
-                    :aria-disabled="!canWrite ? 'true' : 'false'"
+                  <input type="number" min="1" v-model.number="form.downAt"
                     class="w-14 text-sm text-right bg-background border rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed" />
                   <span class="text-xs text-muted-foreground">offline</span>
                 </div>
               </div>
               <div class="flex items-center gap-2">
-                <Button size="sm" class="flex-1" @click="saveSettings" :disabled="!canWrite"
-                  :aria-disabled="!canWrite ? 'true' : 'false'">Save</Button>
+                <Button size="sm" class="flex-1" @click="saveSettings">Save</Button>
                 <Button v-if="scope === 'site' && settingsData && settingsData.override" size="sm" variant="ghost"
-                  class="text-muted-foreground" @click="useGlobal" :disabled="!canWrite"
-                  :aria-disabled="!canWrite ? 'true' : 'false'">Use global</Button>
+                  class="text-muted-foreground" @click="useGlobal">Use global</Button>
               </div>
-              <div v-if="!canWrite" class="text-[11px] font-semibold">Sign in to change thresholds.</div>
               <div class="text-[11px] text-muted-foreground">
                 <template v-if="scope === 'site'">
                   <span v-if="settingsData && settingsData.override">Site override active — overrides the global default.</span>
@@ -86,10 +81,9 @@
           </Button>
           <!-- Tooltip on the wrapper: a disabled Button has pointer-events none,
                so a bubble bound to the button itself never shows. -->
-          <span class="inline-flex" :data-tooltip="canWrite ? 'Force sweep now' : 'Sign in to force a sweep'"
-            data-tip-pos="bottom">
+          <span class="inline-flex" data-tooltip="Force sweep now" data-tip-pos="bottom">
             <Button variant="ghost" size="icon" class="h-9 w-9" @click="forceSweep"
-              :disabled="sweeping || !canWrite" :aria-disabled="!canWrite ? 'true' : 'false'">
+              :disabled="sweeping" :aria-disabled="sweeping ? 'true' : 'false'">
               <Zap class="h-5 w-5" :class="{ 'animate-pulse text-primary': sweeping }" />
             </Button>
           </span>
@@ -202,14 +196,10 @@
                   <span class="pill" :class="p.sipStatus === 'registered' ? 'pill-on' : 'pill-off'">{{ p.sipStatus || 'unknown' }}</span>
                 </td>
                 <td><span :class="p.reachable ? 'st-text-up' : 'st-text-down'">{{ p.reachable ? 'yes' : 'no' }}</span></td>
-                <!-- The bubble sits on the cell, not the switch: a disabled
-                     button receives no pointer events of its own. -->
-                <td class="center" :data-tooltip="canWrite ? null : 'Sign in to change which lines are monitored'"
-                  data-tip-pos="top">
+                <td class="center">
                   <button type="button" class="switch" :class="{ on: !p.excluded }" role="switch"
                     :aria-checked="!p.excluded" @click="toggleExclude(p)"
-                    :disabled="!canWrite" :aria-disabled="!canWrite ? 'true' : 'false'"
-                    :title="canWrite ? (p.excluded ? 'Excluded, click to monitor' : 'Monitored, click to exclude') : null">
+                    :title="p.excluded ? 'Excluded, click to monitor' : 'Monitored, click to exclude'">
                     <span class="knob"></span>
                   </button>
                 </td>
@@ -234,15 +224,10 @@ import MonitorToggle from '@/components/MonitorToggle.vue'
 import RangeSelector from '@/components/RangeSelector.vue'
 import HistoryChart from '@/components/HistoryChart.vue'
 import { generatePrettyTimeAgo } from '@/utils/time'
-import { addToast, can, historyRange, setHistoryRange } from '@/store'
+import { addToast, historyRange, setHistoryRange } from '@/store'
 
 const route = useRoute()
 const routeKey = computed(() => route.params.key || '')
-
-// Force sweep, the threshold editor and the per-line exclusions all write, so
-// they need operator. Reading the roster, the history and the exports stays
-// open, which is what the wallboards run on.
-const canWrite = computed(() => can('operator'))
 
 const locationName = computed(() => {
   const slug = (route.params.key || '').replace(/^phones_/, '')
@@ -464,9 +449,6 @@ watch(historyRange, fetchHistory)
 // push (detected by a changed updatedAt) for up to ~15s.
 const sweeping = ref(false)
 const forceSweep = async () => {
-  // Guarded as well as disabled: a stale render or a console call must not put
-  // work on the collector.
-  if (!can('operator')) return
   if (sweeping.value) return
   sweeping.value = true
   const before = updatedAt.value
@@ -491,7 +473,6 @@ const forceSweep = async () => {
 // Toggle a phone in/out of the exclusion list (persisted server-side; the
 // collector picks it up next sweep). Optimistic local update for instant feedback.
 const toggleExclude = async (p) => {
-  if (!can('operator')) return
   const next = !p.excluded
   p.excluded = next
   const who = `${p.ext}${p.name ? ' · ' + p.name : ''}`
@@ -534,7 +515,6 @@ const toggleSettings = () => {
 }
 const setScope = (s) => { scope.value = s; applyFormFromScope() }
 const saveSettings = async () => {
-  if (!can('operator')) return
   try {
     const res = await fetch(`/api/v1/phones/${route.params.key}/settings`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -547,7 +527,6 @@ const saveSettings = async () => {
   } catch (e) { addToast('Couldn’t save thresholds — try again', 'error') }
 }
 const useGlobal = async () => {
-  if (!can('operator')) return
   try {
     const res = await fetch(`/api/v1/phones/${route.params.key}/settings`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
