@@ -148,6 +148,34 @@
 .il-backdrop-in { animation: il-backdrop var(--dur-2) ease; }
 .il-modal-in    { animation: il-modal var(--dur-3) var(--ease-out-quart); }
 
+/* Location card rhythm.
+ *
+ * Every card on the wall is the same object, so it has to keep the same
+ * geometry whether the site has two rows or seven. Two rules do that work:
+ * the bar height is a single shared value rather than a function of how many
+ * rows a card happens to have, and the Overall row is pinned to the bottom
+ * edge so the space a short card has spare becomes a deliberate gap above a
+ * summary rail instead of a void trailing off the end.
+ */
+.loc-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+.loc-rows.loc-dense { gap: 0.25rem; }
+/* The summary rail. margin-top:auto is what turns leftover height into one
+   intentional gap; the hairline stops the row reading as stranded. */
+.loc-row.is-overall {
+    margin-top: auto;
+    padding-top: 0.45rem;
+    border-top: 1px solid hsl(var(--border) / 0.7);
+}
+/* A card with nothing but Overall (every row hidden) still needs to sit at the
+   same height as its neighbours rather than collapsing. */
+.loc-rows > .loc-row.is-overall:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+
 /* Status ping cells — smooth colour changes + subtle hover emphasis.
    Shared by LocationCard / EndpointCard / SuiteCard. */
 .ping-cell {
@@ -334,17 +362,21 @@
     height: 100%;
     padding: 2cqh 5cqw 2.5cqh !important;
 }
-/* Rows spread evenly down the card (even rhythm, fills the height) without
-   stretching any bar. */
+/* An even gap, NOT space-between: with two rows, space-between throws them to
+   opposite ends of the card and the wall stops looking like a grid. The gap is
+   derived from the densest card on the dashboard so every card breathes the
+   same amount. */
 .fs-active .loc-rows {
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: flex-start;
+    gap: clamp(0.8cqh, calc(34cqh / var(--loc-max-rows, 6)), 4.5cqh);
     padding: 1.5cqh 0;
 }
-.fs-active .loc-rows > * {
-    margin-top: 0 !important;
+.fs-active .loc-row.is-overall {
+    margin-top: auto;
+    padding-top: clamp(0.6cqh, calc(20cqh / var(--loc-max-rows, 6)), 2.4cqh);
 }
 .fs-active .loc-row {
     display: flex;
@@ -354,9 +386,13 @@
 .fs-active .loc-bars {
     gap: 1cqw;
 }
-/* Short-and-wide status bars, sized to the card (not stretched). */
+/* Short-and-wide status bars, sized to the card (not stretched).
+ *
+ * Height comes from the DENSEST card on the dashboard, not from this card's own
+ * row count, so a two-row site and a seven-row site show bars of exactly the
+ * same size. --loc-max-rows is set on the grid by Home.vue and inherits. */
 .fs-active .loc-bars > div {
-    height: 8.5cqh !important;
+    height: clamp(3.4cqh, calc(50cqh / var(--loc-max-rows, 6)), 9cqh) !important;
     border-radius: 0.6cqw;
 }
 /* Card title + status badge. */
@@ -423,11 +459,10 @@
     font-size: 3cqw !important;
     line-height: 1.25;
 }
-/* Five or more rows: thin the bars so a UniFi-equipped site still fits its
-   card at the same rhythm as the rest of the wall. */
-.fs-active .loc-rows.loc-dense .loc-bars > div {
-    height: 6.5cqh !important;
-}
+/* No per-card bar-height override here on purpose. Thinning only the dense
+   cards is what made a two-row card and a seven-row card disagree about how
+   tall a status bar is; --loc-max-rows above already sizes every bar on the
+   wall against the densest card. */
 .fs-active .loc-age {
     margin-top: 0 !important;
     padding-left: 29cqw !important;

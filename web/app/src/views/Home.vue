@@ -42,7 +42,7 @@
             :class="(dashboardView === 'horizontal' || isFullscreen)
               ? 'gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
               : 'gap-5 grid-cols-1 max-w-3xl mx-auto'"
-            :style="{ '--fs-cols': fsCols }">
+            :style="{ '--fs-cols': fsCols, '--loc-max-rows': maxRowCount }">
             <LocationCard
               v-for="(location, index) in paginatedLocations"
               :key="location.name"
@@ -52,6 +52,7 @@
               class="motion-rise"
               :style="{ '--d': Math.min(index, 14) * 40 + 'ms' }"
               @showTooltip="showTooltip"
+              @rowcount="noteRowCount"
             />
           </div>
         </div>
@@ -102,7 +103,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { AlertCircle, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import LocationCard from '@/components/LocationCard.vue'
@@ -111,7 +112,7 @@ import Settings from '@/components/Settings.vue'
 import Loading from '@/components/Loading.vue'
 import AnnouncementBanner from '@/components/AnnouncementBanner.vue'
 import PastAnnouncements from '@/components/PastAnnouncements.vue'
-import { controls, soundEnabled, simulations, knownLocations, isFullscreen, dashboardView } from '@/store'
+import { controls, soundEnabled, simulations, knownLocations, isFullscreen, dashboardView, isCardHidden, cardOrder } from '@/store'
 import { playUp, playDown, playDegraded } from '@/utils/sounds'
 
 const props = defineProps({
@@ -188,8 +189,18 @@ const locations = computed(() => {
     list = list.filter(loc => loc.endpoints.some(everFailed))
   }
 
+  // Cards hidden in the shared layout. Hiding is presentation only: the
+  // endpoints behind the card are still checked and still alert.
+  list = list.filter(loc => !isCardHidden(loc.name))
+
+  // A card the user has placed sits where they put it. Everything unarranged
+  // keeps the old behaviour and follows after, so a newly discovered site lands
+  // at the end instead of jumping into the middle of a deliberate arrangement.
   if (controls.sortBy === 'health') {
     list.sort((a, b) => {
+      const ao = cardOrder(a.name)
+      const bo = cardOrder(b.name)
+      if (ao !== bo) return ao - bo
       const ap = pinRank(a.name)
       const bp = pinRank(b.name)
       if (ap !== bp) return ap - bp // pinned cards last, even when unhealthy
@@ -200,7 +211,9 @@ const locations = computed(() => {
     })
   } else {
     list.sort((a, b) =>
-      pinRank(a.name) - pinRank(b.name) || a.name.localeCompare(b.name))
+      cardOrder(a.name) - cardOrder(b.name) ||
+      pinRank(a.name) - pinRank(b.name) ||
+      a.name.localeCompare(b.name))
   }
 
   return list
@@ -250,6 +263,19 @@ const paginatedSuites = computed(() => {
 
 // Balanced column count for the fullscreen grid: pick the layout that fills the
 // screen evenly (fewest empty cells, no lone-orphan row, roughly widescreen).
+// Bar height is shared across the wall rather than derived per card, so the
+// grid needs the densest visible card's row count. Cards report their own; only
+// the ones actually on screen are counted, so a hidden or filtered-out card
+// cannot leave a stale number behind and squash everything else.
+const rowCounts = reactive({})
+const noteRowCount = ({ name, count }) => { rowCounts[name] = count }
+const maxRowCount = computed(() => {
+  const counts = paginatedLocations.value.map((loc) => rowCounts[loc.name] || 0)
+  // Floor of 4: a wall made entirely of two-row cards should not inflate its
+  // bars to fill the screen.
+  return Math.max(4, ...counts)
+})
+
 const fsCols = computed(() => {
   const n = locations.value.length
   if (n <= 1) return 1

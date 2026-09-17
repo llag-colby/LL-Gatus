@@ -191,6 +191,172 @@ export async function setMonitored(key, monitored) {
 refreshMonitoring()
 setInterval(refreshMonitoring, 30000)
 
+// --- Dashboard layout ---
+// Which cards and rows are shown, in what order, under what name. Persisted
+// server-side to /data so every screen shows the same arranged dashboard: the
+// wallboard, the TV and a laptop all agree. Per-viewer taste (colours, sound,
+// refresh interval) stays in localStorage instead, because that genuinely is
+// per-screen.
+//
+// PRESENTATION ONLY. Hiding a row hides the row; it does not stop the check, and
+// a hidden row that goes down still turns its card red. setMonitored above is
+// the control that actually stops something.
+export const layout = ref({ cards: {} })
+
+let layoutGeneration = 0
+
+function cardEntry(cardName) {
+  return (layout.value.cards && layout.value.cards[cardName]) || {}
+}
+
+function rowEntry(cardName, rowKey) {
+  return (cardEntry(cardName).rows && cardEntry(cardName).rows[rowKey]) || {}
+}
+
+export function isCardHidden(cardName) {
+  return !!cardEntry(cardName).hidden
+}
+
+export function isRowHidden(cardName, rowKey) {
+  return !!rowEntry(cardName, rowKey).hidden
+}
+
+// An override wins; otherwise the caller's derived default stands.
+export function cardTitleFor(cardName) {
+  return cardEntry(cardName).title || cardName
+}
+
+export function rowLabelFor(cardName, rowKey, derived) {
+  return rowEntry(cardName, rowKey).label || derived
+}
+
+// Unarranged cards and rows sort after arranged ones and keep whatever order
+// the caller already had, so a newly discovered site lands at the end rather
+// than jumping into the middle of a deliberate arrangement.
+const UNARRANGED = 1e6
+
+export function cardOrder(cardName) {
+  const order = cardEntry(cardName).order
+  return typeof order === 'number' ? order : UNARRANGED
+}
+
+export function rowOrder(cardName, rowKey) {
+  const order = rowEntry(cardName, rowKey).order
+  return typeof order === 'number' ? order : UNARRANGED
+}
+
+export async function refreshLayout() {
+  const startedAt = layoutGeneration
+  try {
+    const response = await fetch('/api/v1/layout', { cache: 'no-store' })
+    if (!response.ok) return
+    const data = await response.json()
+    if (layoutGeneration === startedAt) {
+      layout.value = { cards: data.cards || {} }
+    }
+  } catch (e) {
+    // non-fatal - keep the arrangement we already have
+  }
+}
+
+// Every mutation goes through here: apply locally so the change is instant, then
+// persist the whole document. Reverted with a toast if the server refuses, so
+// the screen never claims an arrangement that did not save.
+async function commitLayout(next, description) {
+  layoutGeneration++
+  const before = layout.value
+  layout.value = next
+  try {
+    const response = await fetch('/api/v1/layout', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cards: next.cards }),
+    })
+    if (!response.ok) throw new Error(String(response.status))
+    const data = await response.json()
+    layout.value = { cards: data.cards || {} }
+  } catch (e) {
+    layout.value = before
+    addToast(`Couldn't save the layout${description ? ' - ' + description : ''}`, 'error')
+  }
+}
+
+// Structured-clone the document before mutating so an optimistic update that
+// has to be rolled back restores the previous object rather than one that was
+// edited in place underneath it.
+function draft() {
+  const cards = {}
+  for (const [name, card] of Object.entries(layout.value.cards || {})) {
+    cards[name] = { ...card, rows: { ...(card.rows || {}) } }
+  }
+  return { cards }
+}
+
+function ensureCard(next, cardName) {
+  if (!next.cards[cardName]) next.cards[cardName] = { rows: {} }
+  if (!next.cards[cardName].rows) next.cards[cardName].rows = {}
+  return next.cards[cardName]
+}
+
+export function setCardHidden(cardName, hidden) {
+  const next = draft()
+  ensureCard(next, cardName).hidden = !!hidden
+  return commitLayout(next, `${hidden ? 'hiding' : 'showing'} ${cardName}`)
+}
+
+export function setRowHidden(cardName, rowKey, hidden) {
+  const next = draft()
+  const card = ensureCard(next, cardName)
+  card.rows[rowKey] = { ...(card.rows[rowKey] || {}), hidden: !!hidden }
+  return commitLayout(next, `${hidden ? 'hiding' : 'showing'} a row on ${cardName}`)
+}
+
+export function setCardTitle(cardName, title) {
+  const next = draft()
+  ensureCard(next, cardName).title = (title || '').trim()
+  return commitLayout(next, `renaming ${cardName}`)
+}
+
+export function setRowLabel(cardName, rowKey, label) {
+  const next = draft()
+  const card = ensureCard(next, cardName)
+  card.rows[rowKey] = { ...(card.rows[rowKey] || {}), label: (label || '').trim() }
+  return commitLayout(next, `renaming a row on ${cardName}`)
+}
+
+// Order is rewritten as a dense 0..n-1 sequence from the list the caller shows,
+// so there are no gaps to reason about and a reorder cannot collide with an
+// unarranged entry sitting at UNARRANGED.
+export function setCardOrder(cardNames) {
+  const next = draft()
+  cardNames.forEach((name, i) => { ensureCard(next, name).order = i })
+  return commitLayout(next, 'reordering the dashboard')
+}
+
+export function setRowOrder(cardName, rowKeys) {
+  const next = draft()
+  const card = ensureCard(next, cardName)
+  rowKeys.forEach((key, i) => { card.rows[key] = { ...(card.rows[key] || {}), order: i } })
+  return commitLayout(next, `reordering ${cardName}`)
+}
+
+export async function resetLayout() {
+  layoutGeneration++
+  const before = layout.value
+  layout.value = { cards: {} }
+  try {
+    const response = await fetch('/api/v1/layout', { method: 'DELETE' })
+    if (!response.ok) throw new Error(String(response.status))
+    addToast('Dashboard layout reset', 'success')
+  } catch (e) {
+    layout.value = before
+    addToast("Couldn't reset the layout", 'error')
+  }
+}
+
+refreshLayout()
+setInterval(refreshLayout, 30000)
+
 // --- Shared history time range ---
 // One selection drives every drill-down, so moving from a site to an endpoint to
 // the phone panel keeps you in the same window instead of resetting to a default

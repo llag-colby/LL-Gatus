@@ -8,6 +8,18 @@ Customized fork of [TwiN/gatus](https://github.com/TwiN/gatus) for Long Lewis.
 > Legend: `+` added · `-` removed/changed · `~` fixed
 
 ## Unreleased
++ **Dashboard layout is editable and shared.** The card gear menu gains a Layout
+  tab: hide, reorder and rename any row, hide or reset the whole card. Stored
+  server-side in `/data/layout.json`, so every screen shows the same arranged
+  dashboard. Purely presentational - a hidden row is still checked, still
+  alerts, and still counts towards its card's status. `GET/PUT/DELETE
+  /api/v1/layout`.
+- Card geometry is uniform again. Status bars are sized against the densest card
+  on the wall rather than each card's own row count, so a two-row site and a
+  seven-row site show identically sized bars; the Overall row is pinned to the
+  bottom edge behind a hairline, turning a short card's spare height into one
+  deliberate gap instead of a void; and fullscreen uses an even gap rather than
+  `space-between`, which threw two-row cards to opposite ends of the card.
 - Location cards draw only the rows a site actually has. A rooftop with one
   circuit no longer shows an empty WAN 2 lane, and a site with no PBX no longer
   shows an empty Phones lane. A lane of grey bars read as an outage rather than

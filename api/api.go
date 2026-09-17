@@ -168,6 +168,14 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	apiV1Router.Get("/v1/unifi/:key/settings", GetUniFiSettings)
 	apiV1Router.Post("/v1/unifi/:key/settings", SetUniFiSettings)
 	apiV1Router.Get("/v1/unifi/:key", GetUniFiSnapshot)
+	// Dashboard layout: which cards and rows are shown, in what order, under
+	// what name. Presentation only, shared by every screen, and deliberately
+	// separate from /v1/monitoring, which is the control that actually stops a
+	// check. Static route registered before nothing in particular here, but kept
+	// with its siblings for findability.
+	apiV1Router.Get("/v1/layout", GetLayout)
+	apiV1Router.Put("/v1/layout", SetLayout)
+	apiV1Router.Delete("/v1/layout", ResetLayout)
 	// Collector metric history: the counts behind the phones, firewall and
 	// wireless rows, sampled over time. Raw for recent windows, hourly rollups
 	// beyond; the response says which resolution it served.

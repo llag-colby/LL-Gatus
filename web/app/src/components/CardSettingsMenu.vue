@@ -7,7 +7,7 @@
       :class="{ open }"
       aria-haspopup="dialog"
       :aria-expanded="open ? 'true' : 'false'"
-      :aria-label="`Monitoring settings for ${name}`"
+      :aria-label="`Settings for ${name}`"
       @click="toggleOpen"
     >
       <Settings class="gear-ico" aria-hidden="true" />
@@ -30,14 +30,34 @@
         @keydown.tab="wrapFocus"
       >
         <div class="pop-head">
-          <div class="eyebrow">Monitoring</div>
-          <div :id="headingId" class="pop-title">{{ name }}</div>
+          <div :id="headingId" class="pop-title">{{ title }}</div>
+          <!-- Two tabs, not one merged list. Pausing stops a check for everyone;
+               hiding only stops drawing it. Those must never look like the same
+               switch. -->
+          <div class="tabs" role="tablist">
+            <button
+              type="button" class="tab" :class="{ on: tab === 'monitoring' }"
+              role="tab" :aria-selected="tab === 'monitoring'"
+              @click="tab = 'monitoring'"
+            >Monitoring</button>
+            <button
+              type="button" class="tab" :class="{ on: tab === 'layout' }"
+              role="tab" :aria-selected="tab === 'layout'"
+              @click="tab = 'layout'"
+            >Layout</button>
+          </div>
           <p :id="hintId" class="pop-hint">
-            Turning a row off stops its checks and alerts. Recorded history is kept.
+            <template v-if="tab === 'monitoring'">
+              Turning a row off stops its checks and alerts. Recorded history is kept.
+            </template>
+            <template v-else>
+              Hiding only stops a row being drawn. It is still checked, still alerts, and
+              still counts towards this card's status. Everyone sees the same layout.
+            </template>
           </p>
         </div>
 
-        <ul class="pop-rows">
+        <ul v-if="tab === 'monitoring'" class="pop-rows">
           <li v-for="row in rows" :key="row.key" class="pop-row" :class="{ unset: !keysOf(row).length }">
             <div class="row-text">
               <span class="row-label">{{ row.label }}</span>
@@ -65,17 +85,76 @@
           </li>
         </ul>
 
+        <ul v-else class="pop-rows">
+          <li v-for="(row, i) in rows" :key="row.key" class="pop-row lay-row" :class="{ off: row.hidden }">
+            <div class="row-text">
+              <input
+                v-if="renamingKey === row.key"
+                ref="renameEl"
+                v-model="renameValue"
+                class="row-rename"
+                type="text"
+                :maxlength="60"
+                :aria-label="`Name for the ${row.label} row`"
+                @keydown.enter.prevent="commitRename(row)"
+                @keydown.esc.stop.prevent="cancelRename"
+                @blur="commitRename(row)"
+              />
+              <button
+                v-else
+                type="button"
+                class="row-label row-rename-trigger"
+                :aria-label="`Rename the ${row.label} row`"
+                @click="startRename(row)"
+              >{{ row.label }}</button>
+            </div>
+
+            <div class="lay-actions">
+              <button
+                type="button" class="ico" :disabled="i === 0 || busy"
+                :aria-label="`Move ${row.label} up`" @click="move(i, -1)"
+              ><ChevronUp class="ico-svg" aria-hidden="true" /></button>
+              <button
+                type="button" class="ico" :disabled="i === rows.length - 1 || busy"
+                :aria-label="`Move ${row.label} down`" @click="move(i, 1)"
+              ><ChevronDown class="ico-svg" aria-hidden="true" /></button>
+              <button
+                type="button" class="ico" :disabled="busy"
+                :aria-label="row.hidden ? `Show ${row.label}` : `Hide ${row.label}`"
+                :data-tooltip="row.hidden ? 'Hidden' : 'Visible'"
+                @click="toggleHidden(row)"
+              >
+                <EyeOff v-if="row.hidden" class="ico-svg" aria-hidden="true" />
+                <Eye v-else class="ico-svg" aria-hidden="true" />
+              </button>
+            </div>
+          </li>
+        </ul>
+
         <div class="pop-foot">
-          <Button
-            variant="outline"
-            size="sm"
-            class="w-full text-xs h-8"
-            :disabled="configuredRows.length === 0 || busy"
-            @click="toggleAll"
-          >
-            {{ allPaused ? 'Resume all' : 'Pause all' }}
-          </Button>
-          <div class="foot-note">{{ footNote }}</div>
+          <template v-if="tab === 'monitoring'">
+            <Button
+              variant="outline"
+              size="sm"
+              class="w-full text-xs h-8"
+              :disabled="configuredRows.length === 0 || busy"
+              @click="toggleAll"
+            >
+              {{ allPaused ? 'Resume all' : 'Pause all' }}
+            </Button>
+            <div class="foot-note">{{ footNote }}</div>
+          </template>
+          <template v-else>
+            <div class="foot-pair">
+              <Button variant="outline" size="sm" class="flex-1 text-xs h-8" :disabled="busy" @click="hideCard">
+                Hide this card
+              </Button>
+              <Button variant="ghost" size="sm" class="text-xs h-8 text-muted-foreground" :disabled="busy" @click="resetCard">
+                Reset
+              </Button>
+            </div>
+            <div class="foot-note">{{ layoutFootNote }}</div>
+          </template>
         </div>
       </div>
     </Teleport>
@@ -84,9 +163,12 @@
 
 <script setup>
 import { computed, nextTick, onUnmounted, ref, useId } from 'vue'
-import { Settings } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, Eye, EyeOff, Settings } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import { isMonitored, setMonitored } from '@/store'
+import {
+  isMonitored, setMonitored,
+  cardTitleFor, setCardHidden, setRowHidden, setRowLabel, setRowOrder, setCardTitle,
+} from '@/store'
 
 const props = defineProps({
   name: { type: String, required: true },
@@ -98,6 +180,10 @@ const hintId = useId()
 
 const open = ref(false)
 const busy = ref(false)
+const tab = ref('monitoring')
+const renamingKey = ref(null)
+const renameValue = ref('')
+const renameEl = ref(null)
 const top = ref(0)
 const left = ref(0)
 const gearEl = ref(null)
@@ -133,6 +219,82 @@ const footNote = computed(() => {
   const paused = pausedCount.value
   if (paused === 0) return `All ${total} checks are running.`
   return `${paused} of ${total} checks paused.`
+})
+
+// --- layout actions --------------------------------------------------------
+// All of these write the shared arrangement, so they are optimistic in the store
+// and roll back with a toast if the save fails.
+
+const title = computed(() => cardTitleFor(props.name))
+
+const hiddenCount = computed(() => props.rows.filter((r) => r.hidden).length)
+const layoutFootNote = computed(() => {
+  const total = props.rows.length
+  if (total === 0) return 'This card has no rows to arrange.'
+  const hidden = hiddenCount.value
+  if (hidden === 0) return `All ${total} rows are shown.`
+  return `${hidden} of ${total} rows hidden.`
+})
+
+const withBusy = async (fn) => {
+  busy.value = true
+  try {
+    await fn()
+  } finally {
+    busy.value = false
+    place()
+  }
+}
+
+const toggleHidden = (row) => withBusy(() => setRowHidden(props.name, row.key, !row.hidden))
+
+// Order is written as the full sequence rather than a pair of swaps, so the
+// stored arrangement is always dense and complete for this card.
+const move = (index, delta) => {
+  const target = index + delta
+  if (target < 0 || target >= props.rows.length) return
+  const keys = props.rows.map((r) => r.key)
+  const [moved] = keys.splice(index, 1)
+  keys.splice(target, 0, moved)
+  return withBusy(() => setRowOrder(props.name, keys))
+}
+
+const startRename = async (row) => {
+  renamingKey.value = row.key
+  renameValue.value = row.label
+  await nextTick()
+  const el = Array.isArray(renameEl.value) ? renameEl.value[0] : renameEl.value
+  el?.focus()
+  el?.select()
+}
+
+const cancelRename = () => {
+  renamingKey.value = null
+  renameValue.value = ''
+}
+
+const commitRename = (row) => {
+  if (renamingKey.value !== row.key) return
+  const next = renameValue.value.trim()
+  cancelRename()
+  // Unchanged, or cleared back to the derived label: an empty override means
+  // "use whatever the config implies", which is how you undo a rename.
+  if (next === row.label) return
+  return withBusy(() => setRowLabel(props.name, row.key, next))
+}
+
+const hideCard = () => withBusy(async () => {
+  await setCardHidden(props.name, true)
+  close()
+})
+
+// Clears this card's overrides only: its title, and every row's label, order and
+// hidden flag. The rest of the dashboard keeps its arrangement.
+const resetCard = () => withBusy(async () => {
+  await setCardTitle(props.name, '')
+  await setRowOrder(props.name, [])
+  await Promise.all(props.rows.map((row) => setRowHidden(props.name, row.key, false)))
+  await Promise.all(props.rows.map((row) => setRowLabel(props.name, row.key, '')))
 })
 
 // --- positioning: viewport coordinates, clamped on both axes ---------------
@@ -230,6 +392,9 @@ const openMenu = async () => {
 function close() {
   if (!open.value) return
   open.value = false
+  // An in-flight rename dies with the panel rather than reappearing, half
+  // typed, the next time it opens.
+  cancelRename()
   removeListeners()
   if (gearEl.value) gearEl.value.focus()
 }
@@ -388,6 +553,67 @@ onUnmounted(removeListeners)
 }
 
 /* --- footer --- */
+/* --- tabs --- */
+.tabs {
+  display: inline-flex;
+  gap: 0.15rem;
+  margin: 0.45rem 0 0.15rem;
+  padding: 0.12rem;
+  border-radius: 7px;
+  background: hsl(var(--muted) / 0.6);
+}
+.tab {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.18rem 0.5rem;
+  border-radius: 5px;
+  color: hsl(var(--muted-foreground));
+  transition: color 0.14s ease, background 0.14s ease;
+}
+.tab:hover { color: hsl(var(--foreground)); }
+.tab.on { color: hsl(var(--foreground)); background: hsl(var(--background)); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+.tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+
+/* --- layout rows --- */
+/* A hidden row stays legible rather than greyed to the edge of readability:
+   it is the one you are most likely to be looking for. */
+.lay-row.off .row-label { color: hsl(var(--muted-foreground)); text-decoration: line-through; }
+.lay-actions { display: inline-flex; align-items: center; gap: 0.1rem; flex-shrink: 0; }
+.ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 5px;
+  color: hsl(var(--muted-foreground));
+  transition: color 0.14s ease, background 0.14s ease;
+}
+.ico:hover:not(:disabled) { color: hsl(var(--foreground)); background: hsl(var(--accent) / 0.6); }
+.ico:disabled { opacity: 0.3; cursor: default; }
+.ico:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.ico-svg { width: 0.85rem; height: 0.85rem; }
+.row-rename-trigger {
+  text-align: left;
+  border-bottom: 1px dashed transparent;
+  transition: border-color 0.14s ease;
+}
+.row-rename-trigger:hover { border-bottom-color: hsl(var(--muted-foreground) / 0.6); }
+.row-rename-trigger:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: 3px; }
+.row-rename {
+  width: 100%;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 5px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+.row-rename:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.foot-pair { display: flex; align-items: center; gap: 0.35rem; }
+
 .pop-foot {
   margin-top: 0.6rem;
   padding-top: 0.55rem;

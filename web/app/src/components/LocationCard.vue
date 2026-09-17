@@ -6,7 +6,7 @@
     <CardHeader class="px-3 sm:px-5 pt-3 sm:pt-4 pb-2 space-y-0">
       <div class="flex items-start justify-between gap-2">
         <CardTitle class="text-base sm:text-lg truncate">
-          <span :data-tooltip="name" class="block truncate">{{ name }}</span>
+          <span :data-tooltip="title" class="block truncate">{{ title }}</span>
         </CardTitle>
         <div class="flex-shrink-0 flex items-center gap-1">
           <CardSettingsMenu :name="name" :rows="settingsRows" />
@@ -17,11 +17,13 @@
     </CardHeader>
 
     <CardContent class="loc-content flex-1 pb-3 sm:pb-4 px-3 sm:px-5 pt-1">
-      <!-- loc-dense: five or more rows (a site with UniFi) tightens the rhythm
-           and thins the fullscreen bars so the card doesn't outgrow its grid. -->
-      <div class="loc-rows space-y-1.5" :class="{ 'loc-dense': displayRows.length > 4 }">
+      <!-- loc-dense: five or more rows tightens the GAP only. Bar height is
+           uniform across every card on the wall (see --loc-bar-h), because a
+           two-row site and a seven-row site sitting side by side with different
+           sized bars is what made the grid read as broken. -->
+      <div class="loc-rows" :class="{ 'loc-dense': displayRows.length > 4 }">
         <div v-for="(row, rowIdx) in displayRows" :key="row.key" class="loc-row flex items-center gap-2"
-          :class="{ 'opacity-50': row.paused }">
+          :class="{ 'opacity-50': row.paused, 'is-overall': row.isOverall }">
           <!-- Row label -->
           <div class="loc-rowlabel w-16 sm:w-[68px] shrink-0">
             <component
@@ -109,13 +111,13 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { generatePrettyTimeAgo } from '@/utils/time'
 import CardSettingsMenu from '@/components/CardSettingsMenu.vue'
-import { now, simulations, unifiSnapshots, isMonitored } from '@/store'
+import { now, simulations, unifiSnapshots, isMonitored, cardTitleFor, rowLabelFor, isRowHidden, rowOrder } from '@/store'
 
 const router = useRouter()
 
@@ -125,7 +127,7 @@ const props = defineProps({
   maxResults: { type: Number, default: 50 },
 })
 
-const emit = defineEmits(['showTooltip'])
+const emit = defineEmits(['showTooltip', 'rowcount'])
 
 // Latency thresholds (ms) for the Overall Health row.
 const LATENCY_GOOD = 100
@@ -378,7 +380,7 @@ const metricFor = (kind, endpoint) => {
   return latencyOf(endpoint)
 }
 
-const displayRows = computed(() => {
+const allRows = computed(() => {
   const rows = []
   const s = slots.value
 
@@ -386,10 +388,11 @@ const displayRows = computed(() => {
   // bars reads as an outage rather than as an absence, and a site with one
   // circuit and no phone system should simply show fewer rows than one with
   // both. Every row the card draws therefore has something to report.
-  const pushEndpointRow = (label, endpoint, keyName) => {
+  const pushEndpointRow = (derivedLabel, endpoint, keyName) => {
     if (!endpoint) return
     const metric = metricFor(keyName, endpoint)
     const paused = !isMonitored(endpoint.key)
+    const label = rowLabelFor(props.name, keyName, derivedLabel)
     rows.push({
       key: keyName,
       label,
@@ -411,7 +414,8 @@ const displayRows = computed(() => {
   }
 
   // One row, several endpoints, bars cut into a slice each.
-  const pushSegmentedRow = (label, endpoints, keyName) => {
+  const pushSegmentedRow = (derivedLabel, endpoints, keyName) => {
+    const label = rowLabelFor(props.name, keyName, derivedLabel)
     const metric = segmentedMetric(endpoints)
     // Only "paused" once every slice is paused — otherwise the row is still
     // reporting something and dimming the whole thing would hide it.
@@ -450,16 +454,20 @@ const displayRows = computed(() => {
     pushEndpointRow('Firewall', s.firewall, 'firewall')
     pushEndpointRow('Wireless', s.wireless, 'wireless')
     pushEndpointRow('Phones', s.phones, 'phones')
-    s.others.forEach((ep, i) => pushEndpointRow(shortLabel(ep.group), ep, `other-${i}`))
+    s.others.forEach((ep) => pushEndpointRow(shortLabel(ep.group), ep, `ep:${ep.key}`))
   } else {
     // No WAN layout (e.g. a standalone monitor) — one row per endpoint. The
     // fall-back to props.endpoints is only for a card with nothing classified
     // at all; DNS endpoints have their own row below and must not double up.
     const list = (s.others.length || s.dns.length) ? s.others : props.endpoints
-    list.forEach((ep, i) => pushEndpointRow(shortLabel(ep.group) || ep.name, ep, `ep-${i}`))
+    list.forEach((ep) => pushEndpointRow(shortLabel(ep.group) || ep.name, ep, `ep:${ep.key}`))
   }
 
   if (s.dns.length) pushSegmentedRow('DNS', s.dns, 'dns')
+
+  // Ordered by the shared layout. Sort is stable, so rows nobody has arranged
+  // keep the order above and sit after the arranged ones.
+  rows.sort((a, b) => rowOrder(props.name, a.key) - rowOrder(props.name, b.key))
 
   rows.push({
     key: 'overall',
@@ -478,23 +486,41 @@ const displayRows = computed(() => {
   return rows
 })
 
-// Rows the card's settings menu can switch, in the order they appear. Overall is
+// Overall is never hidden: it is the card's rollup and its only drill-in to the
+// site view, and a card with every row hidden still has to say something.
+const displayRows = computed(() =>
+  allRows.value.filter((row) => row.isOverall || !isRowHidden(props.name, row.key))
+)
+
+const title = computed(() => cardTitleFor(props.name))
+
+// The dashboard sizes every card's status bars against the densest card on the
+// wall, so it has to know how many rows this one drew.
+watch(
+  () => displayRows.value.length,
+  (count) => emit('rowcount', { name: props.name, count }),
+  { immediate: true }
+)
+
+// Rows the card's settings menu can act on, in the order they appear. Overall is
 // a rollup of the others, not a monitor of its own, so it isn't switchable.
 // One entry per ROW, so the menu matches what the card draws. A sliced row is
 // several endpoints behind one switch rather than several switches, which is
 // what stops DNS from being one row here and three over there.
+//
+// Built from allRows, not displayRows: a hidden row has to stay in the menu or
+// there is no way to bring it back.
 const settingsRows = computed(() =>
-  displayRows.value
+  allRows.value
     .filter((row) => !row.isOverall)
-    .map((row) =>
-      row.segmentRows
-        ? {
-            key: row.key,
-            label: row.label,
-            endpointKeys: row.segmentRows.map((seg) => seg.endpointKey).filter(Boolean),
-          }
-        : { key: row.key, label: row.label, endpointKey: row.endpointKey }
-    )
+    .map((row) => ({
+      key: row.key,
+      label: row.label,
+      hidden: isRowHidden(props.name, row.key),
+      ...(row.segmentRows
+        ? { endpointKeys: row.segmentRows.map((seg) => seg.endpointKey).filter(Boolean) }
+        : { endpointKey: row.endpointKey }),
+    }))
 )
 
 // --- Current status for the badge (a simulation overrides the real status) ---
