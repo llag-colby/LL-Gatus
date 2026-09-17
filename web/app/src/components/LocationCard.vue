@@ -382,20 +382,25 @@ const displayRows = computed(() => {
   const rows = []
   const s = slots.value
 
+  // A row with no endpoint behind it is not drawn at all. An empty lane of grey
+  // bars reads as an outage rather than as an absence, and a site with one
+  // circuit and no phone system should simply show fewer rows than one with
+  // both. Every row the card draws therefore has something to report.
   const pushEndpointRow = (label, endpoint, keyName) => {
+    if (!endpoint) return
     const metric = metricFor(keyName, endpoint)
-    const paused = !!endpoint && !isMonitored(endpoint.key)
+    const paused = !isMonitored(endpoint.key)
     rows.push({
       key: keyName,
       label,
-      endpointKey: endpoint ? endpoint.key : null,
-      to: endpoint ? `/endpoints/${endpoint.key}` : null,
+      endpointKey: endpoint.key,
+      to: `/endpoints/${endpoint.key}`,
       tooltip: paused
         ? `${label}: monitoring paused`
-        : endpoint ? (metric.tooltip || endpoint.group || endpoint.name) : `${label}: no data`,
-      isp: endpoint ? ispFromGroup(endpoint.group) : '',
+        : metric.tooltip || endpoint.group || endpoint.name,
+      isp: ispFromGroup(endpoint.group),
       ip: ipOf(endpoint),
-      cells: endpoint ? endpointRowCells(endpoint) : Array.from({ length: props.maxResults }, () => ({ token: 'none', result: null })),
+      cells: endpointRowCells(endpoint),
       isOverall: false,
       paused,
       // A paused row shows why it is quiet instead of a number nobody is watching.
@@ -437,12 +442,13 @@ const displayRows = computed(() => {
   }
 
   if (hasWanLayout.value) {
+    // Each of these draws only where the site actually has one: a single-circuit
+    // rooftop gets no WAN 2 lane, a site with no PBX gets no Phones lane, and
+    // Firewall and Wireless appear only where a UniFi console is wired up.
     pushEndpointRow('WAN 1', s.wan1, 'wan1')
     pushEndpointRow('WAN 2', s.wan2, 'wan2')
-    // Firewall and Wireless appear only where a UniFi console is wired up, so
-    // sites without one don't grow two permanently empty rows.
-    if (s.firewall) pushEndpointRow('Firewall', s.firewall, 'firewall')
-    if (s.wireless) pushEndpointRow('Wireless', s.wireless, 'wireless')
+    pushEndpointRow('Firewall', s.firewall, 'firewall')
+    pushEndpointRow('Wireless', s.wireless, 'wireless')
     pushEndpointRow('Phones', s.phones, 'phones')
     s.others.forEach((ep, i) => pushEndpointRow(shortLabel(ep.group), ep, `other-${i}`))
   } else {

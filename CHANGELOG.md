@@ -8,6 +8,10 @@ Customized fork of [TwiN/gatus](https://github.com/TwiN/gatus) for Long Lewis.
 > Legend: `+` added · `-` removed/changed · `~` fixed
 
 ## Unreleased
+- Location cards draw only the rows a site actually has. A rooftop with one
+  circuit no longer shows an empty WAN 2 lane, and a site with no PBX no longer
+  shows an empty Phones lane. A lane of grey bars read as an outage rather than
+  as an absence. Firewall and Wireless already behaved this way.
 - **Sign-in removed.** The dashboard is open to anyone who can reach it: no
   login dialog, no user menu, no accounts page, no roles. Every control that
   used to need operator (pause monitoring, force ping, force sweep, phone
