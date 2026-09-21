@@ -137,13 +137,7 @@ const u=({name:t,iconNode:e,absoluteStrokeWidth:n,"absolute-stroke-width":o,stro
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
- */const r=(0,i.Z)("clock",[["path",{d:"M12 6v6l4 2",key:"mmk7yg"}],["circle",{cx:"12",cy:"12",r:"10",key:"1mglay"}]])},3244:function(t,e,n){n.d(e,{Z:function(){return r}});var i=n(4264);
-/**
- * @license lucide-vue-next v0.539.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */const r=(0,i.Z)("columns-3",[["rect",{width:"18",height:"18",x:"3",y:"3",rx:"2",key:"afitv7"}],["path",{d:"M9 3v18",key:"fh3hqa"}],["path",{d:"M15 3v18",key:"14nvp0"}]])},3322:function(t,e,n){n.d(e,{Z:function(){return r}});var i=n(4264);
+ */const r=(0,i.Z)("clock",[["path",{d:"M12 6v6l4 2",key:"mmk7yg"}],["circle",{cx:"12",cy:"12",r:"10",key:"1mglay"}]])},3322:function(t,e,n){n.d(e,{Z:function(){return r}});var i=n(4264);
 /**
  * @license lucide-vue-next v0.539.0 - ISC
  *

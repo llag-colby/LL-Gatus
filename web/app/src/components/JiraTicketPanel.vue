@@ -150,15 +150,15 @@ onUnmounted(() => { document.removeEventListener('keydown', onKey); stopPoll() }
 
 .td-body { padding: 1.1rem; }
 .td-loading, .td-error { padding: 2rem 0; color: hsl(var(--muted-foreground)); font-size: 0.9rem; }
-.td-error { color: #f2b8a2; }
+.td-error { color: var(--j-crit); }
 .td-summary { font-size: 1.15rem; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; }
 
 .td-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
 .td-status { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: hsl(var(--muted-foreground)); }
 .sdot { width: 7px; height: 7px; border-radius: 999px; background: hsl(var(--muted-foreground)); }
-.sdot.cat-new { background: #8a8f98; } .sdot.cat-indeterminate { background: #e0a458; } .sdot.cat-done { background: #5aa06b; }
+.sdot.cat-new { background: var(--j-idle); } .sdot.cat-indeterminate { background: var(--j-info); } .sdot.cat-done { background: var(--j-ok); }
 .td-prio { font-size: 0.8rem; font-weight: 600; }
-.td-breach { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #f2b8a2; background: rgb(190 60 40 / 0.18); padding: 0.12rem 0.45rem; border-radius: 5px; }
+.td-breach { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--j-crit); background: color-mix(in srgb, var(--j-crit) 18%, transparent); padding: 0.12rem 0.45rem; border-radius: 5px; }
 
 .td-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem 1rem; margin-top: 1.1rem; }
 .td-meta dt { font-size: 0.62rem; letter-spacing: 0.11em; text-transform: uppercase; color: hsl(var(--muted-foreground)); font-weight: 600; }
@@ -174,18 +174,18 @@ onUnmounted(() => { document.removeEventListener('keydown', onKey); stopPoll() }
 .sla-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.4rem 0; border-bottom: 1px solid hsl(var(--border) / 0.5); }
 .sla-list li:last-child { border-bottom: 0; }
 .sla-name { font-size: 0.85rem; }
-.sla-val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; color: #7bbd8a; }
-.sla-val.breach { color: #ef6b53; }
+.sla-val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; color: var(--j-ok); }
+.sla-val.breach { color: var(--j-crit); }
 
 .prose { font-size: 0.9rem; line-height: 1.6; color: hsl(var(--foreground)); word-break: break-word; }
 /* Force every element in the pasted Jira HTML to the readable foreground and drop
    any inherited background, so a macro / table / span can't render dark-on-dark. */
 .prose :deep(*) { color: hsl(var(--foreground)); background-color: transparent; border-color: hsl(var(--border)); }
 .prose :deep(p) { margin: 0 0 0.6rem; }
-.prose :deep(a) { color: #e0a458; text-decoration: underline; text-underline-offset: 2px; }
+.prose :deep(a) { color: var(--j-info); text-decoration: underline; text-underline-offset: 2px; }
 .prose :deep(ul), .prose :deep(ol) { margin: 0 0 0.6rem 1.1rem; }
 .prose :deep(h1), .prose :deep(h2), .prose :deep(h3), .prose :deep(h4) { font-weight: 700; margin: 0.6rem 0 0.3rem; }
-.prose :deep(code), .prose :deep(pre) { font-family: ui-monospace, monospace; background: hsl(var(--muted) / 0.6); padding: 0.05rem 0.3rem; border-radius: 4px; font-size: 0.9em; }
+.prose :deep(code), .prose :deep(pre) { font-family: var(--j-mono); background: hsl(var(--muted) / 0.6); padding: 0.05rem 0.3rem; border-radius: 4px; font-size: 0.9em; }
 .prose :deep(pre) { padding: 0.6rem 0.75rem; overflow-x: auto; }
 .prose :deep(table) { border-collapse: collapse; width: 100%; }
 .prose :deep(th), .prose :deep(td) { border: 1px solid hsl(var(--border)); padding: 0.3rem 0.5rem; text-align: left; }
@@ -200,17 +200,17 @@ onUnmounted(() => { document.removeEventListener('keydown', onKey); stopPoll() }
 .cmt-when { font-size: 0.72rem; color: hsl(var(--muted-foreground)); }
 .dim { color: hsl(var(--muted-foreground)); }
 
-.td-open { display: inline-flex; align-items: center; gap: 0.35rem; margin-top: 1.6rem; font-size: 0.82rem; color: #e0a458; text-decoration: none; }
+.td-open { display: inline-flex; align-items: center; gap: 0.35rem; margin-top: 1.6rem; font-size: 0.82rem; color: var(--j-info); text-decoration: none; }
 .td-open:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 .ttag { font-size: 10px; letter-spacing: 0.03em; text-transform: uppercase; padding: 0.1rem 0.4rem; border-radius: 5px; font-weight: 700; white-space: nowrap; }
-.ttag-incident { background: rgb(190 60 40 / 0.16); color: #ef8b74; }
+.ttag-incident { background: color-mix(in srgb, var(--j-crit) 16%, transparent); color: var(--j-crit); }
 .ttag-request { background: hsl(var(--muted) / 0.7); color: hsl(var(--foreground)); }
-.ttag-change { background: rgb(224 160 88 / 0.16); color: #e0a458; }
-.ttag-problem { background: rgb(224 160 88 / 0.18); color: #e6b877; }
+.ttag-change { background: color-mix(in srgb, var(--j-info) 14%, transparent); color: var(--j-info); }
+.ttag-problem { background: color-mix(in srgb, var(--j-warn) 18%, transparent); color: var(--j-warn); }
 .ttag-task { background: hsl(var(--muted) / 0.7); color: hsl(var(--muted-foreground)); }
 
-.prio-highest { color: #ef6b53; } .prio-high { color: #e0a458; } .prio-medium { color: hsl(var(--muted-foreground)); } .prio-low, .prio-lowest, .prio-none { color: hsl(var(--muted-foreground)); }
+.prio-highest { color: var(--j-crit); } .prio-high { color: var(--j-warn); } .prio-medium { color: hsl(var(--muted-foreground)); } .prio-low, .prio-lowest, .prio-none { color: hsl(var(--muted-foreground)); }
 
 /* drawer motion (transform only) */
 .drawer-enter-active, .drawer-leave-active { transition: opacity 0.2s ease; }

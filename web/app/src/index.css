@@ -99,6 +99,68 @@
 .st-bg-degraded { background-color: var(--status-degraded) !important; }
 .st-bg-down { background-color: var(--status-down) !important; }
 
+/* ------------------------------------------------------------------ */
+/*  SERVICE DESK (Jira) signal palette.                                */
+/*                                                                     */
+/*  Lives on :root rather than scoped to the page because the ticket   */
+/*  drawer teleports to <body> and would otherwise fall outside it.    */
+/*                                                                     */
+/*  crit/warn/ok DERIVE from the dashboard's own status colours, so    */
+/*  the service desk board re-themes with the palette picker like      */
+/*  every other page. "info" is a fourth idea the status trio does not */
+/*  cover - new, inbound - and is the only literal here.               */
+/*  Nothing on this page may hardcode a signal colour again.            */
+/*                                                                     */
+/*  Every one is pulled toward --j-mute first. The dashboard's status   */
+/*  colours are tuned for 10px ping bars, where full saturation is      */
+/*  what makes them readable; blown up to a KPI numeral on a wall the   */
+/*  same red glares. Red is mixed hardest because it was the worst      */
+/*  offender, blue and green least because they hold up large. The mix  */
+/*  keeps the palette-picker link intact - these still track whatever   */
+/*  the user sets, just one step off neon.                              */
+/* ------------------------------------------------------------------ */
+:root {
+    --j-mute: #64748b;
+    --j-crit: color-mix(in srgb, var(--status-down) 68%, var(--j-mute));
+    --j-warn: color-mix(in srgb, var(--status-degraded) 78%, var(--j-mute));
+    --j-ok:   color-mix(in srgb, var(--status-up) 82%, var(--j-mute));
+    --j-info: color-mix(in srgb, #0284c7 86%, var(--j-mute));
+    --j-idle: #64748b;
+    /* Every machine-generated value on the service desk board - keys, clocks,
+       counts - is set in this. Human text stays sans. That split is most of
+       what gives the board its instrument-panel character, and it has to hold
+       with no webfont: a wall display must render correctly with no internet,
+       so the stack prefers a real technical mono if the box has one and lands
+       on Consolas if it does not. */
+    --j-mono: ui-monospace, "SF Mono", "JetBrains Mono", "IBM Plex Mono",
+              "Cascadia Mono", Consolas, Menlo, monospace;
+    /* Categorical ramp for the type mix. Cool and analytic on purpose - it
+       must never compete with the signal colours above for attention. */
+    --j-cat-1: #0284c7;
+    --j-cat-2: #6366f1;
+    --j-cat-3: #0d9488;
+    --j-cat-4: #7c3aed;
+    --j-cat-5: #64748b;
+    --j-cat-6: #0891b2;
+    --j-cat-7: #475569;
+    --j-cat-8: #94a3b8;
+}
+:root.dark {
+    /* Mix toward a LIGHTER grey on dark, or desaturating would also darken
+       these into the background. Same softening, same contrast. */
+    --j-mute: #94a3b8;
+    --j-info: color-mix(in srgb, #38bdf8 84%, var(--j-mute));
+    --j-idle: #94a3b8;
+    --j-cat-1: #38bdf8;
+    --j-cat-2: #818cf8;
+    --j-cat-3: #2dd4bf;
+    --j-cat-4: #a78bfa;
+    --j-cat-5: #94a3b8;
+    --j-cat-6: #22d3ee;
+    --j-cat-7: #cbd5e1;
+    --j-cat-8: #64748b;
+}
+
 /* ================================================================== */
 /*  MOTION SYSTEM                                                       */
 /*  Central easing + timing tokens and reusable entrance/feedback       */
@@ -525,6 +587,103 @@
     font-size: 3.3cqw !important;
     white-space: nowrap;
 }
+
+/* ---- Fullscreen wall layout: the service desk board --------------------
+   The FIRST detail page to be clamped to one screen. The rule above at
+   `.fs-active .home-view` is deliberately scoped to home because most detail
+   pages are meant to scroll; this one is not, because it is something you
+   hang on a wall and never touch.
+
+   Same technique as the location cards: the page is a SIZE CONTAINER and
+   everything inside is sized in cqw/cqh, so the board is proportionally
+   identical on a 1080p TV and a 4K one. Nothing is stretched.
+
+   Proportion budget across ~100cqh:
+     rail ~9 · KPI rail ~23 · SLA horizon ~18 · three columns fill the rest.
+   The columns CLIP rather than scroll: nobody is going to scroll a
+   television, and each column header carries the true count, so a clipped
+   body understates what is visible but never the number. */
+.fs-active .jira-view {
+    height: 100vh;
+    overflow: hidden;
+    container-type: size;
+}
+.fs-active .jira-view .jira-shell {
+    height: 100cqh;
+    padding: 1.8cqh 1.3cqw 1.6cqh !important;
+    gap: 1.5cqh !important;
+}
+.fs-active .jira-view .wall,
+.fs-active .jira-view .cols {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+.fs-active .jira-view .wall {
+    gap: 1.5cqh !important;
+}
+
+/* Command rail. The only chrome left on the wall, so it carries the proof of
+   life: health, feed, clock. */
+.fs-active .jira-view .rail-mark { width: 2.4cqw; height: 2.4cqw; border-radius: 0.5cqw; }
+.fs-active .jira-view .rail-title { font-size: 1.9cqw; }
+.fs-active .jira-view .rail-sub { font-size: 0.82cqw; }
+.fs-active .jira-view .proj-key { font-size: 1cqw; }
+.fs-active .jira-view .proj-n { font-size: 0.9cqw; }
+.fs-active .jira-view .feed { font-size: 0.95cqw; }
+.fs-active .jira-view .clock { font-size: 1.5cqw; }
+
+/* KPI rail. The loudest thing on the board, by a wide margin. */
+.fs-active .jira-view .kpis { flex: 0 0 auto; border-radius: 0.7cqw; }
+.fs-active .jira-view .kpi { padding: 1.6cqh 1.1cqw; }
+.fs-active .jira-view .kpi-n { font-size: 4.4cqw !important; }
+.fs-active .jira-view .kpi-l { font-size: 0.78cqw; margin-top: 0.9cqh; }
+.fs-active .jira-view .flow-today { font-size: 1.1cqw; }
+.fs-active .jira-view .flow-today em { font-size: 0.7cqw; }
+.fs-active .jira-view .flowchart { height: 9cqh; }
+
+/* SLA horizon. */
+.fs-active .jira-view .horizon {
+    flex: 0 0 auto;
+    grid-template-columns: 11cqw minmax(0, 1fr);
+    padding: 1.2cqh 1cqw;
+    border-radius: 0.7cqw;
+}
+.fs-active .jira-view .eyebrow { font-size: 0.78cqw; }
+.fs-active .jira-view .hz-note { font-size: 0.85cqw; }
+.fs-active .jira-view .band { padding: 0.8cqh 0.55cqw 0.7cqh; border-radius: 0.45cqw; }
+.fs-active .jira-view .band-n { font-size: 2cqw; }
+.fs-active .jira-view .band-l { font-size: 0.72cqw; }
+.fs-active .jira-view .band-ticks { min-height: 3.4cqh; gap: 0.16cqw; }
+.fs-active .jira-view .tick { width: 0.3cqw; }
+.fs-active .jira-view .tick.p-highest { height: 3.4cqh; }
+.fs-active .jira-view .tick.p-high { height: 2.9cqh; }
+.fs-active .jira-view .tick.p-medium { height: 2.3cqh; }
+.fs-active .jira-view .tick.p-low,
+.fs-active .jira-view .tick.p-lowest,
+.fs-active .jira-view .tick.p-none { height: 1.6cqh; }
+
+/* The three live columns. */
+.fs-active .jira-view .cols { gap: 0.7cqw; }
+.fs-active .jira-view .col { border-radius: 0.7cqw; }
+.fs-active .jira-view .col-head { padding: 1cqh 0.8cqw; font-size: 0.85cqw; }
+.fs-active .jira-view .col-head b { font-size: 1.5cqw; }
+.fs-active .jira-view .col-head b em { font-size: 0.68cqw; }
+.fs-active .jira-view .col-dot { width: 0.6cqw; height: 0.6cqw; }
+/* Clip, do not scroll. */
+.fs-active .jira-view .col-body { overflow: hidden !important; }
+.fs-active .jira-view .row { padding: 0.85cqh 0.8cqw; }
+.fs-active .jira-view .r-key { font-size: 0.85cqw; }
+.fs-active .jira-view .r-sum { font-size: 1.05cqw; -webkit-line-clamp: 1; }
+.fs-active .jira-view .r-val { font-size: 1.05cqw; }
+.fs-active .jira-view .r-meta { gap: 0.4cqw; margin-top: 0.4cqh; }
+.fs-active .jira-view .r-who,
+.fs-active .jira-view .r-status,
+.fs-active .jira-view .r-prio { font-size: 0.8cqw; }
+.fs-active .jira-view .r-sla-name { font-size: 0.72cqw; }
+.fs-active .jira-view .ttag { font-size: 0.68cqw; padding: 0.25cqh 0.3cqw; }
+.fs-active .jira-view .sdot { width: 0.4cqw; height: 0.4cqw; }
+.fs-active .jira-view .col-empty { padding: 1.6cqh 0.85cqw; font-size: 1cqw; }
+
 
 html {
     height: 100%;

@@ -143,3 +143,24 @@ rebuilt `web/static/`.
   repopulating it.
 - A design choice justified on `.gitignore:30` saying "repo is public".
   LL-Gatus is private; LL-Telemetry is the public one.
+
+## 2026-09-21 - Service desk wall board (1.9.0 -> 1.10.0)
+/tk:build heavy + /tk:design heavy. Rewrote web/app/src/views/JiraDetails.vue and
+restyled JiraKanban.vue + JiraTicketPanel.vue.
+
+- Removed the warm sepia palette (#e0a458 gold, #b08968/#a3907a/#9c6f5e/#c2a878
+  browns, #ef6b53 coral, #5aa06b sage) from all three Jira files. Zero coffee
+  hexes remain. The same literals still exist in FirewallDetails, WirelessDetails,
+  SettingsView, MonitorToggle and CardSettingsMenu - deliberately out of scope.
+- Added --j-* tokens to index.css on :root (on :root, not the page, because the
+  ticket drawer teleports to body). crit/warn/ok derive from --status-down/
+  -degraded/-up, so the board now re-themes with the palette picker.
+- /jira is now three tabs: Overview (wall board), Queue (dense sortable table),
+  Kanban. The old list/board toggle inside Overview is gone - it duplicated Kanban.
+- Overview carries all four signals the user asked for on one screen: KPI rail
+  with a 14-day diverging flow chart, an SLA horizon instrument, and three live
+  columns (At risk / Unassigned / Just in).
+- index.css gained the first `.fs-active .detail-page` rules in the codebase.
+  container-type:size + cqw/cqh, same technique as the location cards.
+- Newly used backend fields: snapshot.status, .account, .baseUrl, DayPoint.date,
+  issue.slaName, and the slaBreached === -1 "not measured" sentinel.
