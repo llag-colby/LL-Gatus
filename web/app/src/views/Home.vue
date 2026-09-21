@@ -41,7 +41,7 @@
           <div class="dashboard-grid grid"
             :class="(dashboardView === 'horizontal' || isFullscreen)
               ? 'gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
-              : 'gap-5 grid-cols-1 max-w-3xl mx-auto'"
+              : 'gap-5 grid-cols-1 max-w-5xl mx-auto'"
             :style="{ '--fs-cols': fsCols, '--loc-max-rows': maxRowCount }">
             <LocationCard
               v-for="(location, index) in paginatedLocations"
@@ -140,7 +140,10 @@ const itemsPerPage = 96
 const resultPageSize = 50
 // Bars shown per row. Fewer on the fullscreen wall so each bar is thick and
 // readable from a distance; more in the normal grid where cards are smaller.
-const barsToShow = computed(() => isFullscreen.value ? 8 : 20)
+// A ceiling, not a count. Each card measures how many pills actually fit its
+// rows and shows that many of the most recent results; this is just how much
+// history it is allowed to draw on. The payload already carries 50 per endpoint.
+const barsToShow = computed(() => resultPageSize)
 
 // Cards that are not a rooftop sort to the end of the wall, whatever order is
 // selected. Domain Controllers is the AD and DNS tier rather than a site, and

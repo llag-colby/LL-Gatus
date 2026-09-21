@@ -21,7 +21,7 @@
            uniform across every card on the wall (see --loc-bar-h), because a
            two-row site and a seven-row site sitting side by side with different
            sized bars is what made the grid read as broken. -->
-      <div class="loc-rows" :class="{ 'loc-dense': displayRows.length > 4 }">
+      <div ref="rowsEl" class="loc-rows" :class="{ 'loc-dense': displayRows.length > 4 }">
         <div v-for="(row, rowIdx) in displayRows" :key="row.key" class="loc-row flex items-center gap-2"
           :class="{ 'opacity-50': row.paused, 'is-overall': row.isOverall }">
           <!-- Row label -->
@@ -50,15 +50,15 @@
           </div>
 
           <!-- Status bars -->
-          <div class="loc-bars flex-1 flex gap-0.5">
-            <template v-for="(cell, cellIdx) in row.cells" :key="cellIdx">
+          <div class="loc-bars flex-1 flex">
+            <template v-for="{ cell, idx: cellIdx } in visibleCells(row)" :key="cellIdx">
               <!-- Sliced bar: one segment per underlying endpoint, stacked
                    inside the SAME bar footprint, so the row keeps the height
                    and rhythm of every other row while still saying which of
                    the three is the one that went away. -->
               <div
                 v-if="row.segmented"
-                class="ping-cell bar-appear loc-slices flex-1 h-6 sm:h-8 rounded-sm overflow-hidden flex flex-col"
+                class="ping-cell bar-appear loc-slices flex-1 loc-pill overflow-hidden flex flex-col"
                 :style="{ '--i': cellIdx }"
               >
                 <div
@@ -589,7 +589,7 @@ const effectiveToken = (token, rowIdx, cellIdx) => {
 const sliceClass = (token, selected) =>
   cellClass(token, selected, 'flex-1 min-h-0 transition-all loc-slice')
 
-const cellClass = (token, selected, base = 'flex-1 h-6 sm:h-8 rounded-sm transition-all') => {
+const cellClass = (token, selected, base = 'flex-1 loc-pill transition-all') => {
   if (token === 'none') return `${base} bg-gray-200 dark:bg-gray-700`
   const cursor = ' cursor-pointer'
   const sel = selected ? ' sel' : ''
@@ -601,6 +601,54 @@ const cellClass = (token, selected, base = 'flex-1 h-6 sm:h-8 rounded-sm transit
     default: return `${base} bg-gray-200 dark:bg-gray-700`
   }
 }
+
+// --- How many pills fit ---------------------------------------------------
+// A fixed number of bars is what made this look wrong: the same 20 cells were
+// stretched across a 103px row in a dense grid (3px slivers) and a 572px row in
+// list view (27px blocks). The COUNT follows the width instead, so the pill
+// itself is one size everywhere and the row always fills edge to edge. Wider
+// cards simply show more history, which is the useful direction to spend space.
+const rowsEl = ref(null)
+const barSlots = ref(20)
+let barObserver = null
+
+const measureBars = () => {
+  const host = rowsEl.value
+  if (!host) return
+  const bars = host.querySelector('.loc-bars')
+  if (!bars) return
+  const width = bars.getBoundingClientRect().width
+  if (!width) return
+  // Pill geometry lives in CSS; read it back rather than duplicating the
+  // numbers here, so the two cannot drift apart.
+  const styles = getComputedStyle(bars)
+  const pill = parseFloat(styles.getPropertyValue('--pill-w')) || 10
+  const gap = parseFloat(styles.columnGap || styles.gap) || 3
+  const pitch = pill + gap
+  const fits = Math.floor((width + gap) / pitch)
+  // Never fewer than 6: below that the row stops reading as a timeline at all.
+  barSlots.value = Math.max(6, Math.min(props.maxResults, fits))
+}
+
+// Cells carry their absolute index so narrowing the window does not renumber
+// them underneath a selected bar or the simulation's deterministic tokens.
+const visibleCells = (row) => {
+  const cells = row.cells || []
+  const start = Math.max(0, cells.length - barSlots.value)
+  return cells.slice(start).map((cell, i) => ({ cell, idx: start + i }))
+}
+
+onMounted(() => {
+  measureBars()
+  if (typeof ResizeObserver !== 'undefined' && rowsEl.value) {
+    barObserver = new ResizeObserver(measureBars)
+    barObserver.observe(rowsEl.value)
+  }
+})
+onUnmounted(() => {
+  barObserver?.disconnect()
+  barObserver = null
+})
 
 // --- Interaction (reuses the app-wide rich tooltip) ---
 const navigate = (event, path) => {

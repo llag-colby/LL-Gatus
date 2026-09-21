@@ -157,6 +157,45 @@
  * edge so the space a short card has spare becomes a deliberate gap above a
  * summary rail instead of a void trailing off the end.
  */
+/* The pill. One size on every card, at every width, in both view modes - the
+ * row's pill COUNT is what adapts (see visibleCells in LocationCard). Read back
+ * from JS via --pill-w, so the two never drift.
+ *
+ * 10x30 with a 3px gap: a bar with a clear vertical read, not the near-square
+ * block a stretched 20-cell row produced in list view. */
+.loc-bars {
+    /* Must stay in px: LocationCard reads this back with getComputedStyle, and
+       container-query units come back unresolved there. */
+    --pill-w: 10px;
+    gap: 3px;
+    align-items: center;
+    /* Newest at the right. When there is not enough history to fill the row,
+       the shortfall shows as space on the LEFT, which is the direction time
+       actually runs. */
+    justify-content: flex-end;
+}
+.loc-pill {
+    height: 30px;
+    min-width: 0;
+    /* The count usually lands each pill near --pill-w, but a very wide row with
+       little history would stretch them into blocks again. This is the backstop
+       that keeps a pill a pill. */
+    max-width: 14px;
+    border-radius: 2px;
+}
+@media (max-width: 640px) {
+    .loc-bars { --pill-w: 8px; gap: 2px; }
+    .loc-pill { height: 26px; }
+}
+
+/* The card body has to be a flex column for any of the rest to work: without
+ * it the rows area never grows into the height the grid gave the card, so
+ * margin-top:auto on the summary row has nothing to push against and a short
+ * card trails off into a void. */
+.loc-content {
+    display: flex;
+    flex-direction: column;
+}
 .loc-rows {
     display: flex;
     flex-direction: column;
@@ -383,8 +422,12 @@
     align-items: center;
     gap: 3cqw;
 }
+/* px, not cqw, for the same getComputedStyle reason as above. Fullscreen cards
+   are about the same width as grid cards, so the pill stays the same object;
+   only its height follows the card. */
 .fs-active .loc-bars {
-    gap: 1cqw;
+    --pill-w: 9px;
+    gap: 2px;
 }
 /* Short-and-wide status bars, sized to the card (not stretched).
  *
@@ -393,12 +436,25 @@
  * same size. --loc-max-rows is set on the grid by Home.vue and inherits. */
 .fs-active .loc-bars > div {
     height: clamp(3.4cqh, calc(50cqh / var(--loc-max-rows, 6)), 9cqh) !important;
-    border-radius: 0.6cqw;
+    max-width: 13px;
+    border-radius: 2px;
 }
 /* Card title + status badge. */
 .fs-active .location h3 {
-    font-size: 8cqw !important;
+    font-size: 7cqw !important;
     line-height: 1.05 !important;
+}
+/* "Alabaster Body Shop" and "Domain Controllers" were clipping to "Alabaster
+   ..." on the wall, which defeats the point of a site board. Let the name use a
+   second line instead; the header block is sized from the title, so the card
+   absorbs it. */
+.fs-active .location h3 > span {
+    white-space: normal !important;
+    overflow: visible !important;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow-wrap: anywhere;
 }
 /* Card status badge. MUST stay scoped to .location — as a bare
    `.fs-active .rounded-full` this also hit the settings pill and the loading
@@ -423,7 +479,7 @@
 /* Trailing metric column on every row (latency, WAN/AP counts, best-of latency
    on Overall). Scoped to .location for the same reason as the badge above. */
 .fs-active .location .loc-rowvalue {
-    width: 15cqw !important;
+    width: 19cqw !important;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -442,7 +498,7 @@
 /* Smaller than the row label (5cqw): this column is little over half the width
    of the label column, and its values are longer. */
 .fs-active .location .loc-rowvalue > div:first-child {
-    font-size: 4cqw !important;
+    font-size: 3.6cqw !important;
     line-height: 1.15 !important;
 }
 /* Secondary lines — ISP + IP under a WAN row, client/latency detail under a
@@ -469,7 +525,6 @@
     font-size: 3.3cqw !important;
     white-space: nowrap;
 }
-
 
 html {
     height: 100%;
