@@ -114,7 +114,7 @@ endpoints:
 
   # ---------- Alabaster ----------
   - name: Alabaster
-    group: WAN 1
+    group: WAN 1 (ATT Fiber)
     url: "icmp://12.247.225.93"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
