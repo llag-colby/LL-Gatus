@@ -532,6 +532,10 @@ export function can() {
 // ---------------------------------------------------------------------------
 export const endpointTargets = ref({})
 export const targetEditingEnabled = ref(false)
+// Whether the answer above is known yet. Without this the menu renders
+// "editing is off" for the moment between opening the tab and the fetch
+// landing, which reads as a broken feature rather than a pending request.
+export const targetsLoaded = ref(false)
 
 const EDIT_TOKEN_KEY = 'gatus:edit-token'
 export const editToken = ref(
@@ -559,6 +563,8 @@ export async function refreshEndpointTargets() {
     endpointTargets.value = next
   } catch (e) {
     // keep whatever we had; the menu shows the last known targets
+  } finally {
+    targetsLoaded.value = true
   }
 }
 

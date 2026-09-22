@@ -2,7 +2,6 @@ package api
 
 import (
 	"crypto/subtle"
-	"os"
 	"strings"
 
 	"github.com/TwiN/gatus/v5/config"
@@ -25,8 +24,12 @@ import (
 // and trivially reversible. Re-pointing a probe is different in kind - this
 // container holds NET_RAW - so it needs a credential, and the only shape of
 // credential this deployment has is a shared bearer token.
-
-const editTokenEnvVar = "GATUS_EDIT_TOKEN"
+//
+// The token comes from targets.EditToken(): GATUS_EDIT_TOKEN when an operator
+// sets it, otherwise one generated into /data on first use. It is deliberately
+// NOT a hand-edited .env entry on the box - .env is gitignored, so update.sh
+// never carries it over, and a feature that ships switched off on every deploy
+// is one nobody ever turns on.
 
 // authorizeEdit reports whether the caller may edit a target. When it returns
 // false it has ALREADY written the response, and the handler must return the
@@ -40,10 +43,10 @@ const editTokenEnvVar = "GATUS_EDIT_TOKEN"
 // Fails CLOSED: with no token configured there is no way to authorize an edit,
 // so editing is off rather than open to anyone who can reach the port.
 func authorizeEdit(c *fiber.Ctx) (bool, error) {
-	expected := strings.TrimSpace(os.Getenv(editTokenEnvVar))
+	expected := targets.EditToken()
 	if expected == "" {
-		logr.Warnf("[api.authorizeEdit] Refusing a target edit because %s is not set", editTokenEnvVar)
-		return false, c.Status(503).SendString("target editing is disabled: " + editTokenEnvVar + " is not set on the server")
+		logr.Warnf("[api.authorizeEdit] Refusing a target edit because no edit token could be resolved")
+		return false, c.Status(503).SendString("target editing is disabled: the server could not resolve an edit token")
 	}
 	authorizationHeader := string(c.Request().Header.Peek("Authorization"))
 	if !strings.HasPrefix(authorizationHeader, "Bearer ") {
@@ -120,7 +123,7 @@ func GetEndpointTargets(cfg *config.Config) fiber.Handler {
 		// Report whether editing is even possible, so the UI can hide the
 		// control instead of offering one that always 503s.
 		return c.Status(200).JSON(fiber.Map{
-			"editingEnabled": strings.TrimSpace(os.Getenv(editTokenEnvVar)) != "",
+			"editingEnabled": targets.EditToken() != "",
 			"targets":        views,
 		})
 	}

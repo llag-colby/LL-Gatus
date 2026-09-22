@@ -142,9 +142,11 @@
         </ul>
 
         <div v-else class="tgt-panel">
-          <p v-if="!targetEditingEnabled" class="tgt-off">
-            Editing is off on the server. Set <code>GATUS_EDIT_TOKEN</code> in
-            <code>.env</code> and restart to turn it on.
+          <p v-if="!targetsLoaded" class="tgt-off">Checking with the server...</p>
+          <p v-else-if="!targetEditingEnabled" class="tgt-off">
+            The server could not resolve an edit token, so editing is off. It
+            normally writes one to <code>data/edit_token</code> by itself; check
+            that <code>/data</code> is writable.
           </p>
           <template v-else>
             <!-- The token stays in this browser. It is the only credential the
@@ -235,7 +237,7 @@ import { Button } from '@/components/ui/button'
 import {
   isMonitored, setMonitored,
   cardTitleFor, setCardHidden, setRowHidden, setRowLabel, setRowOrder, setCardTitle,
-  endpointTargets, targetEditingEnabled, editToken, setEditToken,
+  endpointTargets, targetEditingEnabled, targetsLoaded, editToken, setEditToken,
   refreshEndpointTargets, setEndpointTarget, clearEndpointTarget,
 } from '@/store'
 

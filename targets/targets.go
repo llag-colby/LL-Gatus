@@ -26,6 +26,8 @@
 package targets
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,6 +48,7 @@ var (
 
 const (
 	overridesPath = "/data/endpoint_targets.json"
+	editTokenPath = "/data/edit_token"
 	// Generous, but bounded: a target is a host or a URL, not a document.
 	maxTargetLength = 512
 	// Refuse to load an absurd file rather than let a corrupt or hostile one
@@ -245,4 +248,61 @@ func Keys() []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+
+// --- edit token -------------------------------------------------------------
+
+var (
+	tokenMu     sync.Mutex
+	cachedToken string
+)
+
+// EditToken returns the credential that gates target editing.
+//
+// GATUS_EDIT_TOKEN wins when it is set, so an operator who wants to manage the
+// secret themselves still can. Otherwise one is generated on first use and kept
+// in /data, which is the mounted volume, so it survives both a rebuild and
+// update.sh's git reset. That is the point: requiring a hand-edited .env on the
+// box meant the feature shipped switched off and stayed that way, and a feature
+// nobody can turn on is not a feature.
+//
+// The token is never logged. /data is bind-mounted, so reading it back is
+// `cat data/edit_token` on the host - no shell in the container, and no secret
+// sitting in `docker logs`.
+func EditToken() string {
+	if fromEnv := strings.TrimSpace(os.Getenv("GATUS_EDIT_TOKEN")); fromEnv != "" {
+		return fromEnv
+	}
+	tokenMu.Lock()
+	defer tokenMu.Unlock()
+	if cachedToken != "" {
+		return cachedToken
+	}
+	if b, err := os.ReadFile(editTokenPath); err == nil {
+		if existing := strings.TrimSpace(string(b)); existing != "" {
+			cachedToken = existing
+			return cachedToken
+		}
+	}
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		// Without a random token there is no safe value to fall back to, so
+		// editing stays off rather than being gated on something guessable.
+		logr.Errorf("[targets.EditToken] Could not generate an edit token, so target editing stays disabled: %s", err.Error())
+		return ""
+	}
+	generated := base64.RawURLEncoding.EncodeToString(raw)
+	if err := os.MkdirAll(filepath.Dir(editTokenPath), 0o755); err != nil {
+		logr.Errorf("[targets.EditToken] Could not create %s: %s", filepath.Dir(editTokenPath), err.Error())
+		return ""
+	}
+	// 0600: this is the one real secret the dashboard holds.
+	if err := os.WriteFile(editTokenPath, []byte(generated+"\n"), 0o600); err != nil {
+		logr.Errorf("[targets.EditToken] Could not persist the edit token to %s, so target editing stays disabled: %s", editTokenPath, err.Error())
+		return ""
+	}
+	logr.Infof("[targets.EditToken] Generated an edit token for the dashboard target editor and wrote it to %s (read it with: cat data/edit_token)", editTokenPath)
+	cachedToken = generated
+	return cachedToken
 }
