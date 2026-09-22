@@ -111,10 +111,12 @@
         <div class="horizon" :class="{ quiet: !slaMeasured }">
           <div class="hz-label">
             <span class="eyebrow">SLA horizon</span>
-            <span class="hz-note">
+            <!-- Only when there is something the bands cannot tell you. The
+                 running-clock total is just the sum of the six band counts, so
+                 printing it was restating the instrument in words. -->
+            <span v-if="!slaMeasured || noSlaCount" class="hz-note">
               <template v-if="!slaMeasured">not measured for {{ proj.key }}</template>
-              <template v-else-if="noSlaCount">{{ noSlaCount }} without a clock</template>
-              <template v-else>{{ slaTotal }} on the clock</template>
+              <template v-else>{{ noSlaCount }} without a clock</template>
             </span>
           </div>
           <div class="hz-bands">
@@ -408,7 +410,6 @@ const BANDS = [
   { key: 'far', label: 'Later', tone: 'idle', max: Infinity },
 ]
 const onClock = computed(() => issues.value.filter(hasSla))
-const slaTotal = computed(() => onClock.value.length)
 const noSlaCount = computed(() => issues.value.length - onClock.value.length)
 const horizon = computed(() => {
   const bands = BANDS.map(b => ({ ...b, items: [] }))
