@@ -176,6 +176,17 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	apiV1Router.Get("/v1/layout", GetLayout)
 	apiV1Router.Put("/v1/layout", SetLayout)
 	apiV1Router.Delete("/v1/layout", ResetLayout)
+	// Runtime target overrides: re-point a check without rebuilding the image.
+	// The GET is static and registered before the :key routes below so it isn't
+	// swallowed by :key="targets", same rule as /v1/phones/sweep-pending.
+	//
+	// The PATCH and DELETE are the ONLY gated routes on this server: they take
+	// GATUS_EDIT_TOKEN as a bearer token, checked in authorizeEdit. Unset
+	// means editing is off, not open. See api/endpoint_targets.go for why these
+	// are treated differently from every other write route here.
+	apiV1Router.Get("/v1/endpoints/targets", GetEndpointTargets(cfg))
+	apiV1Router.Patch("/v1/endpoints/:key/target", SetEndpointTarget(cfg))
+	apiV1Router.Delete("/v1/endpoints/:key/target", DeleteEndpointTarget(cfg))
 	// Collector metric history: the counts behind the phones, firewall and
 	// wireless rows, sampled over time. Raw for recent windows, hourly rollups
 	// beyond; the response says which resolution it served.

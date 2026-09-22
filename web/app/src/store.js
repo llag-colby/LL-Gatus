@@ -516,3 +516,79 @@ export const currentRole = computed(() => {
 export function can() {
   return true
 }
+
+// ---------------------------------------------------------------------------
+// Endpoint targets (runtime overrides)
+//
+// config.yaml is baked into the image, so re-pointing a check used to mean a
+// rebuild and a redeploy. The server keeps an override in /data instead and the
+// watchdog picks it up on the next tick — see api/endpoint_targets.go.
+//
+// These are the ONLY write calls in this app that carry a credential. The token
+// is per-viewer taste in the same sense the refresh interval is: it belongs to
+// whoever is sitting at the browser, not to the dashboard, so it lives in
+// localStorage and never goes to the layout document where every screen would
+// inherit it.
+// ---------------------------------------------------------------------------
+export const endpointTargets = ref({})
+export const targetEditingEnabled = ref(false)
+
+const EDIT_TOKEN_KEY = 'gatus:edit-token'
+export const editToken = ref(
+  (typeof localStorage !== 'undefined' && localStorage.getItem(EDIT_TOKEN_KEY)) || ''
+)
+export function setEditToken(value) {
+  const next = (value || '').trim()
+  editToken.value = next
+  try {
+    if (next) localStorage.setItem(EDIT_TOKEN_KEY, next)
+    else localStorage.removeItem(EDIT_TOKEN_KEY)
+  } catch (e) {
+    // private browsing or blocked storage — the token still works this session
+  }
+}
+
+export async function refreshEndpointTargets() {
+  try {
+    const response = await fetch('/api/v1/endpoints/targets', { cache: 'no-store' })
+    if (!response.ok) return
+    const data = await response.json()
+    targetEditingEnabled.value = !!data.editingEnabled
+    const next = {}
+    for (const target of data.targets || []) next[target.key] = target
+    endpointTargets.value = next
+  } catch (e) {
+    // keep whatever we had; the menu shows the last known targets
+  }
+}
+
+export function targetFor(key) {
+  return endpointTargets.value[key] || null
+}
+
+// Returns { ok } on success, or { ok: false, status, message } so the caller can
+// tell "wrong token" apart from "that is not a valid address" and say so.
+async function writeTarget(key, method, body) {
+  if (!editToken.value) return { ok: false, status: 401, message: 'An edit token is required.' }
+  try {
+    const response = await fetch(`/api/v1/endpoints/${encodeURIComponent(key)}/target`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${editToken.value}`,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+    if (!response.ok) {
+      return { ok: false, status: response.status, message: (await response.text()) || 'Request failed.' }
+    }
+    const updated = await response.json()
+    endpointTargets.value = { ...endpointTargets.value, [updated.key]: updated }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, status: 0, message: 'Could not reach the server.' }
+  }
+}
+
+export const setEndpointTarget = (key, url) => writeTarget(key, 'PATCH', { url })
+export const clearEndpointTarget = (key) => writeTarget(key, 'DELETE', null)

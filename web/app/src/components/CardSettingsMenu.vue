@@ -45,14 +45,24 @@
               role="tab" :aria-selected="tab === 'layout'"
               @click="tab = 'layout'"
             >Layout</button>
+            <button
+              type="button" class="tab" :class="{ on: tab === 'target' }"
+              role="tab" :aria-selected="tab === 'target'"
+              @click="showTargets"
+            >Target</button>
           </div>
           <p :id="hintId" class="pop-hint">
             <template v-if="tab === 'monitoring'">
               Turning a row off stops its checks and alerts. Recorded history is kept.
             </template>
-            <template v-else>
+            <template v-else-if="tab === 'layout'">
               Hiding only stops a row being drawn. It is still checked, still alerts, and
               still counts towards this card's status. Everyone sees the same layout.
+            </template>
+            <template v-else>
+              Re-points a check at a different address. It applies on that check's next
+              run, and the recorded history carries straight on - the address is not part
+              of what identifies an endpoint.
             </template>
           </p>
         </div>
@@ -85,7 +95,7 @@
           </li>
         </ul>
 
-        <ul v-else class="pop-rows">
+        <ul v-else-if="tab === 'layout'" class="pop-rows">
           <li v-for="(row, i) in rows" :key="row.key" class="pop-row lay-row" :class="{ off: row.hidden }">
             <div class="row-text">
               <input
@@ -131,6 +141,63 @@
           </li>
         </ul>
 
+        <div v-else class="tgt-panel">
+          <p v-if="!targetEditingEnabled" class="tgt-off">
+            Editing is off on the server. Set <code>GATUS_EDIT_TOKEN</code> in
+            <code>.env</code> and restart to turn it on.
+          </p>
+          <template v-else>
+            <!-- The token stays in this browser. It is the only credential the
+                 dashboard holds, and it gates writes only - everything on the
+                 page is readable without it. -->
+            <label class="tgt-token">
+              <span>Edit token</span>
+              <input
+                type="password" autocomplete="off" spellcheck="false"
+                placeholder="required to save"
+                :value="editToken"
+                @input="onToken"
+              />
+            </label>
+            <ul class="pop-rows">
+              <li v-for="t in targetRows" :key="t.key" class="tgt-row">
+                <div class="tgt-head">
+                  <span class="row-label">{{ t.label }}</span>
+                  <span v-if="!t.view" class="row-note">Not reported by the server</span>
+                  <span v-else-if="!t.view.editable" class="row-note">URL hidden for this endpoint</span>
+                  <span v-else-if="t.view.overridden" class="row-note over">
+                    config says {{ t.view.configured }}
+                  </span>
+                </div>
+                <div class="tgt-edit">
+                  <input
+                    class="tgt-input" type="text" spellcheck="false" autocomplete="off"
+                    :disabled="!t.view || !t.view.editable || busy"
+                    :value="draftFor(t.key)"
+                    :aria-label="`Target for ${t.label}`"
+                    @input="setDraft(t.key, $event.target.value)"
+                    @keydown.enter.prevent="saveTarget(t)"
+                  />
+                  <button
+                    type="button" class="tgt-btn"
+                    :disabled="!t.view || !t.view.editable || !isDirty(t.key) || busy"
+                    @click="saveTarget(t)"
+                  >Save</button>
+                  <button
+                    v-if="t.view && t.view.overridden"
+                    type="button" class="tgt-btn ghost" :disabled="busy"
+                    @click="resetTarget(t)"
+                  >Reset</button>
+                </div>
+                <p v-if="errorFor(t.key)" class="tgt-err">{{ errorFor(t.key) }}</p>
+              </li>
+              <li v-if="!targetRows.length" class="tgt-row">
+                <span class="row-note">No configured endpoints on this card.</span>
+              </li>
+            </ul>
+          </template>
+        </div>
+
         <div class="pop-foot">
           <template v-if="tab === 'monitoring'">
             <Button
@@ -144,7 +211,7 @@
             </Button>
             <div class="foot-note">{{ footNote }}</div>
           </template>
-          <template v-else>
+          <template v-else-if="tab === 'layout'">
             <div class="foot-pair">
               <Button variant="outline" size="sm" class="flex-1 text-xs h-8" :disabled="busy" @click="hideCard">
                 Hide this card
@@ -168,6 +235,8 @@ import { Button } from '@/components/ui/button'
 import {
   isMonitored, setMonitored,
   cardTitleFor, setCardHidden, setRowHidden, setRowLabel, setRowOrder, setCardTitle,
+  endpointTargets, targetEditingEnabled, editToken, setEditToken,
+  refreshEndpointTargets, setEndpointTarget, clearEndpointTarget,
 } from '@/store'
 
 const props = defineProps({
@@ -197,6 +266,83 @@ const FALLBACK_WIDTH = 250
 // single row on the card, so it gets a single switch here that moves all of
 // them together. Rows carrying a lone endpointKey keep working unchanged.
 const keysOf = (row) => (row && row.endpointKeys) || (row && row.endpointKey ? [row.endpointKey] : [])
+
+// --- target editing ------------------------------------------------------
+// Drafts are held here rather than bound straight to the store so a half-typed
+// address never becomes the value the rest of the UI believes in, and so a
+// failed save leaves what the operator typed on screen to be corrected.
+const drafts = ref({})
+const errors = ref({})
+
+const showTargets = () => {
+  tab.value = 'target'
+  // Fetched on demand. These are the only addresses the dashboard reads, and
+  // most visits to this menu are about pausing or hiding, not re-pointing.
+  refreshEndpointTargets()
+}
+
+// One editor per ENDPOINT, not per row. A row can stand for several checks -
+// DNS is one row and three resolvers - and each of those has its own address.
+const targetRows = computed(() =>
+  props.rows.flatMap((row) => {
+    const keys = keysOf(row)
+    return keys.map((key) => {
+      const view = endpointTargets.value[key] || null
+      return {
+        key,
+        view,
+        label: keys.length > 1 && view ? `${row.label} · ${view.group}` : row.label,
+      }
+    })
+  })
+)
+
+const effectiveOf = (key) => (endpointTargets.value[key] || {}).effective || ''
+const draftFor = (key) => (key in drafts.value ? drafts.value[key] : effectiveOf(key))
+const isDirty = (key) => draftFor(key).trim() !== effectiveOf(key)
+const errorFor = (key) => errors.value[key] || ''
+
+const clearError = (key) => {
+  if (!errors.value[key]) return
+  const next = { ...errors.value }
+  delete next[key]
+  errors.value = next
+}
+const setDraft = (key, value) => {
+  drafts.value = { ...drafts.value, [key]: value }
+  clearError(key)
+}
+const dropDraft = (key) => {
+  const next = { ...drafts.value }
+  delete next[key]
+  drafts.value = next
+}
+const onToken = (event) => {
+  setEditToken(event.target.value)
+  errors.value = {}
+}
+
+// The server's message is shown verbatim: it is the only thing that can tell
+// "that is not a valid address" apart from "wrong token", and paraphrasing it
+// would lose the distinction.
+const applyResult = async (key, result) => {
+  if (result.ok) {
+    dropDraft(key)
+    clearError(key)
+    return
+  }
+  errors.value = {
+    ...errors.value,
+    [key]: result.status === 401 ? 'Token rejected. Check the edit token above.' : result.message,
+  }
+}
+
+const saveTarget = (t) => {
+  if (!t.view || !t.view.editable || !isDirty(t.key)) return
+  return withBusy(async () => applyResult(t.key, await setEndpointTarget(t.key, draftFor(t.key).trim())))
+}
+const resetTarget = (t) =>
+  withBusy(async () => applyResult(t.key, await clearEndpointTarget(t.key)))
 
 const configuredRows = computed(() => props.rows.filter((r) => keysOf(r).length > 0))
 // Counts are per CHECK, not per row: "2 of 7 checks paused" has to stay true
@@ -624,4 +770,35 @@ onUnmounted(removeListeners)
   font-size: 0.66rem;
   color: hsl(var(--muted-foreground));
 }
+
+/* --- target editing ------------------------------------------------------
+   Deliberately plainer than the other two tabs. Re-pointing a check is the one
+   thing in this menu that changes what the monitor actually does, so it reads
+   as a form to be filled in carefully rather than a row of switches to flick. */
+.tgt-panel { padding: 0.35rem 0 0; }
+.tgt-off { font-size: 0.75rem; line-height: 1.45; color: hsl(var(--muted-foreground)); padding: 0.5rem 0.1rem; }
+.tgt-off code { font-family: var(--j-mono); font-size: 0.92em; background: hsl(var(--muted) / 0.6); border-radius: 4px; padding: 0.05rem 0.28rem; }
+
+.tgt-token { display: flex; flex-direction: column; gap: 0.25rem; padding: 0 0.1rem 0.5rem; border-bottom: 1px solid hsl(var(--border)); margin-bottom: 0.4rem; }
+.tgt-token > span { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.tgt-token input { font-family: var(--j-mono); font-size: 0.78rem; background: hsl(var(--background)); border: 1px solid hsl(var(--border)); border-radius: 6px; padding: 0.3rem 0.5rem; width: 100%; }
+.tgt-token input:focus { outline: none; border-color: hsl(var(--ring)); }
+
+.tgt-row { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.45rem 0.1rem; border-bottom: 1px solid hsl(var(--border) / 0.6); }
+.tgt-row:last-child { border-bottom: 0; }
+.tgt-head { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
+.tgt-head .row-label { flex-shrink: 0; }
+/* An overridden row says what config.yaml still holds, so "reset" is never a
+   guess about what you are going back to. */
+.tgt-head .row-note.over { font-family: var(--j-mono); font-size: 0.66rem; color: var(--j-warn); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.tgt-edit { display: flex; align-items: center; gap: 0.3rem; }
+.tgt-input { flex: 1 1 auto; min-width: 0; font-family: var(--j-mono); font-size: 0.78rem; background: hsl(var(--background)); border: 1px solid hsl(var(--border)); border-radius: 6px; padding: 0.3rem 0.5rem; }
+.tgt-input:focus { outline: none; border-color: hsl(var(--ring)); }
+.tgt-input:disabled { opacity: 0.5; cursor: not-allowed; }
+.tgt-btn { flex-shrink: 0; font-size: 0.7rem; font-weight: 600; padding: 0.3rem 0.55rem; border: 1px solid hsl(var(--border)); border-radius: 6px; background: hsl(var(--muted) / 0.6); color: hsl(var(--foreground)); cursor: pointer; }
+.tgt-btn:hover:not(:disabled) { background: hsl(var(--accent)); }
+.tgt-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.tgt-btn.ghost { background: transparent; color: hsl(var(--muted-foreground)); }
+.tgt-err { font-size: 0.7rem; line-height: 1.4; color: var(--j-crit); }
 </style>

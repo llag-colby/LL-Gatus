@@ -10,6 +10,7 @@ import (
 	"github.com/TwiN/gatus/v5/metrics"
 	"github.com/TwiN/gatus/v5/monitoring"
 	"github.com/TwiN/gatus/v5/storage/store"
+	"github.com/TwiN/gatus/v5/targets"
 	"github.com/TwiN/logr"
 )
 
@@ -82,6 +83,23 @@ func executeEndpoint(ep *endpoint.Endpoint, cfg *config.Config, extraLabels []st
 	if monitoring.IsPaused(ep.Key()) {
 		logr.Debugf("[watchdog.executeEndpoint] Monitoring paused; skipping execution of group=%s; endpoint=%s; key=%s", ep.Group, ep.Name, ep.Key())
 		return nil
+	}
+	// If an operator has re-pointed this endpoint from the dashboard, check the
+	// new target instead. Consulted per check rather than applied to the config
+	// at startup, which is what makes an edit land on the next tick with no
+	// restart, and what lets a config reload rebuild *config.Config from disk
+	// without quietly reverting every override.
+	//
+	// A COPY is checked, never ep itself. The config structs are shared, lock-
+	// free, read concurrently by one goroutine per endpoint; writing ep.URL from
+	// an HTTP handler would be a straightforward data race. Copying an Endpoint
+	// is already the established move here - preprocessWithContext does exactly
+	// this to substitute context placeholders. ep.URL therefore always still
+	// holds what config.yaml said, which is what "reset to config" relies on.
+	if override := targets.For(ep.Key()); override != "" && override != ep.URL {
+		repointed := *ep
+		repointed.URL = override
+		ep = &repointed
 	}
 	logr.Debugf("[watchdog.executeEndpoint] Monitoring group=%s; endpoint=%s; key=%s", ep.Group, ep.Name, ep.Key())
 	result := ep.EvaluateHealth()
