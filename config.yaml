@@ -175,7 +175,7 @@ endpoints:
   # stay empty (same shape as Alabaster Body Shop above).
   - name: Todd Oue
     group: WAN 1
-    url: "icmp://71.207.197.73"
+    url: "icmp://68.35.175.172"
     interval: 60s
     conditions: ["[CONNECTED] == true"]
 
