@@ -37,8 +37,11 @@ Write-Host ""
 Write-Host "Setting up WinRM on $me for the Gatus collector at $CollectorIp" -ForegroundColor White
 Write-Host ""
 
-$work = Join-Path $env:TEMP "gatus-winrm-$([guid]::NewGuid().ToString('N'))"
-New-Item -ItemType Directory -Force -Path $work | Out-Null
+# [System.IO.Path]::GetTempPath() rather than $env:TEMP: TEMP can hold an 8.3
+# short path, which some PowerShell providers refuse to resolve, and the
+# cleanup below must not be the thing that fails. The PFX lands here.
+$work = Join-Path ([System.IO.Path]::GetTempPath()) "gatus-winrm-$([guid]::NewGuid().ToString('N'))"
+[void][System.IO.Directory]::CreateDirectory($work)
 try {
     $caPath  = Join-Path $work 'ca.crt'
     $pfxPath = Join-Path $work 'host.pfx'
@@ -69,41 +72,107 @@ try {
         }
     }
 
-    # Deny every logon type except the network logon certificate mapping needs.
-    # SeDenyNetworkLogonRight is deliberately NOT set: cert auth is a network
-    # logon, and denying it breaks the whole thing.
+    # Deny every logon type except the network logon that certificate mapping
+    # needs. SeDenyNetworkLogonRight is deliberately NOT set: cert auth is a
+    # network logon and denying it breaks the whole thing.
+    #
+    # This is defence in depth, not the primary control. The account is already
+    # in no group and its password is random and discarded; the firewall, the
+    # client certificate and the JEA endpoint are what actually protect the
+    # host. So a failure here WARNS and carries on rather than aborting the
+    # whole setup, and says exactly what to do by hand.
+    #
+    # Two things make this fiddly, both learned the hard way:
+    #   - an exported template may have no [Privilege Rights] section at all, or
+    #     not list a given right. Appending the line to the end of the file puts
+    #     it outside the section, where secedit silently ignores it.
+    #   - secedit /configure REPLACES the rights named in the template, so the
+    #     existing holders of each right have to be carried over or they are
+    #     revoked. Writing a bare template would quietly undo someone else's
+    #     deny entries.
+    # So: export, read the current holders, write a minimal template with the
+    # merged lists, apply, then verify.
     $sid = (Get-LocalUser -Name $AccountName).SID.Value
-    $inf = Join-Path $work 'deny.inf'
-    $sdb = Join-Path $work 'deny.sdb'
-    secedit /export /areas USER_RIGHTS /cfg $inf | Out-Null
-    if (-not (Test-Path $inf)) { throw 'secedit export failed. Are you really elevated?' }
     $rights = @('SeDenyInteractiveLogonRight', 'SeDenyRemoteInteractiveLogonRight',
                 'SeDenyBatchLogonRight', 'SeDenyServiceLogonRight')
-    $lines = Get-Content $inf
-    foreach ($r in $rights) {
-        $line = $lines | Where-Object { $_ -match "^$r\s*=" } | Select-Object -First 1
-        if ($line) {
-            if ($line -notlike "*$sid*") { $lines = $lines -replace [regex]::Escape($line), "$line,*$sid" }
-        } else { $lines += "$r = *$sid" }
-    }
-    Set-Content -Path $inf -Value $lines -Encoding Unicode
-    secedit /configure /db $sdb /cfg $inf /areas USER_RIGHTS | Out-Null
+    $rightsApplied = $false
+    try {
+        $exp = Join-Path $work 'current.inf'
+        $null = secedit /export /areas USER_RIGHTS /cfg $exp 2>&1
+        if (-not (Test-Path $exp)) { throw 'secedit /export produced no file' }
 
-    # Verify, because secedit fails quietly and a security control that silently
-    # did nothing is worse than one never claimed.
-    $check = Join-Path $work 'verify.inf'
-    secedit /export /areas USER_RIGHTS /cfg $check | Out-Null
-    $verify = Get-Content $check
-    $missing = @()
-    foreach ($r in $rights) {
-        $line = $verify | Where-Object { $_ -match "^$r\s*=" } | Select-Object -First 1
-        if (-not ($line -and $line -like "*$sid*")) { $missing += $r }
+        # Read the existing holders of each right, from inside the section only.
+        $current = @{}
+        $inSection = $false
+        foreach ($line in (Get-Content $exp)) {
+            if ($line -match '^\s*\[') { $inSection = ($line -match '^\s*\[Privilege Rights\]') ; continue }
+            if (-not $inSection) { continue }
+            if ($line -match '^\s*([A-Za-z]+)\s*=\s*(.*)$') {
+                $current[$Matches[1]] = $Matches[2].Trim()
+            }
+        }
+
+        $body = @('[Unicode]', 'Unicode=yes', '[Version]',
+                  'signature="$CHICAGO$"', 'Revision=1', '[Privilege Rights]')
+        foreach ($r in $rights) {
+            $holders = @()
+            if ($current.ContainsKey($r) -and $current[$r]) {
+                $holders = @($current[$r].Split(',') | ForEach-Object { $_.Trim() } |
+                             Where-Object { $_ })
+            }
+            if ($holders -notcontains "*$sid") { $holders += "*$sid" }
+            $body += "$r = $($holders -join ',')"
+        }
+
+        $tpl = Join-Path $work 'deny.inf'
+        $sdb = Join-Path $work 'deny.sdb'
+        Set-Content -Path $tpl -Value $body -Encoding Unicode
+        $out = secedit /configure /db $sdb /cfg $tpl /areas USER_RIGHTS /quiet 2>&1
+
+        # Verify. secedit reports success in situations where nothing changed.
+        $chk = Join-Path $work 'verify.inf'
+        Remove-Item $chk -Force -ErrorAction SilentlyContinue
+        $null = secedit /export /areas USER_RIGHTS /cfg $chk 2>&1
+        $missing = @()
+        if (Test-Path $chk) {
+            $vIn = $false
+            $after = @{}
+            foreach ($line in (Get-Content $chk)) {
+                if ($line -match '^\s*\[') { $vIn = ($line -match '^\s*\[Privilege Rights\]'); continue }
+                if (-not $vIn) { continue }
+                if ($line -match '^\s*([A-Za-z]+)\s*=\s*(.*)$') { $after[$Matches[1]] = $Matches[2] }
+            }
+            foreach ($r in $rights) {
+                if (-not ($after.ContainsKey($r) -and $after[$r] -like "*$sid*")) { $missing += $r }
+            }
+        } else {
+            $missing = $rights
+        }
+
+        if ($missing.Count -eq 0) {
+            $rightsApplied = $true
+            Write-Note 'denied interactive, RDP, batch and service logon (verified)'
+        } else {
+            throw ("not applied for: " + ($missing -join ', '))
+        }
+    } catch {
+        Write-Host ""
+        Write-Host "    WARNING: could not deny logon rights for $AccountName." -ForegroundColor Yellow
+        Write-Host "    Reason: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "    This is a secondary control and setup is continuing. The account is" -ForegroundColor Yellow
+        Write-Host "    still in no group, its password is random and discarded, and WinRM is" -ForegroundColor Yellow
+        Write-Host "    still restricted to one address, one certificate and one command." -ForegroundColor Yellow
+        Write-Host "    To add it by hand (or in Group Policy if that manages user rights here):" -ForegroundColor Yellow
+        Write-Host "      secpol.msc > Local Policies > User Rights Assignment" -ForegroundColor Yellow
+        Write-Host "      add $env:COMPUTERNAME\$AccountName to:" -ForegroundColor Yellow
+        Write-Host "        Deny log on locally" -ForegroundColor Yellow
+        Write-Host "        Deny log on through Remote Desktop Services" -ForegroundColor Yellow
+        Write-Host "        Deny log on as a batch job" -ForegroundColor Yellow
+        Write-Host "        Deny log on as a service" -ForegroundColor Yellow
+        Write-Host "      Do NOT add 'Deny access to this computer from the network':" -ForegroundColor Yellow
+        Write-Host "      certificate auth is a network logon and that would break it." -ForegroundColor Yellow
+        Write-Host ""
     }
-    if ($missing.Count) {
-        throw ("Could not deny these logon rights: " + ($missing -join ', ') +
-               ". If Group Policy manages user rights on this host, set them there instead.")
-    }
-    Write-Note 'denied interactive, RDP, batch and service logon (verified)'
 
     # --- 2. trust the CA ---------------------------------------------------
     Write-Step 'Trust the collector CA'
@@ -290,11 +359,23 @@ function Get-GatusInventory {
 
     Write-Host ''
     Write-Host "$me is ready." -ForegroundColor Green
+    if (-not $rightsApplied) {
+        Write-Host '  NOTE: logon-right denial was not applied, see the warning above.' -ForegroundColor Yellow
+    }
     Write-Host '  Delete this script from the host now.'
     Write-Host '  On the Gatus box: docker compose restart hv-collector'
     Write-Host ''
 }
 finally {
-    # The embedded PFX and the exported policy must not be left on disk.
-    Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+    # The embedded PFX and the exported policy must not be left on disk. Use the
+    # .NET call, which copes with short paths, and say so if it ever fails
+    # rather than leaving a private key lying around silently.
+    try {
+        if ([System.IO.Directory]::Exists($work)) {
+            [System.IO.Directory]::Delete($work, $true)
+        }
+    } catch {
+        Write-Host "    WARNING: could not delete $work - it holds this host's" -ForegroundColor Yellow
+        Write-Host "    certificate and private key. Delete it by hand." -ForegroundColor Yellow
+    }
 }
