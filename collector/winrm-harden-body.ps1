@@ -96,6 +96,11 @@ try {
     $rights = @('SeDenyInteractiveLogonRight', 'SeDenyRemoteInteractiveLogonRight',
                 'SeDenyBatchLogonRight', 'SeDenyServiceLogonRight')
     $rightsApplied = $false
+    # Assigned before the try: the catch reads it, and the try can throw before
+    # reaching the line that used to set it. Under Set-StrictMode an unset
+    # variable in the catch replaces the real error with a useless one.
+    $seceditLog = Join-Path $env:windir 'security\logs\scesrv.log'
+    $seceditOut = ''
     try {
         $exp = Join-Path $work 'current.inf'
         $null = secedit /export /areas USER_RIGHTS /cfg $exp 2>&1
@@ -130,7 +135,6 @@ try {
         # Not /quiet: its output is the only clue when this does not take, and
         # the previous version threw away the reason.
         $seceditOut = (secedit /configure /db $sdb /cfg $tpl /areas USER_RIGHTS 2>&1 | Out-String).Trim()
-        $seceditLog = Join-Path $env:windir 'security\logs\scesrv.log'
 
         # Verify. secedit reports success in situations where nothing changed.
         $chk = Join-Path $work 'verify.inf'
@@ -368,11 +372,28 @@ function Get-GatusInventory {
     $fw = Get-NetFirewallRule -DisplayName $ruleName | Get-NetFirewallAddressFilter
     $listener = Get-ChildItem WSMan:\localhost\Listener | Where-Object { $_.Keys -contains 'Transport=HTTPS' }
     if (-not $listener) { throw 'HTTPS listener missing' }
-    $inv = & (Get-Module GatusInventory -ListAvailable | Select-Object -First 1 |
-              ForEach-Object { Import-Module $_.Path -Force -PassThru }) { Get-GatusInventory } 2>$null
     Write-Note "JEA endpoint   : $($probe.Name)"
     Write-Note "allowed from   : $($fw.RemoteAddress)"
     Write-Note "HTTPS listener : present"
+
+    # Try the inventory function locally. Non-fatal on purpose: everything that
+    # matters is already configured by this point, and the JEA endpoint loads
+    # the module in a fresh session regardless of what this session can see.
+    $mod = @(Get-Module GatusInventory -ListAvailable)
+    if ($mod.Count) {
+        try {
+            Import-Module $mod[0].Path -Force -ErrorAction Stop
+            $probeJson = Get-GatusInventory
+            $probeObj = $probeJson | ConvertFrom-Json
+            $vmCount = @($probeObj.vms).Count
+            Write-Note "inventory      : runs, $vmCount guest(s), $([math]::Round($probeJson.Length/1KB,1)) KB of JSON"
+        } catch {
+            Write-Host "    NOTE: the inventory function errored locally: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "    The endpoint is still configured; check it from the collector." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Note 'inventory      : module not visible in this session yet (PSModulePath cache), harmless'
+    }
 
     Write-Host ''
     Write-Host "$me is ready." -ForegroundColor Green
@@ -380,7 +401,11 @@ function Get-GatusInventory {
         Write-Host '  NOTE: logon-right denial was not applied, see the warning above.' -ForegroundColor Yellow
     }
     Write-Host '  Delete this script from the host now.'
-    Write-Host '  On the Gatus box: docker compose restart hv-collector'
+    # ./update.sh, not "restart": on a box that has not deployed this release
+    # yet the hv-collector container does not exist, and restart fails with
+    # "No such container". update.sh does up -d --build --force-recreate,
+    # which creates it.
+    Write-Host '  On the Gatus box: ./update.sh'
     Write-Host ''
 }
 finally {

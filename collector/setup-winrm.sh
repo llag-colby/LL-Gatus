@@ -254,8 +254,14 @@ DONE on this side. Two things left.
    Do MS-HV01 first. Do ONA-HV1 and ONA-HV2 LAST, they are the only
    two reporting right now.
 
-Then on this box:
-     docker compose restart hv-collector && docker logs -f hv-collector
+Then on this box, deploy (this RELEASE adds new containers, so a plain
+restart fails with "No such container"):
+     ./update.sh
+     docker logs -f hv-collector
+
+If the SMB rows need credentials, the new keys are in .env.example:
+     ./env-merge.sh .env.example .env    # keeps your values, adds new keys
+     nano .env                           # fill in SMB_USER and SMB_PASS
 
 Also: move $CERTS/gatus-winrm-ca.key somewhere offline when
 you are finished. It can mint a certificate for every host.
