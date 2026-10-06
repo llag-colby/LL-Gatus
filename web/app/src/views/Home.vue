@@ -42,7 +42,7 @@
             :class="(dashboardView === 'horizontal' || isFullscreen)
               ? 'gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
               : 'gap-5 grid-cols-1 max-w-5xl mx-auto'"
-            :style="{ '--fs-cols': fsCols, '--loc-max-rows': maxRowCount }">
+            :style="{ '--fs-cols': fsCols, '--fs-rows': fsRows }">
             <LocationCard
               v-for="(location, index) in paginatedLocations"
               :key="location.name"
@@ -50,7 +50,7 @@
               :endpoints="location.endpoints"
               :maxResults="barsToShow"
               class="motion-rise"
-              :style="{ '--d': Math.min(index, 14) * 40 + 'ms' }"
+              :style="cardStyle(location, index)"
               @showTooltip="showTooltip"
               @rowcount="noteRowCount"
             />
@@ -265,37 +265,84 @@ const paginatedSuites = computed(() => {
   return filteredSuites.value.slice(start, start + itemsPerPage)
 })
 
-// Balanced column count for the fullscreen grid: pick the layout that fills the
-// screen evenly (fewest empty cells, no lone-orphan row, roughly widescreen).
-// Bar height is shared across the wall rather than derived per card, so the
-// grid needs the densest visible card's row count. Cards report their own; only
-// the ones actually on screen are counted, so a hidden or filtered-out card
-// cannot leave a stale number behind and squash everything else.
+// Fullscreen wall geometry.
+//
+// Cards report how many rows they drew. That used to feed ONE number, the
+// densest card on the wall, which every bar was then sized against. It worked
+// while every card had three to six rows. It breaks as soon as one card is much
+// denser: Hypervisors draws twelve rows (eleven hosts plus Overall), so
+// 50cqh/12 crushed the pills on EVERY card to the floor value, while all the
+// text is sized in cqw and did not shrink with it. Tiny pills, full-size text,
+// overlapping rows.
+//
+// So density is per card now, and a dense card is given more of the screen
+// instead of being squashed into the same cell as a three-row card. A card with
+// R rows spans ceil(R / ROWS_PER_UNIT) grid rows, which keeps rows-per-pixel
+// roughly equal across the wall. Because each card is its own size container,
+// sizing bars from the card's OWN row count then yields the same physical bar
+// height everywhere, which is what the single shared number was reaching for.
 const rowCounts = reactive({})
 const noteRowCount = ({ name, count }) => { rowCounts[name] = count }
-const maxRowCount = computed(() => {
-  const counts = paginatedLocations.value.map((loc) => rowCounts[loc.name] || 0)
-  // Floor of 4: a wall made entirely of two-row cards should not inflate its
-  // bars to fill the screen.
-  return Math.max(4, ...counts)
+
+// Rows that fit comfortably in one grid cell. A card denser than this takes
+// another cell rather than shrinking its contents.
+const ROWS_PER_UNIT = 7
+
+const cardRows = (name) => rowCounts[name] || 0
+// Default 6 until a card reports: close to typical, so the first paint is not
+// wildly wrong and then jumps.
+const cardRowsOrDefault = (name) => cardRows(name) || 6
+const cardSpan = (name) => Math.max(1, Math.ceil(cardRowsOrDefault(name) / ROWS_PER_UNIT))
+
+// Style for one card: its own density, and how many grid rows it occupies.
+// gridRow only applies in fullscreen, where grid-auto-rows is uniform; the
+// normal grid ignores it because rows there are content-sized anyway.
+const cardStyle = (location, index) => ({
+  '--d': Math.min(index, 14) * 40 + 'ms',
+  '--card-rows': cardRowsOrDefault(location.name),
+  gridRow: isFullscreen.value ? `span ${cardSpan(location.name)}` : null,
 })
 
+// Column count is chosen against total grid UNITS, not card count: a wall of
+// sixteen cards where one is double height needs seventeen cells, and picking
+// columns for sixteen leaves the last row short and the aspect wrong.
+const fsUnits = computed(() =>
+  paginatedLocations.value.reduce((sum, loc) => sum + cardSpan(loc.name), 0))
+
+// Columns are chosen so each CARD comes out wider than it is tall.
+//
+// The old scoring targeted the GRID's aspect at 16/9, which is the wrong thing:
+// with seventeen units it picked six columns by three rows, making every card
+// 320x355 on a 1080p wall. A card is a list of horizontal rows, so a portrait
+// card wastes its width and starves its rows of height, which is most of why
+// the wall looked wrong once the card count grew.
+//
+// CARD_ASPECT is the shape one card should be. 1.8 keeps rows comfortably wide
+// without letterboxing them. The empty-cell and orphan terms only break ties.
+const CARD_ASPECT = 1.8
+const SCREEN_ASPECT = 16 / 9
+
 const fsCols = computed(() => {
-  const n = locations.value.length
+  const n = fsUnits.value
   if (n <= 1) return 1
-  const aspect = 16 / 9
   let best = 1, bestScore = Infinity
   for (let c = 1; c <= n; c++) {
     const r = Math.ceil(n / c)
     const empty = c * r - n
     const lastRow = n - (r - 1) * c
     const orphan = (r > 1 && lastRow === 1) ? 1 : 0
-    const aspectDiff = Math.abs(Math.log((c / r) / aspect))
-    const score = empty + aspectDiff * 3 + orphan * 6
+    // Aspect of a single card at this layout, on a 16:9 wall.
+    const cardAspect = (SCREEN_ASPECT / c) / (1 / r)
+    const aspectDiff = Math.abs(Math.log(cardAspect / CARD_ASPECT))
+    const score = empty * 0.6 + aspectDiff * 4 + orphan * 1.5
     if (score < bestScore) { bestScore = score; best = c }
   }
   return best
 })
+
+// Grid rows the wall needs, so the container can divide its height evenly and
+// nothing gets an implicit extra row that pushes a card off screen.
+const fsRows = computed(() => Math.max(1, Math.ceil(fsUnits.value / fsCols.value)))
 
 const visiblePages = computed(() => {
   const pages = []

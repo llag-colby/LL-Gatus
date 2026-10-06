@@ -445,12 +445,35 @@
 .fs-active .dashboard-grid {
     height: calc(100vh - 14px);
     grid-template-columns: repeat(var(--fs-cols, 3), 1fr) !important;
-    grid-auto-rows: 1fr;
+    /* Explicit row count, not grid-auto-rows alone: a card spanning two rows
+       would otherwise create an implicit extra row and push the bottom of the
+       wall off screen. */
+    grid-template-rows: repeat(var(--fs-rows, 3), minmax(0, 1fr));
+    grid-auto-rows: minmax(0, 1fr);
     gap: 0.9vh 0.7vw;
 }
 .fs-active .location {
     height: 100%;
     container-type: size;
+    /* min-height:0 lets a grid item actually shrink to its track; without it a
+       dense card's content sets a floor and the card overflows its cell, which
+       is what made rows overlap the card below. */
+    min-height: 0;
+    overflow: hidden;
+    /* ONE derived quantity drives every size inside the card.
+     *
+     * --card-rows is this card's own row count, set by Home.vue. ~76cqh of the
+     * card is row area (the rest is header and timestamp), so this is the
+     * height one row gets. Everything below is a fraction of it, which is what
+     * stops pills and text from being sized by unrelated rules and ending up
+     * disagreeing: shrink the rows and the text shrinks with them.
+     *
+     * Because a card with more rows than ROWS_PER_UNIT spans more grid rows,
+     * cqh is proportionally larger for it, so --row-h lands at roughly the
+     * same number of PIXELS on every card on the wall. That is the uniform
+     * bar height the old single --loc-max-rows was trying to achieve, without
+     * letting the densest card dictate terms to all the others. */
+    --row-h: calc(76cqh / var(--card-rows, 6));
 }
 /* Slim the header padding so the title sits close to the top and the rows
    get the bulk of the height. */
@@ -469,20 +492,27 @@
    same amount. */
 .fs-active .loc-rows {
     flex: 1 1 auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
-    gap: clamp(0.8cqh, calc(34cqh / var(--loc-max-rows, 6)), 4.5cqh);
-    padding: 1.5cqh 0;
+    gap: clamp(0.25cqh, calc(var(--row-h) * 0.16), 2.6cqh);
+    padding: 0.8cqh 0;
 }
 .fs-active .loc-row.is-overall {
     margin-top: auto;
-    padding-top: clamp(0.6cqh, calc(20cqh / var(--loc-max-rows, 6)), 2.4cqh);
+    padding-top: clamp(0.4cqh, calc(var(--row-h) * 0.2), 2.2cqh);
 }
 .fs-active .loc-row {
     display: flex;
     align-items: center;
     gap: 3cqw;
+    /* Each row is given its share of the card and told not to exceed it, so a
+       long label or a second meta line cannot grow the row into its neighbour. */
+    min-height: 0;
+    flex: 0 0 auto;
+    max-height: var(--row-h);
+    overflow: hidden;
 }
 /* px, not cqw, for the same getComputedStyle reason as above. Fullscreen cards
    are about the same width as grid cards, so the pill stays the same object;
@@ -497,13 +527,15 @@
  * row count, so a two-row site and a seven-row site show bars of exactly the
  * same size. --loc-max-rows is set on the grid by Home.vue and inherits. */
 .fs-active .loc-bars > div {
-    height: clamp(3.4cqh, calc(50cqh / var(--loc-max-rows, 6)), 9cqh) !important;
+    /* A share of the row, so the pill is always proportional to the space the
+       row actually has. The 2px floor keeps it visible on a very dense card. */
+    height: clamp(2px, calc(var(--row-h) * 0.6), 9cqh) !important;
     max-width: 13px;
     border-radius: 2px;
 }
 /* Card title + status badge. */
 .fs-active .location h3 {
-    font-size: 7cqw !important;
+    font-size: min(7cqw, 9cqh) !important;
     line-height: 1.05 !important;
 }
 /* "Alabaster Body Shop" and "Domain Controllers" were clipping to "Alabaster
@@ -535,8 +567,13 @@
 }
 .fs-active .loc-rowlabel > a,
 .fs-active .loc-rowlabel > span {
-    font-size: 5cqw !important;
-    line-height: 1.15 !important;
+    /* min() of a width-relative and a row-relative size. The old rule was
+       width-only, so on a dense card the text kept its size while the row
+       shrank underneath it and the lines collided. */
+    font-size: min(5cqw, calc(var(--row-h) * 0.5)) !important;
+    line-height: 1.1 !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 /* Trailing metric column on every row (latency, WAN/AP counts, best-of latency
    on Overall). Scoped to .location for the same reason as the badge above. */
@@ -560,8 +597,8 @@
 /* Smaller than the row label (5cqw): this column is little over half the width
    of the label column, and its values are longer. */
 .fs-active .location .loc-rowvalue > div:first-child {
-    font-size: 3.6cqw !important;
-    line-height: 1.15 !important;
+    font-size: min(3.6cqw, calc(var(--row-h) * 0.42)) !important;
+    line-height: 1.1 !important;
 }
 /* Secondary lines — ISP + IP under a WAN row, client/latency detail under a
    UniFi row. Shown only in fullscreen, where there's room for them. */
@@ -570,12 +607,27 @@
 }
 .fs-active .loc-meta {
     display: block;
-    font-size: 3cqw !important;
-    line-height: 1.25;
+    font-size: min(3cqw, calc(var(--row-h) * 0.3)) !important;
+    line-height: 1.15;
 }
 .fs-active .loc-meta div {
-    font-size: 3cqw !important;
-    line-height: 1.25;
+    font-size: min(3cqw, calc(var(--row-h) * 0.3)) !important;
+    line-height: 1.15;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* On a dense card there is no room for the secondary line at all. Hiding it is
+   better than letting it overlap the row below. */
+@container (max-height: 1px) { /* never matches; keeps the rule below grouped */ }
+.fs-active .location[style*="--card-rows: 1"] .loc-meta,
+.fs-active .location[style*="--card-rows: 9"] .loc-meta,
+.fs-active .location[style*="--card-rows: 10"] .loc-meta,
+.fs-active .location[style*="--card-rows: 11"] .loc-meta,
+.fs-active .location[style*="--card-rows: 12"] .loc-meta,
+.fs-active .location[style*="--card-rows: 13"] .loc-meta,
+.fs-active .location[style*="--card-rows: 14"] .loc-meta {
+    display: none;
 }
 /* No per-card bar-height override here on purpose. Thinning only the dense
    cards is what made a two-row card and a seven-row card disagree about how
@@ -584,7 +636,7 @@
 .fs-active .loc-age {
     margin-top: 0 !important;
     padding-left: 29cqw !important;
-    font-size: 3.3cqw !important;
+    font-size: min(3.3cqw, 4cqh) !important;
     white-space: nowrap;
 }
 

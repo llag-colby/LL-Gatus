@@ -118,6 +118,12 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import { generatePrettyTimeAgo } from '@/utils/time'
 import CardSettingsMenu from '@/components/CardSettingsMenu.vue'
 import { now, simulations, unifiSnapshots, isMonitored, cardTitleFor, rowLabelFor, isRowHidden, rowOrder } from '@/store'
+// Share names for the SMB rows. The endpoint GROUP has to stay a bare
+// drive letter, because it becomes part of the /endpoints/{key} URL and
+// config/key/key.go does not strip backslashes or spaces. The LABEL has no
+// such constraint, so the row can read "L: Company Hub" while the key
+// stays "l:_smb-shares".
+import { isSmbShareKey, shareFor, uncPath } from '@/utils/smbShares'
 
 const router = useRouter()
 
@@ -197,6 +203,23 @@ const shortLabel = (group) => {
     case 'phones': return 'Phones'
     default: return group || '—'
   }
+}
+
+// "L:" on its own says nothing about which share it is. The label gets the
+// share name too; the full UNC path goes in the row tooltip and on the
+// drill-in. Falls back to the bare group if the catalog has no entry.
+const rowLabelForEndpoint = (endpoint) => {
+  if (endpoint && isSmbShareKey(endpoint.key)) {
+    const share = shareFor(endpoint.key)
+    if (share) return `${share.drive} ${share.share}`
+  }
+  return shortLabel(endpoint && endpoint.group)
+}
+
+const smbTooltip = (endpoint) => {
+  if (!endpoint || !isSmbShareKey(endpoint.key)) return ''
+  const share = shareFor(endpoint.key)
+  return share ? uncPath(share) : ''
 }
 
 const slots = computed(() => {
@@ -482,8 +505,9 @@ const allRows = computed(() => {
       to: `/endpoints/${endpoint.key}`,
       tooltip: paused
         ? `${label}: monitoring paused`
-        : metric.tooltip || endpoint.group || endpoint.name,
-      isp: ispFromGroup(endpoint.group),
+        : smbTooltip(endpoint) || metric.tooltip || endpoint.group || endpoint.name,
+      // The meta line under a row: ISP for a WAN, the share path for SMB.
+      isp: smbTooltip(endpoint) || ispFromGroup(endpoint.group),
       ip: ipOf(endpoint),
       cells: endpointRowCells(endpoint),
       isOverall: false,
@@ -536,13 +560,13 @@ const allRows = computed(() => {
     pushEndpointRow('Firewall', s.firewall, 'firewall')
     pushEndpointRow('Wireless', s.wireless, 'wireless')
     pushEndpointRow('Phones', s.phones, 'phones')
-    s.others.forEach((ep) => pushEndpointRow(shortLabel(ep.group), ep, `ep:${ep.key}`))
+    s.others.forEach((ep) => pushEndpointRow(rowLabelForEndpoint(ep), ep, `ep:${ep.key}`))
   } else {
     // No WAN layout (e.g. a standalone monitor) — one row per endpoint. The
     // fall-back to props.endpoints is only for a card with nothing classified
     // at all; DNS endpoints have their own row below and must not double up.
     const list = (s.others.length || s.dns.length) ? s.others : props.endpoints
-    list.forEach((ep) => pushEndpointRow(shortLabel(ep.group) || ep.name, ep, `ep:${ep.key}`))
+    list.forEach((ep) => pushEndpointRow(rowLabelForEndpoint(ep) || ep.name, ep, `ep:${ep.key}`))
   }
 
   if (s.dns.length) pushSegmentedRow('DNS', s.dns, 'dns')

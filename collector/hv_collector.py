@@ -163,7 +163,14 @@ HOSTS = [
 # The probe budget is still ports x addresses x timeout, so the order matters
 # more than the length: a host answering 135 is found on the second try, and
 # only a genuinely dead address pays the full four timeouts.
-PROBE_PORTS = [5985, 135, 445, 3389]
+PROBE_PORTS = [5986, 5985, 135, 445, 3389]
+
+# The two that decide whether a transport is even worth attempting.
+#   5986  WinRM over HTTPS, which is what the hardened JEA path uses
+#   5985  WinRM over HTTP, which is what the legacy password path uses
+# 5986 was missing entirely, so the hardened path was never probed for.
+WINRM_TLS_PORT = 5986
+WINRM_PLAIN_PORT = 5985
 
 # Guest states that are fine. Anything else is called out by name on the row,
 # because a guest sitting in Paused or Saved after a failed migration is the
@@ -332,35 +339,68 @@ def tcp_open(address, port, timeout):
 
 
 def find_live_address(entry, timeout):
-    """First address that answers on any probe port, plus the port that answered.
+    """First address that answers, the port that answered, and which WinRM
+    ports are open on it.
 
-    Returns (address, port) or (None, None). Addresses are tried in order so the
-    inventory's primary stays primary, and the result is reported on the row.
+    Returns (address, port, winrm_ports) or (None, None, ()). Addresses are
+    tried in order so the inventory's primary stays primary.
+
+    Knowing the open WinRM ports is what stops the collector waiting on a
+    transport that cannot work. A host with WinRM disabled used to cost a full
+    WinRM timeout on the hardened path and then ANOTHER on the legacy path,
+    about 103 seconds, which was then reported as the row's latency and also
+    made a sweep outrun its own interval. Now an unopened port is skipped.
     """
     for address in entry["addresses"]:
+        answered = None
+        winrm_ports = []
         for port in PROBE_PORTS:
             if tcp_open(address, port, timeout):
-                return address, port
-    return None, None
+                if answered is None:
+                    answered = port
+                if port in (WINRM_TLS_PORT, WINRM_PLAIN_PORT):
+                    winrm_ports.append(port)
+                elif answered is not None and not winrm_ports and port not in (
+                        WINRM_TLS_PORT, WINRM_PLAIN_PORT):
+                    # Liveness is settled and neither WinRM port is open; the
+                    # remaining ports add nothing but time.
+                    break
+        if answered is not None:
+            return address, answered, tuple(winrm_ports)
+    return None, None, ()
 
 
-def _collect_any(address, user, password, cfg):
-    """Inventory by the most hardened transport available for this host.
+def _collect_any(address, user, password, cfg, winrm_ports=None):
+    """Inventory by the most hardened transport whose PORT IS ACTUALLY OPEN.
 
     Returns (document, description-of-how).
 
-    HV_WINRM_MODE controls it:
+    Only attempting a transport whose port answered is the whole point. The
+    previous version tried the hardened path and then the legacy path on every
+    host regardless, so a host with WinRM switched off spent two full timeouts,
+    around 103 seconds, before reporting a result that said nothing a 3 second
+    probe had not already established.
+
+    HV_WINRM_MODE controls which transports are eligible:
       jea    hardened only. A host that is not hardened yet reports the error.
       ntlm   legacy only.
-      auto   try JEA, fall back to NTLM (default). This is what makes a
-             host-by-host rollout possible: hardened hosts use the good path
-             immediately and the rest keep reporting meanwhile.
+      auto   prefer JEA, fall back to the legacy path (default). That is what
+             makes a host-by-host rollout possible.
     """
     mode = (os.environ.get("HV_WINRM_MODE") or "auto").strip().lower()
     jea = cfg.get("jea")
     timeout = cfg["winrm_timeout"]
+    # None means the caller did not probe, so attempt everything rather than
+    # silently refusing to collect. An EMPTY TUPLE is different: it means the
+    # probe ran and found no WinRM port, which is the whole case this exists to
+    # short-circuit. Conflating the two is how a 135-only host still paid two
+    # full timeouts.
+    probed = winrm_ports is not None
+    tls_open = (not probed) or (WINRM_TLS_PORT in winrm_ports)
+    plain_open = (not probed) or (WINRM_PLAIN_PORT in winrm_ports)
 
-    if mode in ("jea", "auto") and jea:
+    tried = []
+    if mode in ("jea", "auto") and jea and tls_open:
         try:
             doc = collect_jea(address, jea, timeout)
             return doc, "JEA over TLS, client certificate" + (
@@ -368,13 +408,31 @@ def _collect_any(address, user, password, cfg):
         except Exception:  # noqa: BLE001 - fall through or re-raise below
             if mode == "jea":
                 raise
-    elif mode == "jea":
-        raise RuntimeError("HV_WINRM_MODE=jea but HV_CLIENT_CERT/HV_CLIENT_KEY are not set")
+            tried.append("JEA")
 
-    if not user or not password:
-        raise RuntimeError("no client certificate and no HV_USER/HV_PASS")
-    doc = collect_ntlm(address, user, password, timeout)
-    return doc, "WinRS over HTTP, password (not hardened)"
+    if mode == "jea":
+        if not jea:
+            raise RuntimeError("HV_WINRM_MODE=jea but HV_CLIENT_CERT/HV_CLIENT_KEY are not set")
+        raise RuntimeError("WinRM over TLS (5986) is not listening, so the hardened "
+                           "path cannot be used. Run the setup script on this host.")
+
+    if mode in ("ntlm", "auto") and plain_open:
+        if not user or not password:
+            raise RuntimeError("no client certificate accepted and no HV_USER/HV_PASS")
+        doc = collect_ntlm(address, user, password, timeout)
+        return doc, "WinRS over HTTP, password (not hardened)"
+
+    # Nothing to try. Say which port is missing rather than timing out to
+    # discover it.
+    want = []
+    if jea:
+        want.append("5986 for the hardened path")
+    if user and password:
+        want.append("5985 for the legacy path")
+    detail = " or ".join(want) if want else "5985/5986"
+    raise RuntimeError("WinRM is not listening (needs %s). Run the setup script "
+                       "on this host, or Enable-PSRemoting for the legacy path." % detail
+                       + (" Tried: %s." % ", ".join(tried) if tried else ""))
 
 
 def _jea_settings():
@@ -592,7 +650,7 @@ def check_host(entry, user, password, cfg):
     counts = {}
 
     started = time.monotonic()
-    address, port = find_live_address(entry, cfg["tcp_timeout"])
+    address, port, winrm_ports = find_live_address(entry, cfg["tcp_timeout"])
     probe_ms = (time.monotonic() - started) * 1000.0
     if not address:
         tried = ", ".join(entry["addresses"])
@@ -611,7 +669,7 @@ def check_host(entry, user, password, cfg):
 
     started = time.monotonic()
     try:
-        doc, how = _collect_any(address, user, password, cfg)
+        doc, how = _collect_any(address, user, password, cfg, winrm_ports)
     except Exception as exc:  # noqa: BLE001 - every failure is a reportable result
         winrm_ms = (time.monotonic() - started) * 1000.0
         # pywinrm appends an extended fault dict to its message, which is pages
@@ -641,7 +699,13 @@ def check_host(entry, user, password, cfg):
         steps.append({"name": "winrm", "ok": False, "ms": round(winrm_ms, 1), "error": friendly})
         # Reachable but unreadable. The host is alive, so this is a warning on a
         # pass rather than an outage.
-        return "degraded", friendly, counts, {"steps": steps, "address": address}
+        #
+        # noWinrmDuration tells report() not to bill this wait as the row's
+        # latency. The dashboard's trailing number means "how fast did this
+        # answer", and a 45 second timeout is not that: it is how long we
+        # waited to learn nothing. The probe time is the real measurement.
+        return ("degraded", friendly, counts,
+                {"steps": steps, "address": address, "noWinrmDuration": True})
 
     winrm_ms = (time.monotonic() - started) * 1000.0
     steps.append({"name": "winrm", "ok": True, "ms": round(winrm_ms, 1), "detail": how})
@@ -682,7 +746,15 @@ def report(base, token, entry, status, reason, counts, detail):
     except (urllib.error.URLError, OSError) as exc:
         print(f"WARN: snapshot push failed for {key}: {exc}", file=sys.stderr)
 
-    duration = sum(s.get("ms", 0) for s in detail.get("steps", []))
+    # Latency on the row should be a measurement, not a timeout. When the
+    # inventory could not be read, bill only the reachability probe: that is the
+    # one number that actually describes the host. Billing the WinRM wait put
+    # 103000ms on rows whose hosts answer a TCP probe in 3ms.
+    steps = detail.get("steps", [])
+    if detail.get("noWinrmDuration"):
+        duration = sum(s.get("ms", 0) for s in steps if s.get("name") == "reachable")
+    else:
+        duration = sum(s.get("ms", 0) for s in steps)
     q = {"success": "true" if success else "false", "duration": f"{int(duration)}ms"}
     if reason:
         q["error"] = reason
