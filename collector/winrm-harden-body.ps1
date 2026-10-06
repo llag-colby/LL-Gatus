@@ -57,7 +57,7 @@ try {
         Write-Note 'existed, password rotated'
     } else {
         New-LocalUser -Name $AccountName -Password $pw -PasswordNeverExpires:$true `
-            -Description 'Gatus read-only inventory (certificate mapped, JEA only)' | Out-Null
+            -Description 'Gatus read-only inventory (cert + JEA)' | Out-Null
         Write-Note 'created'
     }
     # The password is random and discarded on purpose. Nothing authenticates
