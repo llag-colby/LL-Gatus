@@ -127,7 +127,10 @@ try {
         $tpl = Join-Path $work 'deny.inf'
         $sdb = Join-Path $work 'deny.sdb'
         Set-Content -Path $tpl -Value $body -Encoding Unicode
-        $out = secedit /configure /db $sdb /cfg $tpl /areas USER_RIGHTS /quiet 2>&1
+        # Not /quiet: its output is the only clue when this does not take, and
+        # the previous version threw away the reason.
+        $seceditOut = (secedit /configure /db $sdb /cfg $tpl /areas USER_RIGHTS 2>&1 | Out-String).Trim()
+        $seceditLog = Join-Path $env:windir 'security\logs\scesrv.log'
 
         # Verify. secedit reports success in situations where nothing changed.
         $chk = Join-Path $work 'verify.inf'
@@ -153,12 +156,18 @@ try {
             $rightsApplied = $true
             Write-Note 'denied interactive, RDP, batch and service logon (verified)'
         } else {
-            throw ("not applied for: " + ($missing -join ', '))
+            $why = if ($seceditOut) { $seceditOut } else { 'secedit said nothing' }
+            throw ("not applied for: " + ($missing -join ', ') + ". secedit said: " + $why)
         }
     } catch {
         Write-Host ""
         Write-Host "    WARNING: could not deny logon rights for $AccountName." -ForegroundColor Yellow
         Write-Host "    Reason: $($_.Exception.Message)" -ForegroundColor Yellow
+        if (Test-Path $seceditLog) {
+            Write-Host "    Detail is in $seceditLog" -ForegroundColor Yellow
+        }
+        Write-Host "    Most likely: Group Policy owns User Rights Assignment on this" -ForegroundColor Yellow
+        Write-Host "    host, so local changes are overwritten. Set it in the GPO instead." -ForegroundColor Yellow
         Write-Host "    This is a secondary control and setup is continuing. The account is" -ForegroundColor Yellow
         Write-Host "    still in no group, its password is random and discarded, and WinRM is" -ForegroundColor Yellow
         Write-Host "    still restricted to one address, one certificate and one command." -ForegroundColor Yellow
@@ -278,10 +287,18 @@ function Get-GatusInventory {
 }
 '@
     Set-Content -Path "$moduleDir\GatusInventory.psm1" -Value $inventory -Encoding UTF8
-    New-ModuleManifest -Path "$moduleDir\GatusInventory.psd1" `
+
+    # None of New-ModuleManifest, New-PSRoleCapabilityFile or
+    # New-PSSessionConfigurationFile has a -Force parameter, so an existing file
+    # has to be removed first for this to be re-runnable. Only
+    # Register-PSSessionConfiguration takes -Force.
+    $manifest = "$moduleDir\GatusInventory.psd1"
+    $psrc     = "$moduleDir\RoleCapabilities\GatusInventory.psrc"
+    Remove-Item $manifest, $psrc -Force -ErrorAction SilentlyContinue
+    New-ModuleManifest -Path $manifest `
         -RootModule 'GatusInventory.psm1' -FunctionsToExport 'Get-GatusInventory'
-    New-PSRoleCapabilityFile -Path "$moduleDir\RoleCapabilities\GatusInventory.psrc" `
-        -VisibleFunctions 'Get-GatusInventory' -ModulesToImport 'GatusInventory' -Force
+    New-PSRoleCapabilityFile -Path $psrc `
+        -VisibleFunctions 'Get-GatusInventory' -ModulesToImport 'GatusInventory'
 
     $pssc = Join-Path $work 'config.pssc'
     New-PSSessionConfigurationFile -Path $pssc `
