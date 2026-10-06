@@ -1,9 +1,33 @@
 # State
 
-**Version:** 1.8.0
-**Active task:** none (login removal + telemetry disable complete)
+**Version:** 1.11.0
+**Active task:** none (SMB share checks + Hyper-V fleet complete)
 
 ## What just landed
+
+Two new monitored tiers, both collector-backed rather than probed by Gatus.
+
+**SMB Shares** (L:, K:, P:). `collector/smb_collector.py` mounts each share as a
+read-only service account, lists its root and reads free space, in three
+reported stages (connect+auth / open share / read root). It replaced four
+`tcp://host:445` checks, which were green through every failure that actually
+happens: unshared, denied, full, dead DFS referral. S: was dropped because the
+service account is denied Read on HighSecurityHub by design.
+
+**Hypervisors** (11 hosts from the RMM export, `*-HV##`). `collector/hv_collector.py`
+runs a PowerShell inventory over WinRM and reports CPU, memory, every volume,
+the full guest list, adapters and 24h System error count. Liveness is a separate
+TCP probe, so a host whose WinRM is off reports DEGRADED rather than down.
+
+Both have purpose-built drill-ins (`SmbShareDetails.vue`, `HypervisorDetails.vue`)
+wired through `EndpointDetailRouter`, and both push detail to a side-channel
+store (`api/smb_shares.go`, `api/hypervisors.go`) in the same shape as the UniFi
+one, so `recordCounts` charts the numbers for free.
+
+See `.tk/planning/HISTORY.md` 1.11.0 and the Collector Gotchas section in
+AGENTS.md.
+
+## Previously
 
 The dashboard has no sign-in. Accounts, roles, sessions and the login UI are
 unwired, and the LL-Telemetry console is unrouted. Both bodies of code are still

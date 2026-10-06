@@ -249,8 +249,8 @@ const HISTORY_POLL_MS = 300000
 // Both collectors flag "we could not read the source at all" with a fixed error
 // prefix. That is an ABSENCE of a health signal, not a reported failure, so it
 // paints grey here exactly as it does on LocationCard and the wireless drill-in.
-// Keep in step with collector/unifi_collector.py and collector/phone_collector.py.
-const NOT_REPORTING = /^no (phones|unifi) reporting\b/i
+// Keep in step with the phone, unifi and smb collectors.
+const NOT_REPORTING = /^no (phones|unifi|smb) reporting\b/i
 const isNotReporting = (r) =>
   !!r && !r.success && (Array.isArray(r.errors) ? r.errors : []).some(e => NOT_REPORTING.test(e))
 

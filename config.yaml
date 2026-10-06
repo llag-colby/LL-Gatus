@@ -233,6 +233,14 @@ endpoints:
     interval: 60s
     conditions: ["[CONNECTED] == true", "[DNS_RCODE] == NOERROR"]
 
+  # SMB Shares live in external-endpoints at the bottom of this file: the check
+  # is a real share mount done by collector/smb_collector.py, not something
+  # Gatus can perform itself. See the block there.
+
+  # Hypervisors live in external-endpoints at the bottom of this file. They are
+  # not a ping: collector/hv_collector.py reads CPU, memory, every volume and
+  # the full VM inventory off each host over WinRM. See the block there.
+
 # Push-based receivers. Gatus does NOT call these — an external collector
 # (collector/phone_collector.py, run by cron) does the PBX check and POSTs a
 # pass/fail here.
@@ -326,4 +334,105 @@ external-endpoints:
     token: "${PHONES_PUSH_TOKEN}"
   - name: Ivory Tower
     group: Wireless
+    token: "${PHONES_PUSH_TOKEN}"
+
+  # --- SMB share rows (collector/smb_collector.py) -------------------------
+  # These are NOT port checks. The collector connects to each share as a
+  # read-only service account, opens the share, lists its root and reads its
+  # free space, then pushes the verdict here. Four stages are reported
+  # separately (connect / auth / mount / list) so a red row says WHICH part
+  # broke — "the share is gone" and "the password expired" are different
+  # people's problems.
+  #
+  # Why not tcp://host:445, which Gatus can do natively: a share can be
+  # unshared, ACL'd shut, full, or pointed at a dead DFS referral while port
+  # 445 stays wide open. That is the outage people actually hit, and a port
+  # check is green through all of it.
+  #
+  # Needs SMB_USER and SMB_PASS in .env. Without them every row reports
+  # "no smb reporting", which the dashboard paints BLACK rather than red,
+  # because an absent signal is not a failure.
+  #
+  # Keys are slug(group)_slug(name) as always: group "L:" + name "SMB Shares"
+  # -> "l:_smb-shares". The group stays a bare drive letter because the key is
+  # interpolated into /endpoints/{key} unencoded and config/key/key.go
+  # sanitize() does not strip backslashes — a UNC path there would break the
+  # drill-down URL. The paths live in collector/smb_collector.py's SHARES table
+  # and are shown on the drill-in from the pushed snapshot.
+  #
+  # L: -> \\rr-fs01\Company Hub   ·   K: -> \\llfs01\exports
+  # P: -> \\llfs01\ReportHub(Shoals)
+  #
+  # S: (\\llfs01\HighSecurityHub) was dropped on 2026-10-06: the service
+  # account is denied Read on it by design, so the row could only ever report
+  # access-denied. Re-add it here, in collector/smb_collector.py SHARES and in
+  # web/app/src/utils/smbShares.js if that account is ever granted access.
+  #
+  # NOTE: external-endpoints only (re)load on `docker compose down && up -d`.
+  - name: SMB Shares
+    group: "L:"
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: SMB Shares
+    group: "K:"
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: SMB Shares
+    group: "P:"
+    token: "${PHONES_PUSH_TOKEN}"
+
+  # --- Hypervisor rows (collector/hv_collector.py) -------------------------
+  # One row per Hyper-V host, pushed by the collector rather than pinged. Three
+  # stages are reported separately so a red row says which part broke:
+  #
+  #   reachable   a TCP probe against the host, so liveness never depends on
+  #               WinRM being configured
+  #   winrm       connect + authenticate over WinRM (5985)
+  #   collect     run the inventory script and parse it
+  #
+  # A host that is UP but whose WinRM is not answering reports DEGRADED, not
+  # down: the box is alive and saying otherwise would start the wrong incident.
+  # Only an unreachable host is down.
+  #
+  # Needs HV_USER and HV_PASS in .env (falls back to SMB_USER/SMB_PASS). The
+  # account needs to run Get-CimInstance and Get-VM on each host, which in
+  # practice means local Administrators or a delegated WinRM endpoint. Without
+  # credentials each row reports "no hv reporting" and reads BLACK, which means
+  # not configured rather than outage.
+  #
+  # Keys are slug(group)_slug(name): group "MS-HV01" + name "Hypervisors"
+  # -> "ms-hv01_hypervisors". Hosts and addresses come from the RMM export and
+  # live in collector/hv_collector.py HOSTS, which is the source of truth.
+  #
+  # NOTE: external-endpoints only (re)load on `docker compose down && up -d`.
+  - name: Hypervisors
+    group: CU-HV01
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Hypervisors
+    group: FL-HV01
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Hypervisors
+    group: HOOV-HV01
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Hypervisors
+    group: HOOV-HV02
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Hypervisors
+    group: MS-HV01
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Hypervisors
+    group: MS-HV02
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Hypervisors
+    group: MS-HV03
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Hypervisors
+    group: MS-HV04
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Hypervisors
+    group: MS-HV06
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Hypervisors
+    group: ONA-HV1
+    token: "${PHONES_PUSH_TOKEN}"
+  - name: Hypervisors
+    group: ONA-HV2
     token: "${PHONES_PUSH_TOKEN}"

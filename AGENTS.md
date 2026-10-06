@@ -86,3 +86,86 @@ Use `alerting/provider/slack/` as the reference implementation. Every new provid
 ## Commits & PRs
 
 When creating a commit or PR as an agent, state that it was made by an agent and include your model name and version.
+
+## Collector Gotchas
+
+Four things in this stack bite on contact. All four were found by running the
+code against real servers, not by reading docs.
+
+### WinRM scripts: a size ceiling, and do not compress your way around it
+
+`pywinrm` sends a script as `powershell -EncodedCommand <base64 of UTF-16LE>`.
+Windows caps a command line at 8191 characters and that encoding inflates by
+about 2.7x, so anything over roughly 3000 characters of PowerShell will not fit.
+A 4.8 KB script arrives as ~12,900 characters and every host answers `The
+command line is too long`.
+
+**Do not solve this by packing the script as gzip+base64 behind
+`Invoke-Expression`.** It fits (6664 characters) and it is also precisely what a
+malicious loader looks like, so AMSI blocks it. The failure surfaces as an
+opaque WinRM `Access is denied` (wsmanfault 2147942405) at `run_command` time,
+with no mention of AMSI anywhere, and it looks exactly like a permissions
+problem on the host. Bisected on ONA-HV1: the same wrapper around a tiny payload
+runs fine, a same-sized benign script runs fine, only the real base64 blob is
+refused, deterministically.
+
+The working shape is `collector/hv_collector.py`: several small plain-text
+scripts (`PS_PARTS`), each emitting a JSON object for the keys it owns, merged
+in Python. Keep each one under `MAX_ENCODED`.
+
+### Always close a WinRM shell yourself
+
+`winrm.Session.run_ps` opens a shell per call and leaks it whenever the call
+raises, because `close_shell` never runs. For this collector the raising path is
+the NORMAL case (a host with WinRM disabled fails every single sweep), so the
+leak is unbounded: ONA-HV1 accumulated 22 orphaned shells against a two hour
+`IdleTimeout`. Use `winrm.protocol.Protocol` directly, open the shell once,
+reuse it for every part, and close it in a `finally`. `cleanup_command` after
+each command, also in a `finally`.
+
+### smbclient caches sessions per server
+
+`smbclient.register_session` reuses a cached connection, so the second and third
+share on one file server never re-authenticate: `register_session` returns in
+0 ms, reports OK, and a wrong or expired password comes back HEALTHY for every
+share after the first. `collector/smb_collector.py` calls
+`smbclient.delete_session(host)` before each share for exactly this reason. K:,
+P: and S: all live on llfs01, so without it three rows are one signal wearing
+three labels.
+
+### Fiber does not unescape path params
+
+Routes that validate a key against config.yaml (`/v1/smb/:key`, `/v1/hv/:key`,
+`/v1/endpoints/:key/external`) read the raw param, so a percent-encoded colon
+arrives as `%3A`, matches no configured endpoint and 404s. Storage-backed routes
+tolerate it, which makes the inconsistency easy to miss. SMB keys contain a colon
+(`l:_smb-shares`), so both the collectors and the frontend encode everything
+except the colon: see `keyPath()` in `web/app/src/utils/smbShares.js` and
+`quote(key, safe=":")` in the collectors.
+
+### Share and logon failures do not raise the class you expect
+
+Neither `BadNetworkName` nor `AccessDenied` is reliably raised. A missing share
+comes back as a plain `SMBOSError` carrying `0xc0000225`, a denied share as
+`0xc0000022`, and a bad password as a generic `SMBException` carrying
+`STATUS_LOGON_FAILURE`. `classify()` in `collector/smb_collector.py` matches on
+the NTSTATUS text, because the raw form (`[NtStatus 0xc0000022] Unknown NtStatus
+error returned`) tells an operator nothing.
+
+### Port 135 is often the only thing a Windows host answers
+
+Seven of the eleven hypervisors (FL-HV01, HOOV-HV01/02, MS-HV01/03/04/06, on
+four different subnets) accept TCP 135 and time out on 445, 5985 and 3389.
+A liveness probe that skips 135 therefore reports them as "host did not answer
+on any address" while they are perfectly alive. Measured on all 12 of their
+addresses. `PROBE_PORTS` in `collector/hv_collector.py` must keep 135, and the
+assumption that anything answering 135 also answers 445 is false on this estate.
+
+### Adding a collector-backed row
+
+External endpoints only (re)load on `docker compose down && up -d`, never on a
+plain `up -d`. A row added to `external-endpoints` without that cycle will 404
+every push with "has no external-endpoint in config.yaml" while the endpoint
+still appears in `/api/v1/endpoints/statuses`, because that list comes from
+storage. `main.go` prunes storage for keys no longer in config at startup, so
+REMOVING a row needs the same cycle and then cleans itself up.

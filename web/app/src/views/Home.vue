@@ -148,12 +148,13 @@ const barsToShow = computed(() => resultPageSize)
 // Cards that are not a rooftop sort to the end of the wall, whatever order is
 // selected. Domain Controllers is the AD and DNS tier rather than a site, and
 // left to the alphabet it lands between Decatur KIA and Florence, buried in the
-// run of dealerships where nobody looks for it.
+// run of dealerships where nobody looks for it. SMB Shares and Hypervisors are
+// the same kind of thing — an infrastructure tier, not a store — so they join it.
 //
 // This deliberately outranks the health sort too: the tier keeps a fixed place
 // on the wall so people learn where to find it, rather than moving when it
 // breaks. Flip the pinRank comparison below if a failing tier should jump.
-const PINNED_LAST = new Set(['Domain Controllers'])
+const PINNED_LAST = new Set(['Domain Controllers', 'SMB Shares', 'Hypervisors'])
 const pinRank = (name) => (PINNED_LAST.has(name) ? 1 : 0)
 
 // --- helpers ---

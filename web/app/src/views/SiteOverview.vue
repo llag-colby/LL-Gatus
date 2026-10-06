@@ -359,7 +359,7 @@ const isPhoneFeed = (ep) => (ep.key || '').startsWith('phones_') || /phone|voip|
 
 // A failing check that carries this marker means nothing reported at all,
 // which is not the same as reporting a failure. Matches LocationCard.
-const NOT_REPORTING = /^no (phones|unifi) reporting\b/i
+const NOT_REPORTING = /^no (phones|unifi|smb) reporting\b/i
 const isNotReporting = (r) =>
   !!r && !r.success && (r.errors || []).some((e) => NOT_REPORTING.test(e))
 

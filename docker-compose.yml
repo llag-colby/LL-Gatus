@@ -38,6 +38,80 @@ services:
     working_dir: /collector
     command: ["python", "phone_collector.py"]
 
+  # SMB collector: actually mounts each watched share as a read-only service
+  # account, lists its root and reads its free space, then pushes the verdict.
+  # This is the only check in the stack that proves a share WORKS rather than
+  # that its server answers on port 445.
+  #
+  # smbprotocol is installed at start rather than baked into an image: it is a
+  # pure-python wheel, the container restarts rarely, and this keeps the deploy
+  # to one Dockerfile. Needs SMB_USER / SMB_PASS in .env — without them every
+  # row reports "no smb reporting" and reads black.
+  smb-collector:
+    image: python:3-slim
+    container_name: smb-collector
+    restart: always
+    depends_on:
+      - gatus
+    env_file:
+      - .env   # SMB_USER + SMB_PASS (shares) and PHONES_PUSH_TOKEN (push)
+    environment:
+      - LOOP=1
+      - GATUS_PUSH_BASE=http://gatus:8080
+      - PYTHONUNBUFFERED=1
+      - TZ=America/Chicago
+    volumes:
+      - ./collector:/collector
+    working_dir: /collector
+    command: ["sh", "-c", "pip install --no-cache-dir --quiet smbprotocol && python smb_collector.py"]
+
+  # Hypervisor collector: runs an inventory script on each Hyper-V host over
+  # WinRM and pushes CPU, memory, every volume and the full guest list. Probes
+  # liveness with a plain TCP connect first, so a host with WinRM disabled still
+  # reports as alive rather than as an outage.
+  #
+  # pywinrm is installed at start rather than baked into an image, same as the
+  # SMB collector: pure-python wheel, rare restarts, one Dockerfile.
+  # Needs HV_USER / HV_PASS in .env (falls back to SMB_USER / SMB_PASS).
+  hv-collector:
+    image: python:3-slim
+    container_name: hv-collector
+    restart: always
+    depends_on:
+      - gatus
+    env_file:
+      - .env   # HV_USER/HV_PASS (or SMB_USER/SMB_PASS) + PHONES_PUSH_TOKEN
+    environment:
+      - LOOP=1
+      - GATUS_PUSH_BASE=http://gatus:8080
+      - PYTHONUNBUFFERED=1
+      - TZ=America/Chicago
+      # auto: use the hardened JEA path on hosts that have been set up, fall
+      # back to the legacy password path on the rest. That is what allows a
+      # host-by-host rollout. Set to jea once every host is hardened, which
+      # makes an un-hardened host fail loudly instead of quietly downgrading.
+      - HV_WINRM_MODE=auto
+      - HV_CLIENT_CERT=/certs/gatus-client.crt
+      - HV_CLIENT_KEY=/certs/gatus-client.key
+      # Verifies the HOST's certificate. Only effective once a host has a
+      # CA-signed server certificate from winrm-make-host-cert.sh; until then
+      # that host's TLS is encrypted but the host is unverified, and the
+      # collector says so on the row.
+      - HV_SERVER_CA=/certs/gatus-winrm-ca.crt
+    volumes:
+      - ./collector:/collector
+      # Client certificate for the hardened WinRM path, read-only, mounted FILE
+      # BY FILE on purpose. Mounting the whole winrm-certs directory also handed
+      # the container gatus-winrm-ca.key, and that key can mint a client
+      # certificate trusted by every hardened host: a container compromise would
+      # have become estate-wide WinRM access. The container needs exactly these
+      # three files and no others.
+      - ./collector/winrm-certs/gatus-client.crt:/certs/gatus-client.crt:ro
+      - ./collector/winrm-certs/gatus-client.key:/certs/gatus-client.key:ro
+      - ./collector/winrm-certs/gatus-winrm-ca.crt:/certs/gatus-winrm-ca.crt:ro
+    working_dir: /collector
+    command: ["sh", "-c", "pip install --no-cache-dir --quiet pywinrm pypsrp && python hv_collector.py"]
+
   # UniFi collector: reads Ubiquiti's cloud Site Manager API (api.ui.com) and
   # pushes the Firewall (gateway + WANs) and Wireless (APs + clients) rows.
   # Cloud, not per-console, so no route to any store LAN is needed. Sweeps every

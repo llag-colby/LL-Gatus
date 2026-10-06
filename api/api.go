@@ -168,6 +168,20 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	apiV1Router.Get("/v1/unifi/:key/settings", GetUniFiSettings)
 	apiV1Router.Post("/v1/unifi/:key/settings", SetUniFiSettings)
 	apiV1Router.Get("/v1/unifi/:key", GetUniFiSnapshot)
+	// SMB share side-channel, same shape as UniFi above: the collector POSTs one
+	// snapshot per share, the drill-in GETs them all at once for its sibling
+	// list. Static route first so it isn't swallowed by :key.
+	apiV1Router.Get("/v1/smb", GetSMBSnapshots)
+	// COLLECTOR PUSH: no session gate, same reasoning as /external above.
+	apiV1Router.Post("/v1/smb/:key", SetSMBSnapshot(cfg))
+	apiV1Router.Get("/v1/smb/:key", GetSMBSnapshot)
+	// Hypervisor side-channel, same shape again: CPU, memory, volumes and the
+	// guest inventory per Hyper-V host. Static route first so it isn't swallowed
+	// by :key.
+	apiV1Router.Get("/v1/hv", GetHVSnapshots)
+	// COLLECTOR PUSH: no session gate, same reasoning as /external above.
+	apiV1Router.Post("/v1/hv/:key", SetHVSnapshot(cfg))
+	apiV1Router.Get("/v1/hv/:key", GetHVSnapshot)
 	// Dashboard layout: which cards and rows are shown, in what order, under
 	// what name. Presentation only, shared by every screen, and deliberately
 	// separate from /v1/monitoring, which is the control that actually stops a

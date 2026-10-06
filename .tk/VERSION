@@ -1,11 +1,22 @@
 {
-  "version": "1.10.0",
+  "version": "1.11.0",
   "major": 1,
-  "minor": 10,
+  "minor": 11,
   "patch": 0,
-  "lastUpdated": "2026-09-21T13:12:00Z",
-  "lastCommand": "/tk:build heavy + /tk:design heavy",
+  "lastUpdated": "2026-10-06T17:10:00Z",
+  "lastCommand": "/tk:build heavy",
   "history": [
-    { "version": "1.10.0", "date": "2026-09-21", "command": "/tk:build heavy", "note": "Service desk wall board: removed the coffee palette, rebuilt /jira as a NOC monitoring view" }
+    {
+      "version": "1.11.0",
+      "date": "2026-10-06",
+      "command": "/tk:build heavy",
+      "note": "Real SMB share checks and a Hyper-V fleet: two collectors that mount shares and read host inventory over WinRM, plus purpose-built drill-ins"
+    },
+    {
+      "version": "1.10.0",
+      "date": "2026-09-21",
+      "command": "/tk:build heavy",
+      "note": "Service desk wall board: removed the coffee palette, rebuilt /jira as a NOC monitoring view"
+    }
   ]
 }

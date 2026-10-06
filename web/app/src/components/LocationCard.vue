@@ -130,8 +130,30 @@ const props = defineProps({
 const emit = defineEmits(['showTooltip', 'rowcount'])
 
 // Latency thresholds (ms) for the Overall Health row.
-const LATENCY_GOOD = 100
-const LATENCY_WARN = 250
+// The Overall row colours its bars by latency, and a fixed millisecond
+// threshold cannot work across the kinds of row this dashboard now carries.
+// A WAN ping is 20 to 40 ms. An SMB share mount is connect, authenticate, open
+// the share and list its root across a VPN, which is legitimately 280 ms. A
+// hypervisor sweep is a TCP probe plus a WinRM session and runs into seconds.
+// With the old fixed 100 / 250 ms the SMB card sat solid red forever while
+// every share was perfectly healthy.
+//
+// So the thresholds are derived from the card's OWN recorded history: the
+// median of its successful checks is "normal here", and a bar is amber or red
+// only when it is a multiple of that. The absolute floors keep the old
+// behaviour for fast rows, where a 3x jump is still only 90 ms and nobody
+// cares: nothing under FLOOR_AMBER is ever painted as a problem.
+const BASELINE_AMBER_FACTOR = 1.6
+const BASELINE_RED_FACTOR = 3
+const FLOOR_AMBER_MS = 120
+const FLOOR_RED_MS = 250
+// Below this many successful samples there is no baseline worth trusting, and
+// inventing one from two data points is how a healthy card turns red on a cold
+// start. Until then a pass is simply green.
+const MIN_BASELINE_SAMPLES = 8
+// How far back the baseline looks. Long enough to be stable, short enough
+// that a row which changes what it measures re-baselines within the hour.
+const RECENT_SAMPLES = 20
 
 const selectedKey = ref(null)
 
@@ -204,8 +226,9 @@ const padResults = (endpoint) => {
 // signal at all, and painting that red makes it look like an outage. Both
 // collectors flag it with a fixed error prefix — "no phones reporting" and
 // "no unifi reporting" — and it renders BLACK. Keep this in step with the
-// prefixes in collector/phone_collector.py and collector/unifi_collector.py.
-const NOT_REPORTING = /^no (phones|unifi) reporting\b/i
+// prefixes in collector/phone_collector.py, collector/unifi_collector.py
+// and collector/smb_collector.py.
+const NOT_REPORTING = /^no (phones|unifi|smb) reporting\b/i
 const isNotReporting = (result) =>
   !!result && !result.success && (result.errors || []).some((e) => NOT_REPORTING.test(e))
 
@@ -230,28 +253,87 @@ const endpointRowCells = (endpoint) => {
 // rather than wondering where it went.
 const activeEndpoints = computed(() => props.endpoints.filter((ep) => isMonitored(ep.key)))
 
+// What "normal" costs for each ROW, in milliseconds.
+//
+// Per row, not per card: one card can hold rows that measure different work.
+// The Hypervisors card has a host whose full inventory legitimately takes 20
+// seconds sitting next to one that is refused in 300 ms, and a single card-wide
+// number would call one of them broken whichever way it landed.
+//
+// Median of a RECENT window, not of all history. These rows change what they
+// measure: the SMB rows were a 30 ms port check this morning and are now a 280
+// ms share mount, and a baseline over all history stays anchored to the old
+// era and paints the new one red. A recent window ages that out on its own.
+//
+// Median rather than mean so one slow outlier does not lift the bar and hide
+// the next one.
+const baselineFor = (results) => {
+  const samples = []
+  for (let i = results.length - 1; i >= 0 && samples.length < RECENT_SAMPLES; i--) {
+    const r = results[i]
+    if (r && r.success && r.duration) samples.push(r.duration / 1000000)
+  }
+  if (samples.length < MIN_BASELINE_SAMPLES) return null
+  samples.sort((a, b) => a - b)
+  const mid = Math.floor(samples.length / 2)
+  return samples.length % 2 ? samples[mid] : (samples[mid - 1] + samples[mid]) / 2
+}
+
+const baselines = computed(() => {
+  const map = {}
+  for (const ep of activeEndpoints.value) map[ep.key] = baselineFor(ep.results || [])
+  return map
+})
+
+const latencyToken = (key, ms) => {
+  const baseline = baselines.value[key]
+  // No baseline yet: a check that passed is green. Do not guess from two points.
+  if (baseline === null || baseline === undefined) return 'green'
+  const amberAt = Math.max(baseline * BASELINE_AMBER_FACTOR, FLOOR_AMBER_MS)
+  const redAt = Math.max(baseline * BASELINE_RED_FACTOR, FLOOR_RED_MS)
+  if (ms <= amberAt) return 'green'
+  if (ms <= redAt) return 'amber'
+  return 'red'
+}
+
+const TOKEN_RANK = { green: 0, amber: 1, red: 2 }
+
 // Overall Health row: best (lowest) latency across the location's WANs per slice.
 const overallCells = computed(() => {
-  const padded = activeEndpoints.value.map(padResults)
+  // Carry the key alongside each padded series: every result is judged against
+  // its OWN row's baseline, so a slow-by-nature row cannot drag the card red.
+  const padded = activeEndpoints.value.map((ep) => ({ key: ep.key, results: padResults(ep) }))
   const cells = []
   for (let i = 0; i < props.maxResults; i++) {
-    const slice = padded.map((p) => p[i]).filter(Boolean)
+    const slice = padded
+      .map((p) => ({ key: p.key, result: p.results[i] }))
+      .filter((x) => x.result)
     if (slice.length === 0) {
       cells.push({ token: 'none', result: null })
       continue
     }
-    const up = slice.filter((r) => r.success && r.duration)
+    const up = slice.filter((x) => x.result.success && x.result.duration)
     if (up.length === 0) {
-      // Everything in this slice failed — but if the ONLY thing that failed was
+      // Everything in this slice failed, but if the ONLY thing that failed was
       // a not-reporting feed, there is no outage to call red.
-      const token = slice.every(isNotReporting) ? 'nodata' : 'red'
-      cells.push({ token, result: slice[0] })
+      const token = slice.every((x) => isNotReporting(x.result)) ? 'nodata' : 'red'
+      cells.push({ token, result: slice[0].result })
       continue
     }
-    const best = up.reduce((m, r) => (r.duration < m.duration ? r : m))
-    const ms = best.duration / 1000000
-    const token = ms <= LATENCY_GOOD ? 'green' : ms <= LATENCY_WARN ? 'amber' : 'red'
-    cells.push({ token, result: best })
+    // Best row wins the slice: healthiest token first, lowest latency to break
+    // a tie. That keeps the old "best of the WANs" behaviour on a link card.
+    let bestToken = null
+    let bestResult = null
+    for (const x of up) {
+      const token = latencyToken(x.key, x.result.duration / 1000000)
+      if (bestToken === null
+          || TOKEN_RANK[token] < TOKEN_RANK[bestToken]
+          || (TOKEN_RANK[token] === TOKEN_RANK[bestToken] && x.result.duration < bestResult.duration)) {
+        bestToken = token
+        bestResult = x.result
+      }
+    }
+    cells.push({ token: bestToken, result: bestResult })
   }
   return cells
 })
