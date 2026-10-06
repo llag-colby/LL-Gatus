@@ -94,11 +94,6 @@ export const fmtGB = (gb) => {
   return `${gb.toFixed(1)} GB`
 }
 
-// Percent-encode a key for a URL path WITHOUT touching the colon.
-//
-// These keys look like "l:_smb-shares". Gatus reads the raw path param on the
-// routes that validate a key against config.yaml (/api/v1/smb/:key and the
-// collector's /external push) and never unescapes it, so an encodeURIComponent
-// colon arrives as %3A, matches no configured endpoint, and 404s. A colon is
-// legal in a path segment, so it is left alone and everything else is encoded.
-export const keyPath = (key) => encodeURIComponent(String(key || '')).replace(/%3A/gi, ':')
+// One definition, in utils/keys.js, re-exported so existing imports keep
+// working. Three copies of the same rule is three chances to fix one.
+export { keyPath } from './keys'

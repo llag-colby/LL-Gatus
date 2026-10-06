@@ -108,7 +108,6 @@ export const fmtUptime = (hours) => {
   return `${Math.floor(h / 24)} d ${Math.round(h % 24)} h`
 }
 
-// Keys here carry no colon, unlike the SMB ones, but the routes that validate a
-// key against config.yaml still read the raw path param. Encoding everything
-// except the colon keeps one habit across both pages.
-export const keyPath = (key) => encodeURIComponent(String(key || '')).replace(/%3A/gi, ':')
+// One definition, in utils/keys.js, re-exported so existing imports keep
+// working. Three copies of the same rule is three chances to fix one.
+export { keyPath } from './keys'

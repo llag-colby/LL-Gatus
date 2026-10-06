@@ -1,11 +1,17 @@
 {
-  "version": "1.12.0",
+  "version": "1.13.0",
   "major": 1,
-  "minor": 12,
+  "minor": 13,
   "patch": 0,
-  "lastUpdated": "2026-10-06T20:10:00Z",
+  "lastUpdated": "2026-10-06T21:00:00Z",
   "lastCommand": "/tk:build heavy",
   "history": [
+    {
+      "version": "1.13.0",
+      "date": "2026-10-06",
+      "command": "/tk:build heavy",
+      "note": "/settings rebuilt as an operations console: feed freshness, paused checks, target overrides, shared layout, browser prefs; colon-key encoding fixed in three places"
+    },
     {
       "version": "1.12.0",
       "date": "2026-10-06",

@@ -1,4 +1,5 @@
 import { computed, reactive, ref } from 'vue'
+import { keyPath } from '@/utils/keys'
 
 // Reads a value from window.config, ignoring unreplaced Go template placeholders.
 function fromConfig(key) {
@@ -171,7 +172,10 @@ export async function setMonitored(key, monitored) {
   monitored ? next.delete(key) : next.add(key)
   monitoringDisabled.value = next
   try {
-    const response = await fetch(`/api/v1/monitoring/${encodeURIComponent(key)}`, {
+    // keyPath, not encodeURIComponent: this route resolves the key against
+    // config.yaml and reads the raw path param, so a %3A from an SMB key
+    // ("l:_smb-shares") matches nothing and the pause silently 404s.
+    const response = await fetch(`/api/v1/monitoring/${keyPath(key)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ monitored: !!monitored }),
@@ -577,7 +581,9 @@ export function targetFor(key) {
 async function writeTarget(key, method, body) {
   if (!editToken.value) return { ok: false, status: 401, message: 'An edit token is required.' }
   try {
-    const response = await fetch(`/api/v1/endpoints/${encodeURIComponent(key)}/target`, {
+    // Same reason as setMonitored: the target routes validate the key against
+    // config.yaml, so the colon in an SMB key must survive the round trip.
+    const response = await fetch(`/api/v1/endpoints/${keyPath(key)}/target`, {
       method,
       headers: {
         'Content-Type': 'application/json',
