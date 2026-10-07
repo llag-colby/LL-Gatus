@@ -58,6 +58,13 @@
         <pre class="err-pre">{{ snapshot.error }}</pre>
       </div>
 
+      <!-- TEAM: per-assignee counts. Sits in the same v-if chain as Kanban, so
+           an unreachable Jira shows the one error above rather than each tab
+           discovering it separately. The counts themselves are a separate,
+           cached fetch inside the component. -->
+      <JiraTeam v-else-if="tab === 'team' && snapshot.configured"
+        :project-key="selectedKey || proj?.key || ''" :base-url="snapshot.baseUrl || ''" />
+
       <JiraKanban v-else-if="tab === 'kanban' && snapshot.configured" @open="openKey = $event" />
 
       <!-- ============================ OVERVIEW: THE WALL ================= -->
@@ -275,7 +282,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { ArrowLeft, RefreshCw, AlertTriangle, Gauge, Rows3, LayoutGrid, ExternalLink } from 'lucide-vue-next'
+import { ArrowLeft, RefreshCw, AlertTriangle, Gauge, Rows3, LayoutGrid, Users, ExternalLink } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import Settings from '@/components/Settings.vue'
 import { generatePrettyTimeAgo } from '@/utils/time'
@@ -283,10 +290,12 @@ import { isFullscreen, now as serverNow } from '@/store'
 import jiraIcon from '@/assets/jira.png'
 import JiraTicketPanel from '@/components/JiraTicketPanel.vue'
 import JiraKanban from '@/components/JiraKanban.vue'
+import JiraTeam from '@/components/JiraTeam.vue'
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: Gauge },
   { id: 'queue', label: 'Queue', icon: Rows3 },
+  { id: 'team', label: 'Team', icon: Users },
   { id: 'kanban', label: 'Kanban', icon: LayoutGrid },
 ]
 const COLUMNS = [

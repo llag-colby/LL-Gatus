@@ -105,6 +105,42 @@ it, so an interrupted build leaves that directory empty. Do not build the image
 in that window or you will embed an empty bundle, and the page will 404 its own
 assets.
 
+## Never run the frontend build and a Go build at the same time
+
+`npm run build` empties and rewrites `web/static/`. A Go build running
+concurrently fails with:
+
+    web/static.go:6:13: pattern static: cannot embed directory static:
+      contains no embeddable files
+
+which reads as a Go or `//go:embed` problem and is not one. Run them
+sequentially. Note also that `docker run ... | tail -20` reports **tail's**
+exit code, not the build's, so a failure checked that way looks like a pass.
+
+## Jira Gotchas
+
+- **The search API has no group-by.** Anything "by assignee" has to be counted
+  in Go. `jira/breakdown.go` does one paged search per window asking for
+  `fields: ["assignee"]` only — do not reuse `searchAll` for this, it requests
+  the full `issueFields` set and a four-figure month becomes megabytes of
+  summaries and SLA data nothing reads
+- **The poller's `Snapshot` holds only OPEN issues.** Nothing about completed
+  work ("done today", "done this month") can be derived from it, no matter how
+  the scalars are combined. A ticket opened and closed this morning is simply
+  not in that payload
+- **Group assignee counts by `accountId`, not `displayName`.** Two people can
+  share a display name; grouping on the name merges them into one row. The same
+  applies to deep links — `assignee = "Some Name"` is not a reliable JQL form on
+  Jira Cloud, `assignee = "<accountId>"` is
+- **Build project keys with `quote()`**, the same helper the poller uses. Two
+  counts of "open in LLSM" that quote the key differently will eventually
+  disagree, and the breakdown's Open window is meant to match the Overview tab
+- `resolutiondate` not `statusCategory = Done` for "completed": a ticket can
+  reach a Done category without ever being resolved (moved, duplicated)
+- `startOfDay()` / `startOfMonth()` are evaluated in the **Jira account's**
+  timezone, which is the one you want — "today" should mean today for the people
+  in the counts, not UTC
+
 ## Collector Gotchas
 
 Four things in this stack bite on contact. All four were found by running the

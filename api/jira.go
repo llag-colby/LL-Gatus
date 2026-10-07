@@ -32,6 +32,21 @@ func GetJiraIssue(c *fiber.Ctx) error {
 	return c.Status(200).JSON(detail)
 }
 
+// GetJiraBreakdown returns per-assignee ticket counts across five time windows
+// for the team dashboard. The result is cached in the jira package, so a wall
+// display refreshing this page does not re-page the whole of last month out of
+// Jira; ?refresh=1 forces a recompute.
+//
+// Always 200: the payload's configured/ok/error fields carry the failure, which
+// keeps the UI from having to handle an HTTP error path of its own.
+func GetJiraBreakdown(c *fiber.Ctx) error {
+	// Returns at once, always. A cold pass over five windows per project takes
+	// far longer than the server's 15s WriteTimeout, so the counting happens in
+	// the background and this hands back whatever is cached, with `computing`
+	// set while a pass is running.
+	return c.Status(200).JSON(jira.GetBreakdown(c.Query("refresh") == "1"))
+}
+
 // GetJiraBoards lists the agile boards the configured account can see, so the
 // Kanban tab can offer a board picker grouped by project.
 func GetJiraBoards(c *fiber.Ctx) error {

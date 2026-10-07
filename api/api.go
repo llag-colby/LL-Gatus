@@ -212,6 +212,8 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	// Jira live stream (SSE): pushes a fresh snapshot on every poll.
 	apiV1Router.Get("/v1/jira/live", JiraLive)
 	// Jira Kanban: the agile boards themselves (columns, WIP limits, cards).
+	// Per-assignee counts for the team dashboard; cached, ?refresh=1 to force.
+	apiV1Router.Get("/v1/jira/breakdown", GetJiraBreakdown)
 	apiV1Router.Get("/v1/jira/boards", GetJiraBoards)
 	apiV1Router.Get("/v1/jira/board/:id", GetJiraBoard)
 	apiV1Router.Get("/v1/jira/board/:id/live", JiraBoardLive)
