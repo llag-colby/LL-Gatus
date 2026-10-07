@@ -87,6 +87,24 @@ Use `alerting/provider/slack/` as the reference implementation. Every new provid
 
 When creating a commit or PR as an agent, state that it was made by an agent and include your model name and version.
 
+## A killed frontend build poisons the webpack cache
+
+If `npm run build` is interrupted, the next build can hang forever at
+`Building for production...` with the node process sitting at 3 percent CPU and
+about 50 MB resident. That is not a slow build and it is not your code: a real
+Vue build here runs at 100 percent CPU and 1 to 3 GB for roughly 150 seconds.
+It is webpack 5's persistent filesystem cache left half written.
+
+    docker run --rm -v "<repo>/web:/web" -w /web/app node:20-alpine       sh -c "rm -rf node_modules/.cache"
+
+Then build again. Two concurrent builds against the same bind mount can cause
+the same thing, so never start a second one while the first is running.
+
+Worth knowing while it is stuck: the build clears `web/static/` BEFORE writing
+it, so an interrupted build leaves that directory empty. Do not build the image
+in that window or you will embed an empty bundle, and the page will 404 its own
+assets.
+
 ## Collector Gotchas
 
 Four things in this stack bite on contact. All four were found by running the
