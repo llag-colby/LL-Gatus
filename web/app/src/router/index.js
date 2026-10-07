@@ -3,6 +3,7 @@ import Home from '@/views/Home'
 import EndpointDetailRouter from "@/views/EndpointDetailRouter";
 import SuiteDetails from '@/views/SuiteDetails';
 import JiraDetails from '@/views/JiraDetails';
+import S1Details from '@/views/S1Details';
 import SiteOverview from '@/views/SiteOverview';
 import SettingsView from '@/views/SettingsView';
 
@@ -33,6 +34,14 @@ const routes = [
         path: '/jira',
         name: 'Jira',
         component: JiraDetails
+    },
+    {
+        // SentinelOne threat console. Threats are this product's tickets:
+        // they carry an incident status, an analyst verdict and a mitigation
+        // state, so the page is shaped like the service-desk board.
+        path: '/s1',
+        name: 'SentinelOne',
+        component: S1Details
     },
     {
         // Which checks are paused, globally, plus a note on where the

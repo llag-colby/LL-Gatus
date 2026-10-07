@@ -25,6 +25,15 @@ Guidance for AI coding agents working in this repository.
 - `GATUS_CONFIG_PATH` — Config file path (default: `config/config.yaml`); can be a directory of YAML files (deep-merged)
 - `GATUS_LOG_LEVEL` — `DEBUG`, `INFO`, `WARN`, `ERROR`
 - `ENVIRONMENT=dev` — Enables CORS for frontend dev on `localhost:8081`
+- `S1_BASE_URL` — SentinelOne console URL, e.g. `https://usea1-x.sentinelone.net`.
+  Must be the console you log into, **not** the `mgmt-<id>` host named in the
+  token (that one 401s identically to a bad token)
+- `S1_API_TOKEN` — Service-user API token. Sent as `Authorization: ApiToken ...`
+- `S1_POLL_SECONDS` (default 60, min 30), `S1_TREND_DAYS` (default 14),
+  `S1_MAX_OPEN` (default 1000)
+- `JIRA_EFFORT_DAYS` — Window for the Team tab's timing analytics (default 30)
+- `JIRA_SLA_FRT_FIELD` / `JIRA_SLA_RES_FIELD` — SLA custom-field ids
+  (defaults `customfield_10049` / `customfield_10050`; they differ per instance)
 
 ## Project Structure
 
@@ -116,6 +125,84 @@ concurrently fails with:
 which reads as a Go or `//go:embed` problem and is not one. Run them
 sequentially. Note also that `docker run ... | tail -20` reports **tail's**
 exit code, not the build's, so a failure checked that way looks like a pass.
+
+## SentinelOne Gotchas
+
+All of these were measured against the live console, not read in docs. Several
+are surprising enough to cost an afternoon.
+
+- **The console URL is not the host in the token.** A service-user token's `sub`
+  claim names `mgmt-<deployment_id>.sentinelone.net`. That host is a real
+  SentinelOne endpoint and answers API calls with a perfectly formatted
+  `401 Authentication Failed` — identical to a bad token. `S1_BASE_URL` must be
+  the console you log into (`https://usea1-....sentinelone.net`)
+- **`countOnly=true` is the whole poller.** It returns a ~60 byte body whose
+  `pagination.totalItems` honours every filter, so no count needs to page threat
+  bodies. `/threats?limit=1` returns an 11 KB threat instead
+- **`limit=1000` is broken server-side.** It passes validation and then
+  truncates the response mid-stream (`IncompleteRead`). 500 works; the poller
+  uses 100
+- **Latency is 0.2s to 24s for the same query.** A 10s or 30s HTTP timeout
+  reports healthy consoles as down. The client allows 90s
+- **No rate-limit headers and no 429s observed**, so there is nothing to back
+  off against. Keep the request count low by construction
+- **Unknown query params 400**, so a filter cannot be silently ignored — except
+  `classifications`, which accepts anything and returns an empty result. A typo
+  there reads as "zero threats of that kind". Keep it to a constant list
+- **`GET /threats/{id}` is a 404.** Fetch one with `/threats?ids=<id>`
+- **Licence counts are on each site, not on `allSites`.** `data.allSites.
+  activeLicenses` reports 0 while the site itself reports 956, so reading the
+  summary object gives a confident "0 of 1000 in use"
+- **`/private/threats/summary` and `/private/agents/summary`** give the whole
+  top row in two requests. Undocumented but populated
+- `incidentStatus` is only `unresolved` / `in_progress` / `resolved`, and
+  `in_progress` is 0 tenant-wide — an "In Progress" tile will always read zero
+- `analystVerdicts=false_positive` and `mitigationStatuses=marked_as_benign`
+  return identical counts; they are coupled, not two independent signals
+- The estate-wide `notMitigated` includes RESOLVED threats, so grading page
+  health on it leaves the page permanently amber. Grade on the open queue
+- Site/group are single-valued in this tenant (1 site, 1 group, 956 agents), so
+  a per-site breakdown is degenerate. Group by endpoint, OS or machine type
+- `/sites` and `/groups` payloads carry a `registrationToken` per row. It
+  enrols agents — never read it into a snapshot or a log
+
+## Jira has no logged time, and the SLA clock is not labour
+
+`timespent` is 0 and `worklog.total` is 0 on **every issue in the instance** —
+confirmed with `timespent > 0` returning count 0 project-wide and
+instance-wide. Any dashboard built on worklogs shows a wall of zeros.
+
+The usable substitute is the JSM SLA clock, populated on ~99% of resolved
+tickets:
+
+- `customfield_10049` = Time to first response
+- `customfield_10050` = Time to resolution
+
+Read `completedCycles[-1].elapsedTime.millis` (the LAST cycle — a reopened
+ticket has several). These are overridable via `JIRA_SLA_FRT_FIELD` /
+`JIRA_SLA_RES_FIELD` because the ids differ per instance.
+
+**The clock respects the business calendar AND pauses on "waiting for
+customer"** — proven on one ticket where wall clock was 333.7h and elapsed was
+87.7h, a 0.26 ratio matching a 45-hour week.
+
+**But it is not labour.** It keeps running during business hours whether or not
+anyone is touching the ticket. Measured over 30 days it totals ~9,200 hours
+across 11 people — about 836 hours each, against a working month of ~173. So it
+measures how long a ticket was *the desk's problem*, and the UI says "on desk",
+never "hours worked". Do not relabel it.
+
+Other things established while looking:
+- Timestamps are **not** RFC3339: the offset has no colon
+  (`2026-09-25T08:13:35.959-0500`). `parseJiraTime` in `jira/jira.go` handles it
+  and deliberately keeps the offset, so hour-of-day reads as the desk's local
+  hour (US/Central) rather than UTC
+- Summarise durations with **medians and p90, never means**. The real spread is
+  seconds to weeks; a mean describes nobody
+- `In Progress` is barely used (most tickets go Waiting-for-support → Resolved),
+  so time-in-status buckets are not worth computing
+- Reopen churn is real but small: `status CHANGED FROM "Resolved"` → 20
+  project-wide
 
 ## Jira Gotchas
 

@@ -59,11 +59,15 @@ type BreakdownWindow struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// BreakdownProject groups every window for one Jira project.
+// BreakdownProject groups every window for one Jira project, plus the effort
+// analytics for it.
 type BreakdownProject struct {
 	Key     string            `json:"key"`
 	Name    string            `json:"name"`
 	Windows []BreakdownWindow `json:"windows"`
+	// Effort is the timing analytics: how long tickets actually took, from the
+	// SLA clocks. See effort.go for why it is not from worklogs.
+	Effort Effort `json:"effort"`
 }
 
 // Breakdown is the full payload served at /api/v1/jira/breakdown.
@@ -280,6 +284,32 @@ func computeBreakdown(ctx context.Context) Breakdown {
 	}
 	close(queue)
 	wg.Wait()
+
+	// Effort is a second, heavier pass: one paged query per project over the
+	// resolved tickets in the window, asking for the SLA fields. Run after the
+	// windows and in parallel across projects, because it is the slowest part
+	// of the whole computation.
+	windowDays := effortWindowDays()
+	var ewg sync.WaitGroup
+	for pi := range projects {
+		ewg.Add(1)
+		go func(i int) {
+			defer ewg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					logr.Errorf("[jira.Breakdown] effort panic for %s: %v", projects[i].Key, r)
+				}
+			}()
+			eff := client.computeEffort(ctx, projects[i].Key, windowDays)
+			mu.Lock()
+			projects[i].Effort = eff
+			mu.Unlock()
+			if eff.Error != "" {
+				logr.Warnf("[jira.Breakdown] effort for %s: %s", projects[i].Key, eff.Error)
+			}
+		}(pi)
+	}
+	ewg.Wait()
 
 	out.Projects = projects
 	out.OK = anyOK

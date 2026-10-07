@@ -14,7 +14,7 @@
           </router-link>
           <span class="rail-mark" :style="{ backgroundImage: `url(${jiraIcon})` }"></span>
           <div class="rail-name">
-            <span class="rail-title">Service desk</span>
+            <span class="rail-title">Jira</span>
             <span v-if="deskSubtitle" class="rail-sub">{{ deskSubtitle }}</span>
           </div>
         </div>
@@ -546,6 +546,7 @@ const connectLive = () => {
 }
 
 let tick = null, fallback = null
+onMounted(() => { document.title = "Jira" })
 onMounted(() => {
   fetchMetrics()
   connectLive()

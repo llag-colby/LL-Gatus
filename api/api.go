@@ -68,6 +68,7 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 		Next: func(c *fiber.Ctx) bool {
 			p := c.Path()
 			return strings.HasPrefix(p, "/api/v1/live") || p == "/api/v1/jira/live" ||
+				p == "/api/v1/s1/live" ||
 				(strings.HasPrefix(p, "/api/v1/jira/board/") && strings.HasSuffix(p, "/live"))
 		},
 	}))
@@ -205,6 +206,11 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	// wireless rows, sampled over time. Raw for recent windows, hourly rollups
 	// beyond; the response says which resolution it served.
 	apiV1Router.Get("/v1/history/:key", GetMetricHistory)
+	// SentinelOne threat metrics, refreshed by the background s1 poller.
+	apiV1Router.Get("/v1/s1/metrics", GetS1Metrics)
+	apiV1Router.Get("/v1/s1/live", S1Live)
+	apiV1Router.Get("/v1/s1/threat/:id", GetS1Threat)
+
 	// Jira service-desk metrics, refreshed by the background jira poller.
 	apiV1Router.Get("/v1/jira/metrics", GetJiraMetrics)
 	// Jira ticket drill-down: fetches one issue's detail on demand.
@@ -223,6 +229,7 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	app.Get("/suites/:key", SinglePageApplication(cfg.UI))
 	app.Get("/sites/:name", SinglePageApplication(cfg.UI))
 	app.Get("/jira", SinglePageApplication(cfg.UI))
+	app.Get("/s1", SinglePageApplication(cfg.UI))
 	app.Get("/settings", SinglePageApplication(cfg.UI))
 	// Health endpoint
 	healthHandler := health.Handler().WithJSON(true)

@@ -196,13 +196,191 @@
           </table>
         </div>
       </article>
+
+      <!-- ============================ EFFORT & TIMING ===================
+           What the work actually cost. The source matters and is stated on
+           the page: this instance has no worklogs at all, so these come from
+           the JSM SLA clocks, which are business-hours aware and pause while
+           a ticket waits on the customer. That makes the resolution clock a
+           closer proxy for agent time than anything a human would have
+           remembered to type in. -->
+      <template v-if="effort">
+        <article class="box b-matrix prov">
+          <header class="bh">
+            <h3 class="bt">Effort &amp; timing</h3>
+            <span class="bsub">
+              {{ effort.sampled.toLocaleString() }} tickets resolved in the last
+              {{ effort.windowDays }} days<span v-if="effort.truncated"> (capped)</span>
+            </span>
+          </header>
+
+          <p v-if="effort.error" class="provnote err">{{ effort.error }}</p>
+          <p v-else-if="effort.noSlaData" class="provnote err">
+            No SLA data &mdash; wall clock only
+          </p>
+          <p v-else class="provnote"
+            data-tooltip="Nobody logs labour in this Jira: timespent is zero on every ticket in the instance. On-desk time is the Time-to-resolution SLA clock — business hours only, paused while waiting on the customer. It measures how long a ticket was the desk's problem, not how long anyone worked on it. Wall clock is created to resolved with nothing excluded."
+            data-tip-pos="bottom">
+            <Info class="h-3 w-3" />
+            <span>SLA clock, business hours, paused on customer wait &mdash; not logged labour</span>
+          </p>
+
+          <div class="estrip">
+            <div class="ecell"
+              data-tooltip="Business-hours time these tickets were open and not waiting on the customer. Elapsed time on the desk, not hours worked."
+              data-tip-pos="bottom">
+              <span class="e-n">{{ hours(effort.workTotalMs) }}</span>
+              <span class="e-l">Desk hours</span>
+            </div>
+            <div class="ecell">
+              <span class="e-n">{{ dur(effort.workMedianMs) }}</span>
+              <span class="e-l">Median on desk</span>
+            </div>
+            <div class="ecell">
+              <span class="e-n">{{ dur(effort.workP90Ms) }}</span>
+              <span class="e-l">p90 on desk</span>
+            </div>
+            <div class="e-sep"></div>
+            <div class="ecell">
+              <span class="e-n muted">{{ dur(effort.cycleMedianMs) }}</span>
+              <span class="e-l">Median wall clock</span>
+            </div>
+            <div class="ecell" :data-tooltip="waitTip" data-tip-pos="bottom">
+              <span class="e-n" :class="waitTone">{{ waitPct }}</span>
+              <span class="e-l">Share on desk</span>
+            </div>
+            <div class="e-sep"></div>
+            <div class="ecell">
+              <span class="e-n">{{ dur(effort.frtMedianMs) }}</span>
+              <span class="e-l">Median first reply</span>
+            </div>
+            <div class="ecell"
+              data-tooltip="Both SLA clocks stopped at the same elapsed time, so the ticket was done at the first reply"
+              data-tip-pos="bottom">
+              <span class="e-n tone-ok">{{ firstTouchPct }}</span>
+              <span class="e-l">First-touch fix</span>
+            </div>
+            <div class="ecell" :class="{ bad: effort.breaches > 0 }">
+              <span class="e-n">{{ effort.breaches.toLocaleString() }}</span>
+              <span class="e-l">SLA breaches</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Per-person. Medians, never means: the real distribution runs from
+             seconds to weeks, so a mean would describe nobody's actual day. -->
+        <article class="box b-matrix">
+          <header class="bh">
+            <h3 class="bt">Time per person</h3>
+            <span class="bsub">medians, not averages</span>
+          </header>
+          <table class="t t-matrix">
+            <thead>
+              <tr>
+                <th class="c-who">Assignee</th>
+                <th class="c-n" data-tooltip="Tickets they resolved in the window" data-tip-pos="bottom">Closed</th>
+                <th class="c-n" data-tooltip="Median business-hours time the ticket sat with the desk" data-tip-pos="bottom">Median</th>
+                <th class="c-n" data-tooltip="Their slowest tenth" data-tip-pos="bottom">p90</th>
+                <th class="c-n" data-tooltip="Total business-hours time on the desk across the window. Elapsed, not hours worked." data-tip-pos="bottom">Desk h</th>
+                <th class="c-n" data-tooltip="Median time to first reply" data-tip-pos="bottom">1st reply</th>
+                <th class="c-n" data-tooltip="Resolved at the first reply" data-tip-pos="bottom">1-touch</th>
+                <th class="c-n" data-tooltip="Resolution SLAs met" data-tip-pos="bottom">SLA</th>
+                <th class="c-bar">Share of desk time</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in effort.rows" :key="r.accountId || r.name">
+                <td class="c-who">
+                  <span class="dot" :style="{ background: colourFor(r.accountId || ('name:' + r.name)) }"></span>
+                  <span class="who" :title="r.name">{{ r.name }}</span>
+                </td>
+                <td class="c-n"><span class="n">{{ r.resolved.toLocaleString() }}</span></td>
+                <td class="c-n">{{ dur(r.workMedianMs) }}</td>
+                <td class="c-n">{{ dur(r.workP90Ms) }}</td>
+                <td class="c-n"><span class="n">{{ hours(r.workTotalMs) }}</span></td>
+                <td class="c-n">{{ dur(r.frtMedianMs) }}</td>
+                <td class="c-n">{{ ratio(r.firstTouch, r.measured) }}</td>
+                <td class="c-n" :class="{ slabad: r.slaBreachRes > 0 }">
+                  {{ ratio(r.slaMetRes, r.slaMetRes + r.slaBreachRes) }}
+                </td>
+                <td class="c-bar">
+                  <div class="barwrap">
+                    <div class="mbar">
+                      <span class="mfill"
+                        :style="{ width: pct(r.workTotalMs, effort.workTotalMs) + '%', background: colourFor(r.accountId || ('name:' + r.name)) }"></span>
+                    </div>
+                    <span class="mpct">{{ pctLabel(r.workTotalMs, effort.workTotalMs) }}</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr>
+                <td class="c-who">Total</td>
+                <td class="c-n"><span class="n">{{ effort.sampled.toLocaleString() }}</span></td>
+                <td class="c-n">{{ dur(effort.workMedianMs) }}</td>
+                <td class="c-n">{{ dur(effort.workP90Ms) }}</td>
+                <td class="c-n"><span class="n">{{ hours(effort.workTotalMs) }}</span></td>
+                <td class="c-n">{{ dur(effort.frtMedianMs) }}</td>
+                <td class="c-n">{{ firstTouchPct }}</td>
+                <td class="c-n">&mdash;</td>
+                <td class="c-bar"><span class="mpct">100%</span></td>
+              </tr>
+            </tfoot>
+          </table>
+        </article>
+
+        <!-- How long tickets take, in time order. A histogram sorted by
+             frequency is not a histogram. -->
+        <article class="box b-win">
+          <header class="bh">
+            <h3 class="bt">How long tickets take</h3>
+            <span class="bsub">business hours on the desk</span>
+          </header>
+          <table class="t t-win">
+            <tbody>
+              <tr v-for="b in effort.buckets" :key="b.name">
+                <td class="c-who">
+                  <span class="wfill"
+                    :style="{ width: pct(b.count, bucketMax) + '%', background: 'var(--j-info)' }"></span>
+                  <span class="who">{{ b.name }}</span>
+                </td>
+                <td class="c-n"><span class="n">{{ b.count.toLocaleString() }}</span></td>
+                <td class="c-pc">{{ pctLabel(b.count, effort.measured) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </article>
+
+        <!-- WHEN the desk closes tickets. Hour-of-day comes from each
+             ticket's own Jira offset, so these are the desk's local hours
+             (US/Central here), not UTC - which would smear the working day
+             across midnight. -->
+        <article class="box b-heat">
+          <header class="bh">
+            <h3 class="bt">When tickets get closed</h3>
+            <span class="bsub">local time &middot; peak {{ heatPeak }} in an hour</span>
+          </header>
+          <div class="heat">
+            <template v-for="(row, d) in heatRows" :key="d">
+              <span class="heat-day">{{ DAYS[d] }}</span>
+              <span v-for="(n, h) in row" :key="h" class="cellx"
+                :class="{ none: !n, top: n === heatPeak && n > 0 }"
+                :style="{ opacity: n ? (0.2 + 0.8 * (n / heatPeak)) : 1 }"
+                :data-tooltip="DAYS[d] + ' ' + String(h).padStart(2, '0') + ':00 — ' + n + ' closed'"></span>
+            </template>
+            <span class="heat-day"></span>
+            <span v-for="h in 24" :key="'h' + h" class="hh">{{ (h - 1) % 3 === 0 ? (h - 1) : '' }}</span>
+          </div>
+        </article>
+      </template>
     </template>
   </section>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { AlertTriangle, RefreshCw } from 'lucide-vue-next'
+import { AlertTriangle, RefreshCw, Info } from 'lucide-vue-next'
 import { isFullscreen, now as serverNow } from '@/store'
 
 const props = defineProps({
@@ -291,6 +469,61 @@ const sort = (id) => {
 }
 
 const idOf = (row) => row.accountId || `name:${row.name}`
+
+// --- effort & timing -----------------------------------------------------
+const effort = computed(() => board.value?.effort || null)
+
+// Durations are formatted at the precision that is meaningful at that scale:
+// seconds below a minute, whole minutes below an hour, one decimal of an hour
+// below a day. A median of "0.31h" tells a human nothing; "18m" does.
+const dur = (ms) => {
+  if (!ms || ms <= 0) return '\u2014'
+  const secs = ms / 1000
+  if (secs < 60) return `${Math.round(secs)}s`
+  const mins = secs / 60
+  if (mins < 60) return `${Math.round(mins)}m`
+  const hrs = mins / 60
+  if (hrs < 24) return `${hrs.toFixed(hrs < 10 ? 1 : 0)}h`
+  return `${(hrs / 24).toFixed(1)}d`
+}
+const hours = (ms) => (!ms || ms <= 0 ? '0' : (ms / 3600000).toFixed(ms < 36000000 ? 1 : 0))
+const ratio = (n, of) => (of > 0 ? `${Math.round((n / of) * 100)}%` : '\u2014')
+
+const waitPct = computed(() => {
+  const r = effort.value?.waitRatio
+  return r > 0 ? `${Math.round(r * 100)}%` : '\u2014'
+})
+// A low figure is not "bad" - it means tickets sit waiting on the customer
+// rather than on the desk - so it is informational, not a failure colour.
+const waitTone = computed(() => {
+  const r = effort.value?.waitRatio || 0
+  return r > 0 && r < 0.4 ? 'tone-in' : ''
+})
+const waitTip = computed(() => {
+  const e = effort.value
+  if (!e || !e.waitRatio) return 'On-desk time as a share of wall-clock time'
+  const rest = Math.round((1 - e.waitRatio) * 100)
+  return `On-desk business hours as a share of total wall-clock time. The other ${rest}% was waiting - on the customer, on a vendor, or outside working hours.`
+})
+const firstTouchPct = computed(() => {
+  const e = effort.value
+  return e && e.measured > 0 ? `${Math.round((e.firstTouch / e.measured) * 100)}%` : '\u2014'
+})
+const bucketMax = computed(() =>
+  (effort.value?.buckets || []).reduce((m, b) => Math.max(m, b.count), 0))
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+// A dense 7x24 grid built from the sparse cells the API returns, so an hour
+// with nothing in it is a real zero rather than a gap in the layout.
+const heatRows = computed(() => {
+  const grid = Array.from({ length: 7 }, () => Array(24).fill(0))
+  for (const c of effort.value?.heatmap || []) {
+    if (c.day >= 0 && c.day < 7 && c.hour >= 0 && c.hour < 24) grid[c.day][c.hour] = c.count
+  }
+  return grid
+})
+const heatPeak = computed(() =>
+  (effort.value?.heatmap || []).reduce((m, c) => Math.max(m, c.count), 0))
 
 const roster = computed(() => {
   const people = new Map()
@@ -530,11 +763,10 @@ const rowLink = (windowId, row) => {
 }
 
 /* ----------------------------------------------------------------- tables */
-/* Both table kinds scroll rather than stretching their grid row: one box with
-   thirty assignees in it would otherwise set the height of the whole bento. */
-.tscroll { overflow: auto; max-height: min(52vh, 34rem); }
-.tscroll-win { max-height: min(38vh, 22rem); }
-.team.wall .tscroll, .team.wall .tscroll-win { max-height: none; }
+/* No inner scrollbars. Boxes size to their content and the PAGE scrolls: a
+   dashboard you have to scroll inside eleven separate little panes to read is
+   worse than one long page, and a scrollbar hides rows without saying so. */
+.tscroll, .tscroll-win { overflow: visible; max-height: none; }
 .t {
   width: 100%; border-collapse: collapse;
   font-family: var(--j-mono); font-size: var(--t-size); font-variant-numeric: tabular-nums;
@@ -586,8 +818,8 @@ a.link:hover { text-decoration: underline; text-underline-offset: 0.15em; }
 .t-matrix tbody tr.idle .who { color: hsl(var(--muted-foreground)); }
 .t-matrix tbody tr.nobody .who { font-style: italic; }
 .t-matrix .c-who { width: 40%; max-width: 0; overflow: hidden; }
-/* Opaque, so rows scrolling under the header do not show through it. */
-.t thead th { position: sticky; top: 0; background: hsl(var(--card)); z-index: 2; }
+/* Not sticky: with no scroll container a sticky header would latch onto the
+   viewport and float over the rest of the page as you scroll past the box. */
 .sortable {
   font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit;
   padding: 0; border: 0; background: none;
@@ -604,6 +836,70 @@ a.link:hover { text-decoration: underline; text-underline-offset: 0.15em; }
 }
 .mfill { display: block; height: 100%; border-radius: 3px; }
 .mpct { color: hsl(var(--muted-foreground)); font-size: 0.7em; min-width: 2.6rem; text-align: right; }
+
+
+/* ---------------------------------------------------------- effort block */
+/* The provenance note is part of the data, not decoration: a reader has to
+   know these numbers are an SLA clock rather than logged work, or they will
+   read them as something a person actually recorded. */
+.prov { border-color: color-mix(in srgb, var(--j-info) 30%, hsl(var(--border))); }
+.provnote {
+  display: inline-flex; align-items: center; gap: 0.35rem; margin: 0 0 0.5rem;
+  font-size: 0.68rem; color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border) / 0.8); border-radius: 999px;
+  padding: 0.12rem 0.5rem; align-self: flex-start; cursor: help;
+}
+.provnote code {
+  font-family: var(--j-mono); background: hsl(var(--muted) / 0.6);
+  padding: 0.02rem 0.25rem; border-radius: 3px; font-size: 0.95em;
+}
+.provnote b { color: hsl(var(--foreground)); font-weight: 700; }
+.provnote.err { color: var(--j-crit); }
+
+.estrip { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 0.1rem; }
+.ecell { display: flex; flex-direction: column; padding: 0.15rem 0.7rem 0 0; min-width: 5.5rem; }
+.e-sep { width: 1px; align-self: stretch; margin: 0.2rem 0.6rem; background: hsl(var(--border)); }
+.e-n {
+  font-family: var(--j-mono); font-variant-numeric: tabular-nums;
+  font-size: clamp(1.05rem, 1.6vw, 1.45rem); font-weight: 800; line-height: 1;
+  letter-spacing: -0.03em;
+}
+.team.wall .e-n { font-size: clamp(1.4rem, 2.2vw, 2rem); }
+.e-n.muted { color: hsl(var(--muted-foreground)); }
+.ecell.bad .e-n { color: var(--j-crit); }
+.e-l {
+  font-family: var(--j-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.13em;
+  text-transform: uppercase; color: hsl(var(--muted-foreground)); margin-top: 0.3rem;
+  white-space: nowrap;
+}
+.team.wall .e-l { font-size: 11px; }
+.c-n.slabad { color: var(--j-crit); }
+
+/* ------------------------------------------------------------- heatmap */
+.b-heat { grid-column: span 12; }
+@media (min-width: 1280px) { .b-heat { grid-column: span 8; } }
+/* A day-label column plus a fixed 24, rather than auto-fit, so every row
+   lines up under the hour scale beneath it. */
+.heat {
+  display: grid; grid-template-columns: 2.2rem repeat(24, minmax(0, 1fr));
+  gap: 2px; align-items: center;
+}
+.hh {
+  font-family: var(--j-mono); font-size: 8px; color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums; text-align: center; padding-top: 0.15rem;
+}
+.heat-day {
+  font-family: var(--j-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+  color: hsl(var(--muted-foreground)); text-transform: uppercase;
+}
+.cellx {
+  aspect-ratio: 1; min-height: 0.65rem; border-radius: 2px;
+  background: var(--j-info);
+}
+.cellx.none { background: hsl(var(--muted) / 0.45); }
+/* The busiest hour gets an outline, so the peak is findable rather than
+   being merely the darkest of several dark squares. */
+.cellx.top { outline: 1.5px solid var(--j-warn); }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-spin { animation: none; }

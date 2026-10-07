@@ -74,16 +74,31 @@
                 </Button>
                 <router-link
                   to="/jira"
-                  class="inline-flex items-center justify-center h-9 w-9 rounded-md hover:bg-accent transition-colors"
-                  data-tooltip="Jira monitor"
+                  class="navlink"
+                  data-tooltip="Jira service desk"
                   data-tip-pos="bottom"
-                  aria-label="Jira monitor"
+                  aria-label="Jira"
                 >
                   <!-- Rendered as a background-image span (not an <img>) so the
                        header's custom-css rule for the wordmark logo
                        (`header img { filter: brightness(0) invert(1) }`) doesn't
                        repaint this icon into a solid white box. -->
                   <span class="jira-ico" :style="{ backgroundImage: `url(${jiraIcon})` }"></span>
+                  <span class="navlabel">Jira</span>
+                </router-link>
+                <router-link
+                  to="/s1"
+                  class="navlink"
+                  data-tooltip="SentinelOne endpoint security"
+                  data-tip-pos="bottom"
+                  aria-label="SentinelOne"
+                >
+                  <!-- Same background-image span trick as the Jira icon: the
+                       header's `header img { filter: brightness(0) invert(1) }`
+                       rule for the wordmark would otherwise flatten this into
+                       a solid white square. -->
+                  <span class="jira-ico" :style="{ backgroundImage: `url(${s1Icon})` }"></span>
+                  <span class="navlabel">SentinelOne</span>
                 </router-link>
                 <router-link
                   to="/settings"
@@ -158,6 +173,7 @@ import Social from './components/Social.vue'
 import Tooltip from './components/Tooltip.vue'
 import Loading from './components/Loading.vue'
 import jiraIcon from '@/assets/jira.png'
+import s1Icon from '@/assets/sentinelone.png'
 import { requestRefresh, soundEnabled, setSoundEnabled, applyStatusColors, isFullscreen } from '@/store'
 import { unlockAudio } from '@/utils/sounds'
 import { installTooltips, hideTooltip } from '@/utils/tooltip'
@@ -303,6 +319,16 @@ onUnmounted(() => {
 /* Jira header icon: a background-image span, deliberately NOT an <img>, so the
    wordmark-logo custom CSS (`header img { ... filter: brightness(0) invert(1) }`)
    can't force it to 38px or repaint it solid white. */
+.navlink {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  height: 2.25rem; padding: 0 0.6rem; border-radius: 0.375rem;
+  font-size: 0.82rem; font-weight: 600; white-space: nowrap;
+  transition: background-color 0.15s;
+}
+.navlink:hover { background: hsl(var(--accent)); }
+.navlink.router-link-active { background: hsl(var(--accent)); }
+.navlabel { display: none; }
+@media (min-width: 900px) { .navlabel { display: inline; } }
 .jira-ico {
   display: inline-block;
   width: 20px;

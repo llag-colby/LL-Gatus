@@ -12,6 +12,7 @@ import (
 	"github.com/TwiN/gatus/v5/history"
 	"github.com/TwiN/gatus/v5/jira"
 	"github.com/TwiN/gatus/v5/metrics"
+	"github.com/TwiN/gatus/v5/sentinelone"
 	"github.com/TwiN/gatus/v5/storage/store"
 	"github.com/TwiN/gatus/v5/watchdog"
 	"github.com/TwiN/logr"
@@ -70,7 +71,8 @@ func start(cfg *config.Config) {
 	// opened, so /data/auth.db is neither created nor read, and no bootstrap
 	// admin password is generated at startup.
 	watchdog.Monitor(cfg)
-	jira.StartPoller() // background Jira service-desk metrics (no-op unless configured)
+	jira.StartPoller()        // background Jira service-desk metrics (no-op unless configured)
+	sentinelone.StartPoller() // background SentinelOne threat metrics (no-op unless configured)
 	go listenToConfigurationFileChanges(cfg)
 }
 
