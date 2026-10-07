@@ -74,6 +74,57 @@ const data = computed(() => ({
   }],
 }))
 
+// Relative luminance of a hex colour, per WCAG, then black or white
+// whichever contrasts more. Cheap and palette-agnostic: the alternative is
+// hard-coding a label colour per theme, which is what was wrong before.
+const readableOn = (hex) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''))
+  if (!m) return '#ffffff'
+  const n = parseInt(m[1], 16)
+  const chan = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+  })
+  const lum = 0.2126 * chan[0] + 0.7152 * chan[1] + 0.0722 * chan[2]
+  return lum > 0.45 ? 'rgba(15,20,28,0.92)' : 'rgba(255,255,255,0.96)'
+}
+
+// Prints each slice's share inside the ring, so the chart is readable without
+// cross-referencing the legend beneath it.
+const sliceLabels = {
+  id: 'sliceLabels',
+  afterDatasetsDraw(chart, _args, opts) {
+    const { ctx } = chart
+    const meta = chart.getDatasetMeta(0)
+    if (!meta || meta.hidden) return
+    const data = chart.data.datasets[0].data
+    const sum = data.reduce((a, b) => a + (b || 0), 0)
+    if (!sum) return
+    meta.data.forEach((arc, i) => {
+      const share = (data[i] || 0) / sum
+      // A thin wedge cannot hold text without sitting on its neighbour's
+      // label, and the legend underneath carries the number anyway. 12% is
+      // measured against the ring thickness rather than guessed: below it the
+      // arc is shorter than the text is wide.
+      if (share < 0.12) return
+      const { x, y } = arc.tooltipPosition()
+      ctx.save()
+      // The label's colour comes from the SLICE's own luminance, not from the
+      // theme. A fixed white was wrong on any pale slice - in light mode the
+      // grey and amber wedges rendered white-on-pale and the figure was
+      // effectively invisible. Per-slice contrast is correct for both themes
+      // and for whatever palette is passed in.
+      ctx.fillStyle = readableOn(props.palette[i % props.palette.length])
+      ctx.font = `800 ${opts.size || 11}px ui-monospace, SFMono-Regular, Menlo, monospace`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(`${Math.round(share * 100)}%`, x, y)
+      ctx.restore()
+    })
+  },
+}
+ChartJS.register(sliceLabels)
+
 const options = {
   responsive: true,
   maintainAspectRatio: false,
@@ -81,6 +132,7 @@ const options = {
   // arc length is easier to compare than a wedge's area.
   cutout: '64%',
   plugins: {
+    sliceLabels: { size: 11 },
     legend: { display: false },
     tooltip: {
       callbacks: {
@@ -102,7 +154,7 @@ const options = {
 .dtile {
   position: relative; display: flex; flex-direction: column; min-width: 0;
   border: 1px solid hsl(var(--border)); border-radius: 10px;
-  padding: 0.55rem 0.65rem 0.5rem; background: hsl(var(--card) / 0.55);
+  padding: 0.55rem 0.65rem 0.5rem; background: hsl(var(--card));
 }
 /* The tile's edge takes the colour of its largest slice, so the panel is
    identifiable at a glance before any label is read. */
@@ -152,7 +204,10 @@ const options = {
 .dlp { color: hsl(var(--muted-foreground)); min-width: 2.4rem; text-align: right; }
 
 /* Wall mode: everything steps up, because this is read from across a room. */
-:global(.wall) .dwrap { height: 11rem; }
+/* On the wall the ring fills its grid row rather than taking a fixed
+   height, which is what let the page grow past the screen. */
+:global(.wall) .dwrap { height: auto; flex: 1 1 auto; min-height: 0; }
+:global(.wall) .dlegend { flex: none; }
 :global(.wall) .dt { font-size: 12px; }
 :global(.wall) .dc-n { font-size: 2.1rem; }
 :global(.wall) .dlegend li { font-size: 0.85rem; }

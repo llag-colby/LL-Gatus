@@ -32,6 +32,16 @@ func GetJiraIssue(c *fiber.Ctx) error {
 	return c.Status(200).JSON(detail)
 }
 
+// GetJiraDaily returns the IT Daily Snapshot: today / yesterday / month-to-date
+// KPIs graded against targets, broken down by location and by technician.
+//
+// Answers at once from cache. The pass pages a month and a half of resolved
+// tickets, which is far longer than the server's 15s WriteTimeout allows, so
+// it computes in the background; ?refresh=1 forces a recompute.
+func GetJiraDaily(c *fiber.Ctx) error {
+	return c.Status(200).JSON(jira.GetDaily(c.Query("refresh") == "1"))
+}
+
 // GetJiraBreakdown returns per-assignee ticket counts across five time windows
 // for the team dashboard. The result is cached in the jira package, so a wall
 // display refreshing this page does not re-page the whole of last month out of

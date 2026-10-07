@@ -220,6 +220,8 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	// Jira Kanban: the agile boards themselves (columns, WIP limits, cards).
 	// Per-assignee counts for the team dashboard; cached, ?refresh=1 to force.
 	apiV1Router.Get("/v1/jira/breakdown", GetJiraBreakdown)
+	// The executive daily snapshot; cached, ?refresh=1 to force.
+	apiV1Router.Get("/v1/jira/daily", GetJiraDaily)
 	apiV1Router.Get("/v1/jira/boards", GetJiraBoards)
 	apiV1Router.Get("/v1/jira/board/:id", GetJiraBoard)
 	apiV1Router.Get("/v1/jira/board/:id/live", JiraBoardLive)

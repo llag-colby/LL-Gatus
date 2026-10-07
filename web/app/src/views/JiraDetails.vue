@@ -58,6 +58,11 @@
         <pre class="err-pre">{{ snapshot.error }}</pre>
       </div>
 
+      <!-- SNAPSHOT: the executive daily view. First tab and the default,
+           because it is the one the leadership team reads. -->
+      <JiraSnapshot v-else-if="tab === 'snapshot' && snapshot.configured"
+        :project-key="selectedKey || proj?.key || ''" :base-url="snapshot.baseUrl || ''" />
+
       <!-- TEAM: per-assignee counts. Sits in the same v-if chain as Kanban, so
            an unreachable Jira shows the one error above rather than each tab
            discovering it separately. The counts themselves are a separate,
@@ -282,7 +287,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { ArrowLeft, RefreshCw, AlertTriangle, Gauge, Rows3, LayoutGrid, Users, ExternalLink } from 'lucide-vue-next'
+import { ArrowLeft, RefreshCw, AlertTriangle, Gauge, Rows3, LayoutGrid, Users, LayoutDashboard, ExternalLink } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import Settings from '@/components/Settings.vue'
 import { generatePrettyTimeAgo } from '@/utils/time'
@@ -291,8 +296,10 @@ import jiraIcon from '@/assets/jira.png'
 import JiraTicketPanel from '@/components/JiraTicketPanel.vue'
 import JiraKanban from '@/components/JiraKanban.vue'
 import JiraTeam from '@/components/JiraTeam.vue'
+import JiraSnapshot from '@/components/JiraSnapshot.vue'
 
 const TABS = [
+  { id: 'snapshot', label: 'Snapshot', icon: LayoutDashboard },
   { id: 'overview', label: 'Overview', icon: Gauge },
   { id: 'queue', label: 'Queue', icon: Rows3 },
   { id: 'team', label: 'Team', icon: Users },
@@ -316,7 +323,7 @@ const snapshot = ref({ configured: false, ok: false, status: 'unknown', projects
 // Which tab is showing, remembered so a wall display that reboots comes back
 // to the same view. 'tickets' is the pre-rewrite value for what is now 'queue'.
 const savedTab = localStorage.getItem('gatus.jira.tab')
-const tab = ref(TABS.some(t => t.id === savedTab) ? savedTab : 'overview')
+const tab = ref(TABS.some(t => t.id === savedTab) ? savedTab : 'snapshot')
 watch(tab, (v) => localStorage.setItem('gatus.jira.tab', v))
 
 const projects = computed(() => snapshot.value.projects || [])
@@ -584,6 +591,17 @@ onUnmounted(() => {
   --sunk: hsl(var(--muted) / 0.35);
 }
 .jira-shell { width: 100%; padding: 0.9rem 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.85rem; }
+/* In fullscreen the shell has to BE the viewport, not merely sit inside it.
+   Its height was auto, so a child asking for height:100% resolved against
+   content height and the grid rows never stretched - which is exactly the
+   empty band at the bottom of the screen. */
+.fs-active .jira-shell {
+  height: 100vh; min-height: 0; overflow: hidden;
+  padding: 0.5rem 0.6rem;
+}
+/* The active panel takes everything the rail leaves. Direct children only, so
+   this cannot accidentally stretch something nested. */
+.fs-active .jira-shell > :not(.rail) { flex: 1 1 auto; min-height: 0; }
 
 .eyebrow {
   font-family: var(--j-mono); font-size: 10px; font-weight: 700;
@@ -720,7 +738,8 @@ onUnmounted(() => {
 .col-unassigned .col-head b { color: var(--j-warn); }
 .col-in .col-dot { background: var(--j-info); }
 .col-in .col-head b { color: var(--j-info); }
-.col-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.col-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; max-height: 46vh; }
+.fs-active .col-body { max-height: none; }
 .col-empty { padding: 1.1rem 0.85rem; font-size: 0.82rem; color: hsl(var(--muted-foreground)); }
 
 .row {
@@ -785,7 +804,13 @@ onUnmounted(() => {
 .chip { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.73rem; color: hsl(var(--muted-foreground)); background: var(--sunk); border: 1px solid var(--hair); border-radius: 999px; padding: 0.15rem 0.3rem 0.15rem 0.65rem; }
 .chip b { font-family: var(--j-mono); font-variant-numeric: tabular-nums; color: hsl(var(--foreground)); background: hsl(var(--background)); border-radius: 999px; padding: 0.02rem 0.42rem; font-size: 0.7rem; }
 
-.table { border: 1px solid var(--hair); border-radius: 12px; overflow: hidden; background: var(--surface); }
+/* Bounded. Without a max-height this grew with every ticket and the page
+   scrolled forever; the table now scrolls inside its own frame instead. */
+.table {
+  border: 1px solid var(--hair); border-radius: 12px; background: var(--surface);
+  max-height: calc(100vh - 19rem); overflow: auto;
+}
+.fs-active .table { max-height: calc(100vh - 12rem); }
 .thead, .trow { display: grid; grid-template-columns: 96px 92px minmax(0, 1fr) 150px 88px 150px 120px; gap: 0.75rem; align-items: center; }
 .thead { padding: 0.45rem 0.9rem; border-bottom: 1px solid var(--hair); background: var(--sunk); }
 .th { display: inline-flex; align-items: center; gap: 0.3rem; font-family: var(--j-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: hsl(var(--muted-foreground)); background: transparent; cursor: pointer; text-align: left; white-space: nowrap; }

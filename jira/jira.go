@@ -240,6 +240,39 @@ func StartPoller() {
 		return
 	}
 	logr.Infof("[jira.StartPoller] Polling %s projects=%s every %s", cfg.baseURL, strings.Join(cfg.projects, ","), cfg.pollInterval)
+
+	// Keep the Team tab's breakdown and the daily snapshot permanently warm.
+	//
+	// Without this, the first person to open the tab waits ~20s on a cold
+	// cache and watches a loading state, because the breakdown is computed on
+	// demand and its TTL is three minutes. Refreshing it just inside that TTL
+	// means the cache is never cold and the page renders instantly - which is
+	// the actual fix for "I hate seeing the loading screen", as opposed to
+	// making the loading screen prettier.
+	//
+	// It costs one pass every two minutes whether or not anyone is looking,
+	// which is the same order as the poll above and is worth it for a page
+	// that lives on a wall.
+	go func() {
+		// Let the main poll land first: the breakdown reads project names out
+		// of the snapshot, so warming before that would label them by key.
+		time.Sleep(10 * time.Second)
+		warm := time.NewTicker(2 * time.Minute)
+		defer warm.Stop()
+		for {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						logr.Errorf("[jira.warmBreakdown] recovered from panic: %v", r)
+					}
+				}()
+				GetBreakdown(false)
+				GetDaily(false)
+			}()
+			<-warm.C
+		}
+	}()
+
 	go func() {
 		poll(cfg)
 		ticker := time.NewTicker(cfg.pollInterval)

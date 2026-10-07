@@ -1,435 +1,182 @@
 <template>
   <section class="team" :class="{ wall: isFullscreen }">
 
-    <!-- NOT CONFIGURED / BROKEN ------------------------------------------ -->
-    <div v-if="loaded && !data.configured" class="notice">
-      <div class="notice-title">Jira is not connected yet</div>
-      <p class="notice-body">
-        Set <code>JIRA_BASE_URL</code>, <code>JIRA_EMAIL</code> and <code>JIRA_API_TOKEN</code>
-        in <code>.env</code>, then <code>docker compose up -d</code>.
-      </p>
+    <!-- A loader only when there is genuinely nothing to draw. The server now
+         keeps this breakdown warm, so in practice the first paint has data and
+         this never appears; when it does it is a one-line strip rather than a
+         page-filling panel. -->
+    <div v-if="!loaded && !board" class="thinload">
+      <RefreshCw class="h-3.5 w-3.5 animate-spin" /> Counting tickets…
     </div>
-
-    <!-- Counting. The route answers at once and the pass runs behind it, so an
-         empty payload with computing set is normal on a cold start, not an
-         error, and must be checked before the failure branch. -->
-    <div v-else-if="!loaded || (!data.ok && data.computing)" class="notice">
-      <div class="notice-title">
-        <RefreshCw class="h-4 w-4 animate-spin" /> Counting tickets…
-      </div>
-      <p class="notice-body">
-        Five windows per project, each paged out of Jira. The month windows are
-        the slow ones; the result is then cached for three minutes, so this wait
-        happens once.
-      </p>
-    </div>
-
-    <div v-else-if="!data.ok" class="notice notice-error">
-      <div class="notice-title"><AlertTriangle class="h-4 w-4" /> Cannot read the team breakdown</div>
+    <div v-else-if="loaded && !data.ok && !board" class="notice notice-error">
+      <div class="notice-title"><AlertTriangle class="h-4 w-4" /> Cannot read the breakdown</div>
       <pre class="err-pre">{{ data.error || 'Jira returned no usable windows.' }}</pre>
     </div>
-
-    <div v-else-if="!board" class="notice">
-      <div class="notice-title">No data for {{ projectKey }}</div>
-      <p class="notice-body">The breakdown carries no window for this project.</p>
-    </div>
-
-    <template v-else>
-      <!-- ============================ FLOW LINE ========================= -->
-      <!-- The day and the month in one line of numbers, because the first
-           question a team board gets asked is whether the queue is growing. -->
-      <div class="flow">
-        <div class="f-id">
-          <span class="f-key">{{ board.key }}</span>
-          <span class="f-name">{{ board.name }}</span>
-        </div>
-
-        <div class="f-nums">
-          <div class="f-cell">
-            <span class="f-n">{{ fmt(total('open')) }}</span>
-            <span class="f-l">Open</span>
-          </div>
-          <div class="f-cell">
-            <span class="f-n tone-in">{{ fmt(total('createdToday')) }}</span>
-            <span class="f-l">In today</span>
-          </div>
-          <div class="f-cell">
-            <span class="f-n tone-out">{{ fmt(total('resolvedToday')) }}</span>
-            <span class="f-l">Done today</span>
-          </div>
-          <div class="f-cell f-net" :class="netTone"
-            data-tooltip="Submitted today minus completed today. Positive means the queue grew."
-            data-tip-pos="bottom">
-            <span class="f-n">{{ netLabel }}</span>
-            <span class="f-l">Net today</span>
-          </div>
-          <div class="f-sep"></div>
-          <div class="f-cell">
-            <span class="f-n">{{ fmt(total('resolvedMonth')) }}</span>
-            <span class="f-l">Done MTD</span>
-          </div>
-          <div class="f-cell">
-            <span class="f-n muted">{{ fmt(total('resolvedLastMonth')) }}</span>
-            <span class="f-l">Last month</span>
-          </div>
-          <div class="f-cell" :data-tooltip="paceTip" data-tip-pos="bottom">
-            <span class="f-n" :class="paceTone">{{ fmt(pace) }}</span>
-            <span class="f-l">On pace</span>
-          </div>
-        </div>
-
-        <div class="f-meta">
-          <span class="f-age">{{ ageLabel }}</span>
-          <button class="f-refresh" :disabled="loading" @click="forceRefresh"
-            data-tooltip="Recompute now, bypassing the cache" data-tip-pos="bottom">
-            <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': loading }" />
-          </button>
+    <template v-if="board">
+      <!-- Thin reference strip. Small on purpose: the people table is the
+           focal point and a row of big boxes would compete with it. -->
+      <div class="strip">
+        <div v-for="k in kpis" :key="k.l" class="kv" :class="k.tone" :style="{ '--kc': k.c }"
+          :data-tooltip="k.tip" data-tip-pos="bottom">
+          <span class="kv-n">{{ k.v }}<i v-if="k.unit">{{ k.unit }}</i></span>
+          <span class="kv-l">{{ k.l }}</span>
         </div>
       </div>
 
-      <!-- ============================ ROSTER MATRIX ===================== -->
-      <!-- Everyone against every window at once. The five boxes below each
-           answer one question; this answers the comparison between them,
-           which is the thing you cannot get by reading them one at a time. -->
-      <article class="box b-matrix">
-        <header class="bh">
-          <h3 class="bt">Roster</h3>
-          <span class="bsub">{{ roster.length }} {{ roster.length === 1 ? 'person' : 'people' }} · every window</span>
-        </header>
-
-        <div class="tscroll">
-          <table class="t t-matrix">
-            <thead>
-              <tr>
-                <th class="c-who">
-                  <button class="sortable" :class="{ on: sortBy === 'name' }" @click="sort('name')">Assignee</button>
-                </th>
-                <th v-for="c in MATRIX_COLS" :key="c.id" class="c-n">
-                  <button class="sortable" :class="{ on: sortBy === c.id }" @click="sort(c.id)"
-                    :data-tooltip="c.tip" data-tip-pos="bottom">{{ c.label }}</button>
-                </th>
-                <th class="c-bar">Share of open</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in roster" :key="r.id" :class="{ idle: r.open === 0, nobody: !r.accountId }">
-                <td class="c-who">
-                  <span class="dot" :style="{ background: colourFor(r.id) }"></span>
-                  <span class="who" :title="r.name">{{ r.name }}</span>
-                </td>
-                <td v-for="c in MATRIX_COLS" :key="c.id" class="c-n">
-                  <a v-if="r[c.id] > 0 && baseUrl" class="n link" :href="rowLink(c.id, r)"
-                    target="_blank" rel="noopener">{{ fmt(r[c.id]) }}</a>
-                  <span v-else class="n" :class="{ zero: !r[c.id] }">{{ r[c.id] ? fmt(r[c.id]) : '·' }}</span>
-                </td>
-                <td class="c-bar">
-                  <div class="barwrap">
-                    <div class="mbar">
-                      <span class="mfill" :style="{ width: pct(r.open, total('open')) + '%', background: colourFor(r.id) }"></span>
-                    </div>
-                    <span class="mpct">{{ pctLabel(r.open, total('open')) }}</span>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-            <tfoot>
-              <tr>
-                <td class="c-who">Total</td>
-                <td v-for="c in MATRIX_COLS" :key="c.id" class="c-n">
-                  <span class="n">{{ fmt(total(c.id)) }}</span>
-                </td>
-                <td class="c-bar"><span class="mpct">100%</span></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </article>
-
-      <!-- ============================ WINDOW BOXES ====================== -->
-      <article v-for="w in windows" :key="w.id" class="box b-win" :class="'w-' + w.id">
-        <header class="bh">
-          <h3 class="bt">{{ w.label }}</h3>
-          <div class="bnum">
-            <a v-if="baseUrl && !w.error" class="btotal link" :href="windowLink(w)"
-              target="_blank" rel="noopener"
-              data-tooltip="Open this exact query in Jira" data-tip-pos="left">{{ fmt(w.total) }}</a>
-            <span v-else class="btotal">{{ fmt(w.total) }}</span>
-            <span v-if="w.truncated" class="bflag"
-              data-tooltip="Hit the fetch cap: the real number is higher" data-tip-pos="left">capped</span>
-          </div>
-        </header>
-
-        <pre v-if="w.error" class="err-pre small">{{ w.error }}</pre>
-
-        <p v-else-if="!w.rows || !w.rows.length" class="bempty">Nothing in this window.</p>
-
-        <div v-else class="tscroll tscroll-win">
-          <table class="t t-win">
-            <thead>
-              <tr>
-                <th class="c-who">Assignee</th>
-                <th class="c-n">Count</th>
-                <th class="c-pc">%</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(r, i) in w.rows" :key="r.accountId || r.name" :class="{ lead: i === 0 }">
-                <td class="c-who">
-                  <span class="wfill" :style="{ width: pct(r.count, w.total) + '%', background: colourFor(idOf(r)) }"></span>
-                  <span class="dot" :style="{ background: colourFor(idOf(r)) }"></span>
-                  <span class="who" :title="r.name">{{ r.name }}</span>
-                </td>
-                <td class="c-n">
-                  <a v-if="baseUrl" class="n link" :href="cellLink(w, r)" target="_blank" rel="noopener">{{ fmt(r.count) }}</a>
-                  <span v-else class="n">{{ fmt(r.count) }}</span>
-                </td>
-                <td class="c-pc">{{ pctLabel(r.count, w.total) }}</td>
-              </tr>
-            </tbody>
-            <tfoot>
-              <tr>
-                <td class="c-who">Total</td>
-                <td class="c-n"><span class="n">{{ fmt(w.total) }}</span></td>
-                <td class="c-pc">100%</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </article>
-
-      <!-- ============================ EFFORT & TIMING ===================
-           What the work actually cost. The source matters and is stated on
-           the page: this instance has no worklogs at all, so these come from
-           the JSM SLA clocks, which are business-hours aware and pause while
-           a ticket waits on the customer. That makes the resolution clock a
-           closer proxy for agent time than anything a human would have
-           remembered to type in. -->
-      <template v-if="effort">
-        <article class="box b-matrix prov">
-          <header class="bh">
-            <h3 class="bt">Effort &amp; timing</h3>
-            <span class="bsub">
-              {{ effort.sampled.toLocaleString() }} tickets resolved in the last
-              {{ effort.windowDays }} days<span v-if="effort.truncated"> (capped)</span>
+      <div class="canvas">
+        <!-- PEOPLE. The dominant panel, and one table rather than the two
+             that used to stack: counts and timing for the same person belong
+             on the same row. -->
+        <section class="px people">
+          <header class="ph">
+            <h3 class="pt"><Users class="h-3.5 w-3.5" /> People</h3>
+            <span class="ps">
+              {{ roster.length }} with activity · {{ effort ? `${effort.windowDays}d timing` : 'counts only' }}
             </span>
           </header>
-
-          <p v-if="effort.error" class="provnote err">{{ effort.error }}</p>
-          <p v-else-if="effort.noSlaData" class="provnote err">
-            No SLA data &mdash; wall clock only
-          </p>
-          <p v-else class="provnote"
-            data-tooltip="Nobody logs labour in this Jira: timespent is zero on every ticket in the instance. On-desk time is the Time-to-resolution SLA clock — business hours only, paused while waiting on the customer. It measures how long a ticket was the desk's problem, not how long anyone worked on it. Wall clock is created to resolved with nothing excluded."
-            data-tip-pos="bottom">
-            <Info class="h-3 w-3" />
-            <span>SLA clock, business hours, paused on customer wait &mdash; not logged labour</span>
-          </p>
-
-          <div class="estrip">
-            <div class="ecell"
-              data-tooltip="Business-hours time these tickets were open and not waiting on the customer. Elapsed time on the desk, not hours worked."
-              data-tip-pos="bottom">
-              <span class="e-n">{{ hours(effort.workTotalMs) }}</span>
-              <span class="e-l">Desk hours</span>
-            </div>
-            <div class="ecell">
-              <span class="e-n">{{ dur(effort.workMedianMs) }}</span>
-              <span class="e-l">Median on desk</span>
-            </div>
-            <div class="ecell">
-              <span class="e-n">{{ dur(effort.workP90Ms) }}</span>
-              <span class="e-l">p90 on desk</span>
-            </div>
-            <div class="e-sep"></div>
-            <div class="ecell">
-              <span class="e-n muted">{{ dur(effort.cycleMedianMs) }}</span>
-              <span class="e-l">Median wall clock</span>
-            </div>
-            <div class="ecell" :data-tooltip="waitTip" data-tip-pos="bottom">
-              <span class="e-n" :class="waitTone">{{ waitPct }}</span>
-              <span class="e-l">Share on desk</span>
-            </div>
-            <div class="e-sep"></div>
-            <div class="ecell">
-              <span class="e-n">{{ dur(effort.frtMedianMs) }}</span>
-              <span class="e-l">Median first reply</span>
-            </div>
-            <div class="ecell"
-              data-tooltip="Both SLA clocks stopped at the same elapsed time, so the ticket was done at the first reply"
-              data-tip-pos="bottom">
-              <span class="e-n tone-ok">{{ firstTouchPct }}</span>
-              <span class="e-l">First-touch fix</span>
-            </div>
-            <div class="ecell" :class="{ bad: effort.breaches > 0 }">
-              <span class="e-n">{{ effort.breaches.toLocaleString() }}</span>
-              <span class="e-l">SLA breaches</span>
-            </div>
-          </div>
-        </article>
-
-        <!-- Per-person. Medians, never means: the real distribution runs from
-             seconds to weeks, so a mean would describe nobody's actual day. -->
-        <article class="box b-matrix">
-          <header class="bh">
-            <h3 class="bt">Time per person</h3>
-            <span class="bsub">medians, not averages</span>
-          </header>
-          <table class="t t-matrix">
-            <thead>
-              <tr>
-                <th class="c-who">Assignee</th>
-                <th class="c-n" data-tooltip="Tickets they resolved in the window" data-tip-pos="bottom">Closed</th>
-                <th class="c-n" data-tooltip="Median business-hours time the ticket sat with the desk" data-tip-pos="bottom">Median</th>
-                <th class="c-n" data-tooltip="Their slowest tenth" data-tip-pos="bottom">p90</th>
-                <th class="c-n" data-tooltip="Total business-hours time on the desk across the window. Elapsed, not hours worked." data-tip-pos="bottom">Desk h</th>
-                <th class="c-n" data-tooltip="Median time to first reply" data-tip-pos="bottom">1st reply</th>
-                <th class="c-n" data-tooltip="Resolved at the first reply" data-tip-pos="bottom">1-touch</th>
-                <th class="c-n" data-tooltip="Resolution SLAs met" data-tip-pos="bottom">SLA</th>
-                <th class="c-bar">Share of desk time</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in effort.rows" :key="r.accountId || r.name">
-                <td class="c-who">
-                  <span class="dot" :style="{ background: colourFor(r.accountId || ('name:' + r.name)) }"></span>
-                  <span class="who" :title="r.name">{{ r.name }}</span>
-                </td>
-                <td class="c-n"><span class="n">{{ r.resolved.toLocaleString() }}</span></td>
-                <td class="c-n">{{ dur(r.workMedianMs) }}</td>
-                <td class="c-n">{{ dur(r.workP90Ms) }}</td>
-                <td class="c-n"><span class="n">{{ hours(r.workTotalMs) }}</span></td>
-                <td class="c-n">{{ dur(r.frtMedianMs) }}</td>
-                <td class="c-n">{{ ratio(r.firstTouch, r.measured) }}</td>
-                <td class="c-n" :class="{ slabad: r.slaBreachRes > 0 }">
-                  {{ ratio(r.slaMetRes, r.slaMetRes + r.slaBreachRes) }}
-                </td>
-                <td class="c-bar">
-                  <div class="barwrap">
-                    <div class="mbar">
-                      <span class="mfill"
-                        :style="{ width: pct(r.workTotalMs, effort.workTotalMs) + '%', background: colourFor(r.accountId || ('name:' + r.name)) }"></span>
+          <div class="plist">
+            <table class="ptab">
+              <thead>
+                <tr>
+                  <th class="c-who">
+                    <button class="sortable" :class="{ on: sortBy === 'name' }" @click="sort('name')">Assignee</button>
+                  </th>
+                  <th v-for="c in COLS" :key="c.id" class="c-n">
+                    <button class="sortable" :class="{ on: sortBy === c.id }" @click="sort(c.id)"
+                      :data-tooltip="c.tip" data-tip-pos="bottom">{{ c.label }}</button>
+                  </th>
+                  <th class="c-bar">Share of closed</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in roster" :key="r.id">
+                  <td class="c-who">
+                    <span class="dot" :style="{ background: colourFor(r.id) }"></span>
+                    <span class="who" :title="r.name">{{ r.name }}</span>
+                  </td>
+                  <td v-for="c in COLS" :key="c.id" class="c-n" :class="cellTone(c, r)">
+                    <span v-if="c.dur">{{ dur(r[c.id]) }}</span>
+                    <span v-else-if="c.pct">{{ pctOf(r, c) }}</span>
+                    <span v-else class="n" :class="{ zero: !r[c.id] }">{{ r[c.id] ? fmt(r[c.id]) : '·' }}</span>
+                  </td>
+                  <td class="c-bar">
+                    <div class="barwrap">
+                      <div class="mbar">
+                        <span class="mfill"
+                          :style="{ width: pct(r.resolvedMonth, totals.resolvedMonth) + '%', background: colourFor(r.id) }"></span>
+                      </div>
+                      <span class="mpct">{{ pctLabel(r.resolvedMonth, totals.resolvedMonth) }}</span>
                     </div>
-                    <span class="mpct">{{ pctLabel(r.workTotalMs, effort.workTotalMs) }}</span>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-            <tfoot>
-              <tr>
-                <td class="c-who">Total</td>
-                <td class="c-n"><span class="n">{{ effort.sampled.toLocaleString() }}</span></td>
-                <td class="c-n">{{ dur(effort.workMedianMs) }}</td>
-                <td class="c-n">{{ dur(effort.workP90Ms) }}</td>
-                <td class="c-n"><span class="n">{{ hours(effort.workTotalMs) }}</span></td>
-                <td class="c-n">{{ dur(effort.frtMedianMs) }}</td>
-                <td class="c-n">{{ firstTouchPct }}</td>
-                <td class="c-n">&mdash;</td>
-                <td class="c-bar"><span class="mpct">100%</span></td>
-              </tr>
-            </tfoot>
-          </table>
-        </article>
-
-        <!-- How long tickets take, in time order. A histogram sorted by
-             frequency is not a histogram. -->
-        <article class="box b-win">
-          <header class="bh">
-            <h3 class="bt">How long tickets take</h3>
-            <span class="bsub">business hours on the desk</span>
-          </header>
-          <table class="t t-win">
-            <tbody>
-              <tr v-for="b in effort.buckets" :key="b.name">
-                <td class="c-who">
-                  <span class="wfill"
-                    :style="{ width: pct(b.count, bucketMax) + '%', background: 'var(--j-info)' }"></span>
-                  <span class="who">{{ b.name }}</span>
-                </td>
-                <td class="c-n"><span class="n">{{ b.count.toLocaleString() }}</span></td>
-                <td class="c-pc">{{ pctLabel(b.count, effort.measured) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </article>
-
-        <!-- WHEN the desk closes tickets. Hour-of-day comes from each
-             ticket's own Jira offset, so these are the desk's local hours
-             (US/Central here), not UTC - which would smear the working day
-             across midnight. -->
-        <article class="box b-heat">
-          <header class="bh">
-            <h3 class="bt">When tickets get closed</h3>
-            <span class="bsub">local time &middot; peak {{ heatPeak }} in an hour</span>
-          </header>
-          <div class="heat">
-            <template v-for="(row, d) in heatRows" :key="d">
-              <span class="heat-day">{{ DAYS[d] }}</span>
-              <span v-for="(n, h) in row" :key="h" class="cellx"
-                :class="{ none: !n, top: n === heatPeak && n > 0 }"
-                :style="{ opacity: n ? (0.2 + 0.8 * (n / heatPeak)) : 1 }"
-                :data-tooltip="DAYS[d] + ' ' + String(h).padStart(2, '0') + ':00 — ' + n + ' closed'"></span>
-            </template>
-            <span class="heat-day"></span>
-            <span v-for="h in 24" :key="'h' + h" class="hh">{{ (h - 1) % 3 === 0 ? (h - 1) : '' }}</span>
+                  </td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td class="c-who">Total</td>
+                  <td v-for="c in COLS" :key="c.id" class="c-n">
+                    <span v-if="c.dur">{{ dur(totals[c.id]) }}</span>
+                    <span v-else-if="c.pct">{{ totalPct(c) }}</span>
+                    <span v-else class="n">{{ fmt(totals[c.id]) }}</span>
+                  </td>
+                  <td class="c-bar"><span class="mpct">100%</span></td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
-        </article>
-      </template>
+        </section>
+
+        <!-- CHART BAND -->
+        <div class="band">
+        <section class="px">
+          <header class="ph">
+            <h3 class="pt">Closed this month</h3>
+            <span class="ps">by person</span>
+          </header>
+          <div class="chart"><Bar :data="throughputData" :options="hBarOpts" /></div>
+        </section>
+
+        <section class="px">
+          <header class="ph">
+            <h3 class="pt">How long tickets take</h3>
+            <span class="ps" :data-tooltip="deskTip" data-tip-pos="left">on-desk time ⓘ</span>
+          </header>
+          <div class="chart"><Bar :data="bucketData" :options="vBarOpts" /></div>
+        </section>
+
+        <section class="px">
+          <header class="ph">
+            <h3 class="pt">When tickets close</h3>
+            <span class="ps">local time · peak {{ heatPeak }}/h</span>
+          </header>
+          <div class="heatwrap">
+            <div class="heat">
+              <template v-for="(row, d) in heatRows" :key="d">
+                <span class="hday">{{ DAYS[d] }}</span>
+                <span v-for="(n, h) in row" :key="h" class="hcell"
+                  :class="{ none: !n }"
+                  :style="n ? { opacity: 0.22 + 0.78 * (n / heatPeak) } : {}"
+                  :data-tooltip="`${DAYS[d]} ${String(h).padStart(2, '0')}:00 — ${n} closed`"></span>
+              </template>
+              <span class="hday"></span>
+              <span v-for="h in 24" :key="'h' + h" class="hh">{{ (h - 1) % 6 === 0 ? (h - 1) : '' }}</span>
+            </div>
+          </div>
+        </section>
+        </div>
+      </div>
     </template>
   </section>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { AlertTriangle, RefreshCw, Info } from 'lucide-vue-next'
-import { isFullscreen, now as serverNow } from '@/store'
+import { AlertTriangle, RefreshCw, Users } from 'lucide-vue-next'
+import { Bar } from 'vue-chartjs'
+import {
+  Chart as ChartJS, BarElement, BarController, CategoryScale, LinearScale, Tooltip, Legend,
+} from 'chart.js'
+import { isFullscreen } from '@/store'
+
+ChartJS.register(BarElement, BarController, CategoryScale, LinearScale, Tooltip, Legend)
 
 const props = defineProps({
   projectKey: { type: String, default: '' },
   baseUrl: { type: String, default: '' },
 })
 
-// The matrix columns, in the order the windows are asked about. Open first
-// because it is the only one that is a live load rather than a past event.
-const MATRIX_COLS = [
+// Columns of the people table. `dur` renders a duration, `pct` a ratio of two
+// of the row's own fields; everything else is a plain count.
+const COLS = [
   { id: 'open', label: 'Open', tip: 'Not in a Done status category' },
   { id: 'createdToday', label: 'In', tip: 'Submitted today' },
   { id: 'resolvedToday', label: 'Done', tip: 'Completed today' },
   { id: 'resolvedMonth', label: 'MTD', tip: 'Completed this month to date' },
   { id: 'resolvedLastMonth', label: 'Prev', tip: 'Completed last month, in full' },
+  { id: 'workMedianMs', label: 'Median', dur: true, tip: 'Median business-hours time the ticket sat with the desk' },
+  { id: 'frtMedianMs', label: '1st reply', dur: true, tip: 'Median time to first response' },
+  { id: 'firstTouch', label: '1-touch', pct: true, over: 'measured', tip: 'Resolved at the first reply' },
+  { id: 'slaMetRes', label: 'SLA', pct: true, over: 'slaTotal', tip: 'Resolution SLAs met' },
 ]
 
-// Eight hues, enough that a desk of this size never repeats, and the same
-// tokens the rest of the Jira view draws its categories from.
 const CAT = ['--j-cat-1', '--j-cat-2', '--j-cat-3', '--j-cat-4', '--j-cat-5', '--j-cat-6', '--j-cat-7', '--j-cat-8']
 
 const data = ref({ configured: false, ok: false, projects: [] })
 const loaded = ref(false)
-const loading = ref(false)
 
 const load = async (force = false) => {
-  loading.value = true
   try {
     const r = await fetch(`/api/v1/jira/breakdown${force ? '?refresh=1' : ''}`, { cache: 'no-store' })
     if (r.ok) data.value = await r.json()
   } catch (e) {
-    // The route always answers 200 with its own error field, so reaching here
-    // means the dashboard itself is unreachable; the age counter will show it.
+    // keep the last good payload on screen
   } finally {
-    loading.value = false
     loaded.value = true
   }
 }
-
-// Two cadences. While a pass is running the numbers are not on screen yet, so
-// poll often enough that they appear promptly; once they are, back off to a
-// minute. The server caches for three minutes either way, so most of these
-// polls never reach Jira at all.
-//
-// A chain of timeouts rather than setInterval: the next delay is chosen after
-// each poll from what came back, and a slow response can never stack a second
-// poll on top of the one still in flight.
-const FAST_MS = 4_000
-const IDLE_MS = 60_000
+// A chain of timeouts, not setInterval: the next delay is chosen from what came
+// back, and a slow response can never stack a second poll on the first.
+const FAST_MS = 4000
+const IDLE_MS = 60000
 let timer = null
 const pump = async () => {
   await load()
@@ -438,46 +185,246 @@ const pump = async () => {
 onMounted(pump)
 onUnmounted(() => clearTimeout(timer))
 
-// A forced recompute starts a pass, so restart the chain at the fast cadence
-// to collect its result rather than waiting out the idle minute.
-const forceRefresh = async () => {
-  clearTimeout(timer)
-  await load(true)
-  timer = setTimeout(pump, FAST_MS)
-}
-
 const board = computed(() => {
   const list = data.value.projects || []
   return list.find(p => p.key === props.projectKey) || list[0] || null
 })
 const windows = computed(() => board.value?.windows || [])
-const windowById = (id) => windows.value.find(w => w.id === id) || null
-const total = (id) => windowById(id)?.total || 0
-
-// --- the roster ----------------------------------------------------------
-// One row per person who appears in ANY window, so somebody who closed four
-// tickets and has none open still shows up with their work visible.
-const sortBy = ref('open')
-const sortDir = ref('desc')
-const sort = (id) => {
-  if (sortBy.value === id) {
-    sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc'
-  } else {
-    sortBy.value = id
-    sortDir.value = id === 'name' ? 'asc' : 'desc'
-  }
-}
-
-const idOf = (row) => row.accountId || `name:${row.name}`
-
-// --- effort & timing -----------------------------------------------------
+const winById = (id) => windows.value.find(w => w.id === id) || null
+const total = (id) => winById(id)?.total || 0
 const effort = computed(() => board.value?.effort || null)
 
-// Durations are formatted at the precision that is meaningful at that scale:
-// seconds below a minute, whole minutes below an hour, one decimal of an hour
-// below a day. A median of "0.31h" tells a human nothing; "18m" does.
+// --- the roster, counts and timing merged -------------------------------
+// One row per person who appears in ANY window or in the timing pass, so
+// somebody who closed work but has nothing open still shows up.
+const roster = computed(() => {
+  const people = new Map()
+  const touch = (id, name, accountId) => {
+    let p = people.get(id)
+    if (!p) {
+      p = {
+        id, name, accountId,
+        open: 0, createdToday: 0, resolvedToday: 0, resolvedMonth: 0, resolvedLastMonth: 0,
+        workMedianMs: 0, frtMedianMs: 0, firstTouch: 0, measured: 0,
+        slaMetRes: 0, slaBreachRes: 0, slaTotal: 0,
+      }
+      people.set(id, p)
+    }
+    return p
+  }
+  for (const w of windows.value) {
+    for (const r of w.rows || []) {
+      const id = r.accountId || `name:${r.name}`
+      touch(id, r.name, r.accountId)[w.id] = r.count
+    }
+  }
+  for (const r of effort.value?.rows || []) {
+    const id = r.accountId || `name:${r.name}`
+    const p = touch(id, r.name, r.accountId)
+    p.workMedianMs = r.workMedianMs
+    p.frtMedianMs = r.frtMedianMs
+    p.firstTouch = r.firstTouch
+    p.measured = r.measured
+    p.slaMetRes = r.slaMetRes
+    p.slaBreachRes = r.slaBreachRes
+    p.slaTotal = r.slaMetRes + r.slaBreachRes
+  }
+  const rows = [...people.values()]
+  const dir = sortDir.value === 'desc' ? -1 : 1
+  rows.sort((x, y) => {
+    if (sortBy.value === 'name') return x.name.localeCompare(y.name) * dir
+    const d = (x[sortBy.value] || 0) - (y[sortBy.value] || 0)
+    // Name as the tie-break so the order does not shuffle between polls.
+    return d !== 0 ? d * dir : x.name.localeCompare(y.name)
+  })
+  return rows
+})
+
+const totals = computed(() => {
+  const e = effort.value
+  const sum = (k) => roster.value.reduce((s, r) => s + (r[k] || 0), 0)
+  return {
+    open: total('open'),
+    createdToday: total('createdToday'),
+    resolvedToday: total('resolvedToday'),
+    resolvedMonth: total('resolvedMonth'),
+    resolvedLastMonth: total('resolvedLastMonth'),
+    workMedianMs: e?.workMedianMs || 0,
+    frtMedianMs: e?.frtMedianMs || 0,
+    firstTouch: e?.firstTouch || 0,
+    measured: e?.measured || 0,
+    slaMetRes: sum('slaMetRes'),
+    slaTotal: sum('slaTotal'),
+  }
+})
+
+const sortBy = ref('resolvedMonth')
+const sortDir = ref('desc')
+const sort = (id) => {
+  if (sortBy.value === id) sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc'
+  else { sortBy.value = id; sortDir.value = id === 'name' ? 'asc' : 'desc' }
+}
+
+// --- strip ---------------------------------------------------------------
+const net = computed(() => totals.value.createdToday - totals.value.resolvedToday)
+const kpis = computed(() => {
+  const e = effort.value
+  const T = totals.value
+  const ft = T.measured > 0 ? Math.round((T.firstTouch / T.measured) * 100) : 0
+  return [
+    { l: 'Open', v: fmt(T.open), c: v('--j-cat-1'), tip: 'Not in a Done status category' },
+    { l: 'In today', v: fmt(T.createdToday), c: v('--j-info'), tip: 'Submitted today' },
+    { l: 'Done today', v: fmt(T.resolvedToday), c: v('--j-ok'), tip: 'Completed today' },
+    {
+      l: 'Net today', v: net.value > 0 ? `+${net.value}` : String(net.value),
+      c: net.value > 0 ? v('--j-crit') : v('--j-ok'),
+      tone: net.value === 0 ? 'calm' : '',
+      tip: 'Submitted minus completed. Positive means the queue grew.',
+    },
+    { l: 'Done MTD', v: fmt(T.resolvedMonth), c: v('--j-cat-2'), tip: 'Completed this month to date' },
+    { l: 'Prev month', v: fmt(T.resolvedLastMonth), c: v('--j-idle'), tone: 'calm', tip: 'Completed last month, in full' },
+    {
+      l: 'Median', v: dur(T.workMedianMs), c: v('--j-cat-4'),
+      tip: 'Median business-hours time a ticket sat with the desk',
+    },
+    { l: '1-touch', v: `${ft}%`, c: v('--j-ok'), tip: 'Resolved at the first reply' },
+    {
+      l: 'Breaches', v: fmt(e?.breaches || 0),
+      c: v('--j-crit'), tone: (e?.breaches || 0) > 0 ? '' : 'calm',
+      tip: 'Resolution SLAs missed in the window',
+    },
+  ]
+})
+
+// --- charts --------------------------------------------------------------
+// Chart.js needs real colour strings, and the theme's --j-* tokens are
+// color-mix() expressions that getComputedStyle returns unresolved. These are
+// read off a probe element, which resolves them.
+const v = (token) => {
+  try {
+    const el = document.createElement('span')
+    el.style.color = `var(${token})`
+    document.body.appendChild(el)
+    const c = getComputedStyle(el).color
+    el.remove()
+    return c || '#888'
+  } catch (e) { return '#888' }
+}
+const dark = () => document.documentElement.classList.contains('dark')
+const ink = () => (dark() ? 'rgba(226,232,240,0.88)' : 'rgba(51,65,85,0.80)')
+const gridc = () => (dark() ? 'rgba(148,163,184,0.16)' : 'rgba(100,116,139,0.16)')
+const fsz = (small, big) => (isFullscreen.value ? big : small)
+
+const valueLabels = {
+  id: 'jteamLabels',
+  afterDatasetsDraw(chart, _a, opts) {
+    const { ctx } = chart
+    const size = opts.size || 10
+    const horizontal = chart.options.indexAxis === 'y'
+    const meta = chart.getDatasetMeta(0)
+    if (!meta || meta.hidden) return
+    const ds = chart.data.datasets[0]
+    meta.data.forEach((el, i) => {
+      const val = ds.data[i]
+      if (!val) return
+      const text = val.toLocaleString()
+      ctx.save()
+      ctx.font = `800 ${size}px ui-monospace, SFMono-Regular, Menlo, monospace`
+      const fits = horizontal
+        ? (el.height || 0) >= size + 3
+        : (el.width || 0) >= ctx.measureText(text).width + 3
+      if (!fits) { ctx.restore(); return }
+      ctx.fillStyle = opts.color || '#888'
+      if (horizontal) {
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+        ctx.fillText(text, el.x + 6, el.y)
+      } else {
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'
+        ctx.fillText(text, el.x, el.y - 4)
+      }
+      ctx.restore()
+    })
+  },
+}
+ChartJS.register(valueLabels)
+
+const throughputRows = computed(() =>
+  [...roster.value]
+    .filter(r => r.resolvedMonth > 0)
+    .sort((x, y) => y.resolvedMonth - x.resolvedMonth)
+    .slice(0, isFullscreen.value ? 10 : 8))
+const throughputData = computed(() => ({
+  labels: throughputRows.value.map(r => r.name),
+  datasets: [{
+    data: throughputRows.value.map(r => r.resolvedMonth),
+    backgroundColor: throughputRows.value.map(r => colourFor(r.id)),
+    borderRadius: 2,
+  }],
+}))
+const hBarOpts = computed(() => ({
+  indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: { duration: 0 },
+  layout: { padding: { right: fsz(30, 40) } },
+  plugins: {
+    legend: { display: false },
+    tooltip: { callbacks: { label: (c) => ` ${c.parsed.x.toLocaleString()} closed` } },
+    jteamLabels: { color: ink(), size: fsz(9, 12) },
+  },
+  scales: {
+    x: { grid: { color: gridc() }, ticks: { color: ink(), font: { size: fsz(9, 11) }, precision: 0, maxTicksLimit: 4 } },
+    y: { grid: { display: false }, ticks: { color: ink(), font: { size: fsz(10, 12), weight: '700' }, autoSkip: false } },
+  },
+}))
+
+const bucketData = computed(() => {
+  const b = effort.value?.buckets || []
+  return {
+    labels: b.map(x => x.name),
+    datasets: [{
+      data: b.map(x => x.count),
+      // Left to right is fast to slow, so the colour ramp carries the meaning.
+      backgroundColor: [v('--j-ok'), v('--j-ok'), v('--j-cat-2'), v('--j-warn'), v('--j-warn'), v('--j-crit'), v('--j-crit')],
+      borderRadius: 2,
+    }],
+  }
+})
+const vBarOpts = computed(() => ({
+  responsive: true, maintainAspectRatio: false, animation: { duration: 0 },
+  layout: { padding: { top: fsz(14, 20) } },
+  plugins: {
+    legend: { display: false },
+    tooltip: { callbacks: { label: (c) => ` ${c.parsed.y.toLocaleString()} tickets` } },
+    jteamLabels: { color: ink(), size: fsz(10, 13) },
+  },
+  scales: {
+    x: { grid: { display: false }, ticks: { color: ink(), font: { size: fsz(9, 12), weight: '700' }, maxRotation: 0 } },
+    y: { beginAtZero: true, grace: '16%', grid: { color: gridc() }, ticks: { color: ink(), font: { size: fsz(9, 11) }, precision: 0, maxTicksLimit: 4 } },
+  },
+}))
+
+// --- heatmap -------------------------------------------------------------
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const heatRows = computed(() => {
+  const g = Array.from({ length: 7 }, () => Array(24).fill(0))
+  for (const c of effort.value?.heatmap || []) {
+    if (c.day >= 0 && c.day < 7 && c.hour >= 0 && c.hour < 24) g[c.day][c.hour] = c.count
+  }
+  return g
+})
+const heatPeak = computed(() =>
+  (effort.value?.heatmap || []).reduce((m, c) => Math.max(m, c.count), 0) || 1)
+
+// --- formatting ----------------------------------------------------------
+const fmt = (n) => (n || 0).toLocaleString()
+const pct = (n, of) => (of > 0 ? (n / of) * 100 : 0)
+const pctLabel = (n, of) => {
+  if (!of) return '—'
+  const p = (n / of) * 100
+  return p >= 10 || p === 0 ? `${Math.round(p)}%` : `${p.toFixed(1)}%`
+}
+// Seconds below a minute, whole minutes below an hour, one decimal of an hour
+// below a day: "0.31h" tells a human nothing, "18m" does.
 const dur = (ms) => {
-  if (!ms || ms <= 0) return '\u2014'
+  if (!ms || ms <= 0) return '—'
   const secs = ms / 1000
   if (secs < 60) return `${Math.round(secs)}s`
   const mins = secs / 60
@@ -486,422 +433,172 @@ const dur = (ms) => {
   if (hrs < 24) return `${hrs.toFixed(hrs < 10 ? 1 : 0)}h`
   return `${(hrs / 24).toFixed(1)}d`
 }
-const hours = (ms) => (!ms || ms <= 0 ? '0' : (ms / 3600000).toFixed(ms < 36000000 ? 1 : 0))
-const ratio = (n, of) => (of > 0 ? `${Math.round((n / of) * 100)}%` : '\u2014')
-
-const waitPct = computed(() => {
-  const r = effort.value?.waitRatio
-  return r > 0 ? `${Math.round(r * 100)}%` : '\u2014'
-})
-// A low figure is not "bad" - it means tickets sit waiting on the customer
-// rather than on the desk - so it is informational, not a failure colour.
-const waitTone = computed(() => {
-  const r = effort.value?.waitRatio || 0
-  return r > 0 && r < 0.4 ? 'tone-in' : ''
-})
-const waitTip = computed(() => {
-  const e = effort.value
-  if (!e || !e.waitRatio) return 'On-desk time as a share of wall-clock time'
-  const rest = Math.round((1 - e.waitRatio) * 100)
-  return `On-desk business hours as a share of total wall-clock time. The other ${rest}% was waiting - on the customer, on a vendor, or outside working hours.`
-})
-const firstTouchPct = computed(() => {
-  const e = effort.value
-  return e && e.measured > 0 ? `${Math.round((e.firstTouch / e.measured) * 100)}%` : '\u2014'
-})
-const bucketMax = computed(() =>
-  (effort.value?.buckets || []).reduce((m, b) => Math.max(m, b.count), 0))
-
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-// A dense 7x24 grid built from the sparse cells the API returns, so an hour
-// with nothing in it is a real zero rather than a gap in the layout.
-const heatRows = computed(() => {
-  const grid = Array.from({ length: 7 }, () => Array(24).fill(0))
-  for (const c of effort.value?.heatmap || []) {
-    if (c.day >= 0 && c.day < 7 && c.hour >= 0 && c.hour < 24) grid[c.day][c.hour] = c.count
-  }
-  return grid
-})
-const heatPeak = computed(() =>
-  (effort.value?.heatmap || []).reduce((m, c) => Math.max(m, c.count), 0))
-
-const roster = computed(() => {
-  const people = new Map()
-  for (const w of windows.value) {
-    for (const r of w.rows || []) {
-      const id = idOf(r)
-      let person = people.get(id)
-      if (!person) {
-        person = { id, name: r.name, accountId: r.accountId || '' }
-        for (const c of MATRIX_COLS) person[c.id] = 0
-        people.set(id, person)
-      }
-      person[w.id] = r.count
-    }
-  }
-  const rows = [...people.values()]
-  const dir = sortDir.value === 'desc' ? -1 : 1
-  rows.sort((a, b) => {
-    if (sortBy.value === 'name') return a.name.localeCompare(b.name) * dir
-    const delta = (a[sortBy.value] || 0) - (b[sortBy.value] || 0)
-    // Name as the tie-break so the order does not shuffle between refreshes.
-    return delta !== 0 ? delta * dir : a.name.localeCompare(b.name)
-  })
-  return rows
-})
-
-// Stable colour per person: hashed from their identity rather than taken from
-// their position, so sorting the table does not recolour everyone.
+const pctOf = (r, c) => {
+  const over = r[c.over] || 0
+  return over > 0 ? `${Math.round((r[c.id] / over) * 100)}%` : '—'
+}
+const totalPct = (c) => {
+  const T = totals.value
+  const over = T[c.over] || 0
+  return over > 0 ? `${Math.round((T[c.id] / over) * 100)}%` : '—'
+}
+// Only the SLA column earns a colour: a miss is the one cell worth spotting.
+const cellTone = (c, r) => {
+  if (c.id !== 'slaMetRes') return ''
+  return r.slaBreachRes > 0 ? 'bad' : ''
+}
+// Stable colour per person, hashed from identity rather than row position, so
+// sorting the table does not recolour everyone.
 const colourFor = (id) => {
-  let hash = 0
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0
-  return `var(${CAT[Math.abs(hash) % CAT.length]})`
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
+  return v(CAT[Math.abs(h) % CAT.length])
 }
 
-// --- flow line -----------------------------------------------------------
-const net = computed(() => total('createdToday') - total('resolvedToday'))
-const netLabel = computed(() => (net.value > 0 ? `+${net.value}` : String(net.value)))
-const netTone = computed(() => (net.value > 0 ? 'tone-grow' : net.value < 0 ? 'tone-shrink' : 'tone-flat'))
-
-// Linear extrapolation from the days gone in the month. Labelled "on pace" and
-// explained in the tooltip rather than presented as a forecast, because it
-// assumes the rest of the month looks like the part that has happened.
-const monthProgress = computed(() => {
-  const d = new Date(serverNow.value)
-  const days = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
-  return { day: d.getDate(), days }
-})
-const pace = computed(() => {
-  const { day, days } = monthProgress.value
-  if (!day) return 0
-  return Math.round((total('resolvedMonth') / day) * days)
-})
-const paceTone = computed(() => {
-  const prev = total('resolvedLastMonth')
-  if (!prev) return ''
-  return pace.value >= prev ? 'tone-out' : 'tone-warn'
-})
-const paceTip = computed(() => {
-  const { day, days } = monthProgress.value
-  const prev = total('resolvedLastMonth')
-  const base = `${total('resolvedMonth')} completed over ${day} of ${days} days, carried forward at the same rate`
-  return prev ? `${base}. Last month finished on ${prev}.` : base
-})
-
-const ageLabel = computed(() => {
-  if (!data.value.updatedAt) return '—'
-  const stamp = new Date(data.value.updatedAt).getTime()
-  if (!stamp) return '—'
-  const secs = Math.max(0, Math.round((serverNow.value - stamp) / 1000))
-  const age = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m`
-  if (data.value.computing) return `${age} old · recounting`
-  return data.value.stale ? `${age} old · stale` : `${age} old`
-})
-
-// --- formatting ----------------------------------------------------------
-const fmt = (n) => (n || 0).toLocaleString()
-const pct = (n, of) => (of > 0 ? (n / of) * 100 : 0)
-const pctLabel = (n, of) => {
-  if (!of) return '—'
-  const p = (n / of) * 100
-  // Whole numbers above 10 percent, one decimal below it: on a desk of a dozen
-  // people a 0 percent row would otherwise appear for real work.
-  return p >= 10 || p === 0 ? `${Math.round(p)}%` : `${p.toFixed(1)}%`
-}
-
-// --- deep links ----------------------------------------------------------
-// Each number links to the same question in Jira, which makes the figure
-// checkable instead of something this page merely asserts.
-const navLink = (jql) => `${props.baseUrl}/issues/?jql=${encodeURIComponent(jql)}`
-const windowLink = (w) => navLink(w.jql || '')
-const withAssignee = (jql, row) =>
-  row.accountId ? `${jql} AND assignee = "${row.accountId}"` : `${jql} AND assignee IS EMPTY`
-const cellLink = (w, row) => navLink(withAssignee(w.jql || '', row))
-const rowLink = (windowId, row) => {
-  const w = windowById(windowId)
-  return w?.jql ? navLink(withAssignee(w.jql, row)) : '#'
-}
+const deskTip = `Nobody logs labour in this Jira — timespent is zero on every ticket in the instance. `
+  + `On-desk time is the Time-to-resolution SLA clock: business hours only, paused while waiting on `
+  + `the customer. It measures how long a ticket was the desk's problem, not how long anyone worked on it.`
 </script>
 
 <style scoped>
-/* An instrument panel, not a report: every box is the same plate as the cards
-   and drill-ins, and the type is mono and tabular throughout so a column of
-   numbers lines up and can be read down rather than across. */
+/* ====================================================================
+   TEAM BOARD
+
+   Same shape as the SOC console, for the same reason: one dominant panel
+   carrying the work, charts banked beside it, a thin strip of reference
+   figures on top. The previous version stacked seven panels down the page
+   and scrolled forever.
+
+   Everything is height-bounded. The people table scrolls inside its own
+   frame rather than growing the page.
+   ==================================================================== */
 .team {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 0.6rem;
-  align-content: start;
-  --t-row: 1.45rem;
-  --t-size: 0.76rem;
+  display: flex; flex-direction: column; gap: 0.5rem; min-width: 0;
+  --hair: hsl(var(--border));
+  --mono: var(--j-mono, ui-monospace, Menlo, monospace);
+  --tint: 12%;
 }
-.team.wall { --t-row: 1.85rem; --t-size: 0.95rem; gap: 0.8rem; }
+:global(.dark) .team { --tint: 16%; }
 
-/* ---------------------------------------------------------------- notices */
-.notice, .notice-error { grid-column: span 12; }
-.notice {
-  border: 1px dashed hsl(var(--border)); border-radius: 10px;
-  padding: 1rem 1.1rem; background: hsl(var(--card) / 0.4);
+/* ------------------------------------------------------------------ strip */
+.strip { display: grid; gap: 0.3rem; grid-template-columns: repeat(auto-fit, minmax(5rem, 1fr)); flex: none; }
+.kv {
+  display: flex; align-items: baseline; gap: 0.35rem; min-width: 0;
+  padding: 0.3rem 0.5rem; border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--kc) 30%, var(--hair));
+  background: color-mix(in srgb, var(--kc) var(--tint), hsl(var(--card)));
 }
-.notice-error {
-  border-style: solid; border-color: color-mix(in srgb, var(--j-crit) 40%, transparent);
-  background: color-mix(in srgb, var(--j-crit) 6%, transparent);
+.kv.calm { background: hsl(var(--card)); border-color: var(--hair); }
+.kv-n {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 1.05rem; font-weight: 800; line-height: 1.1; letter-spacing: -0.04em; color: var(--kc);
 }
-.notice-title { display: flex; align-items: center; gap: 0.4rem; font-weight: 700; font-size: 0.9rem; }
-.notice-body { font-size: 0.82rem; color: hsl(var(--muted-foreground)); margin-top: 0.35rem; }
-.notice code {
-  font-family: var(--j-mono); background: hsl(var(--muted) / 0.6);
-  padding: 0.05rem 0.3rem; border-radius: 4px; font-size: 0.85em;
+.team.wall .kv-n { font-size: 1.45rem; }
+.kv.calm .kv-n { color: hsl(var(--foreground)); }
+.kv-n i { font-style: normal; font-size: 0.6em; opacity: 0.7; }
+.kv-l {
+  font-family: var(--mono); font-size: 8px; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: hsl(var(--muted-foreground));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.err-pre {
-  font-family: var(--j-mono); font-size: 12px; white-space: pre-wrap; word-break: break-word;
-  color: var(--j-crit); background: color-mix(in srgb, var(--j-crit) 8%, transparent);
-  border-radius: 6px; padding: 0.6rem 0.75rem; margin: 0;
-}
-.err-pre.small { font-size: 10px; padding: 0.4rem 0.5rem; }
+.team.wall .kv-l { font-size: 10px; }
 
-/* -------------------------------------------------------------- flow line */
-.flow {
-  grid-column: span 12;
-  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
-  padding: 0.55rem 0.8rem;
-  border: 1px solid hsl(var(--border)); border-radius: 10px;
-  background:
-    radial-gradient(120% 180% at 0% 0%, hsl(var(--card)) 0%, hsl(var(--card) / 0.55) 70%),
-    hsl(var(--card) / 0.5);
+/* ---------------------------------------------------------------- canvas */
+/* The table is wide and short, so it gets the full width and sizes to its
+   content; the three charts sit beneath it in equal thirds. The previous
+   arrangement put it in a tall left column beside stacked charts, which left
+   a large empty block under it - the panel shape did not match the data. */
+.canvas { display: grid; gap: 0.5rem; min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.people { grid-column: 1 / -1; }
+/* Content-sized, with a ceiling so a big roster scrolls in frame instead of
+   growing the page. */
+.plist { max-height: 26rem; }
+.team.wall .plist { max-height: 44vh; }
+.band {
+  display: grid; gap: 0.5rem; min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  height: 15rem;
 }
-.f-id { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
-.f-key {
-  font-family: var(--j-mono); font-size: 0.82rem; font-weight: 800; letter-spacing: 0.06em;
-}
-.f-name {
-  font-size: 0.74rem; color: hsl(var(--muted-foreground));
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.f-nums { display: flex; align-items: flex-end; gap: 0.1rem; flex-wrap: wrap; margin-left: auto; }
-.f-cell {
-  display: flex; flex-direction: column; align-items: flex-end;
-  padding: 0 0.6rem; border-radius: 6px;
-}
-.f-sep { width: 1px; align-self: stretch; margin: 0.15rem 0.45rem; background: hsl(var(--border)); }
-.f-n {
-  font-family: var(--j-mono); font-variant-numeric: tabular-nums;
-  font-size: clamp(1.05rem, 1.5vw, 1.45rem); font-weight: 800; line-height: 1;
-  letter-spacing: -0.03em;
-}
-.team.wall .f-n { font-size: clamp(1.5rem, 2.4vw, 2.3rem); }
-.f-n.muted { color: hsl(var(--muted-foreground)); }
-.f-l {
-  font-family: var(--j-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
-  text-transform: uppercase; color: hsl(var(--muted-foreground)); margin-top: 0.3rem;
-  white-space: nowrap;
-}
-.team.wall .f-l { font-size: 11px; }
-.tone-in { color: var(--j-info); }
-.tone-out { color: var(--j-ok); }
-.tone-warn { color: var(--j-warn); }
-/* A growing queue is the one state worth colouring: flat and shrinking are
-   both fine, so neither shouts. */
-.f-net.tone-grow .f-n { color: var(--j-crit); }
-.f-net.tone-shrink .f-n { color: var(--j-ok); }
-.f-net.tone-flat .f-n { color: hsl(var(--muted-foreground)); }
-.f-meta { display: flex; align-items: center; gap: 0.5rem; }
-.f-age {
-  font-family: var(--j-mono); font-size: 0.68rem; font-variant-numeric: tabular-nums;
-  color: hsl(var(--muted-foreground)); letter-spacing: 0.03em; white-space: nowrap;
-}
-.f-refresh {
-  display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: 6px;
-  color: hsl(var(--muted-foreground)); border: 1px solid transparent;
-}
-.f-refresh:hover:not(:disabled) { background: hsl(var(--muted) / 0.6); color: hsl(var(--foreground)); }
-.f-refresh:disabled { opacity: 0.5; }
+.team.wall .band { height: 30vh; }
+@media (max-width: 1000px) { .band { grid-template-columns: 1fr; height: auto; } .band > .px { height: 13rem; } }
 
-/* ------------------------------------------------------------------ boxes */
-.box {
-  display: flex; flex-direction: column; min-width: 0;
-  border: 1px solid hsl(var(--border)); border-radius: 10px;
-  background: hsl(var(--card) / 0.55);
-  padding: 0.5rem 0.6rem 0.4rem;
-  overflow: hidden;
+.px {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  border: 1px solid var(--hair); border-radius: 10px;
+  padding: 0.45rem 0.6rem 0.5rem; background: hsl(var(--card)); overflow: hidden;
 }
-.bh {
+.ph {
   display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem;
-  padding-bottom: 0.35rem; margin-bottom: 0.3rem;
-  border-bottom: 1px solid hsl(var(--border) / 0.7);
+  padding-bottom: 0.3rem; margin-bottom: 0.3rem; border-bottom: 1px solid var(--hair); flex: none;
 }
-.bt {
-  font-family: var(--j-mono); font-size: 10px; font-weight: 800; letter-spacing: 0.14em;
-  text-transform: uppercase; color: hsl(var(--muted-foreground)); margin: 0; white-space: nowrap;
+.pt {
+  display: flex; align-items: center; gap: 0.3rem; margin: 0;
+  font-family: var(--mono); font-size: 10px; font-weight: 800; letter-spacing: 0.14em;
+  text-transform: uppercase; color: hsl(var(--foreground)); white-space: nowrap;
 }
-.team.wall .bt { font-size: 12px; }
-.bsub { font-size: 0.68rem; color: hsl(var(--muted-foreground)); opacity: 0.8; white-space: nowrap; }
-.bnum { display: flex; align-items: baseline; gap: 0.35rem; }
-.btotal {
-  font-family: var(--j-mono); font-variant-numeric: tabular-nums;
-  font-size: 1.25rem; font-weight: 800; line-height: 1; letter-spacing: -0.035em;
-}
-.team.wall .btotal { font-size: 1.7rem; }
-.bflag {
-  font-family: var(--j-mono); font-size: 8px; font-weight: 700; letter-spacing: 0.1em;
-  text-transform: uppercase; color: var(--j-warn);
-  border: 1px solid color-mix(in srgb, var(--j-warn) 40%, transparent);
-  border-radius: 4px; padding: 0.05rem 0.25rem;
-}
-.bempty { font-size: 0.72rem; color: hsl(var(--muted-foreground)); padding: 0.5rem 0; margin: 0; }
+.team.wall .pt { font-size: 12px; }
+.ps { font-size: 0.64rem; color: hsl(var(--muted-foreground)); white-space: nowrap; cursor: help; }
+.team.wall .ps { font-size: 0.78rem; }
+.chart { position: relative; flex: 1 1 auto; min-height: 0; }
 
-/* The bento: the roster is the big plate and takes the width it needs, the
-   five windows pack around it. Twelve columns so the two rows both land flush
-   rather than leaving a ragged gap at the end. */
-.b-matrix { grid-column: span 12; }
-.b-win { grid-column: span 6; }
-@media (min-width: 900px) { .b-win { grid-column: span 4; } }
-@media (min-width: 1280px) {
-  .b-matrix { grid-column: span 7; }
-  .w-open { grid-column: span 5; }
-  .b-win:not(.w-open) { grid-column: span 3; }
+/* ---------------------------------------------------------------- people */
+/* Bounded and scrolled inside its own frame: this is what used to make the
+   page grow one row at a time. */
+.plist { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.ptab { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.team.wall .ptab { font-size: 0.92rem; }
+.ptab th {
+  font-size: 8px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+  color: hsl(var(--muted-foreground)); text-align: right; padding: 0 0.3rem 0.25rem; white-space: nowrap;
+  position: sticky; top: 0; background: hsl(var(--card)); z-index: 2;
 }
-
-/* ----------------------------------------------------------------- tables */
-/* No inner scrollbars. Boxes size to their content and the PAGE scrolls: a
-   dashboard you have to scroll inside eleven separate little panes to read is
-   worse than one long page, and a scrollbar hides rows without saying so. */
-.tscroll, .tscroll-win { overflow: visible; max-height: none; }
-.t {
-  width: 100%; border-collapse: collapse;
-  font-family: var(--j-mono); font-size: var(--t-size); font-variant-numeric: tabular-nums;
-}
-.t th {
-  font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
-  color: hsl(var(--muted-foreground)); text-align: right; padding: 0 0.3rem 0.25rem;
-  white-space: nowrap;
-}
-.team.wall .t th { font-size: 11px; }
-.t th.c-who { text-align: left; }
-.t td { padding: 0 0.3rem; height: var(--t-row); white-space: nowrap; }
-.t tbody tr { border-top: 1px solid hsl(var(--border) / 0.35); }
-.t tbody tr:hover { background: hsl(var(--muted) / 0.45); }
-.t tfoot td {
-  border-top: 1px solid hsl(var(--border));
-  font-weight: 800; padding-top: 0.1rem;
-}
-
-/* The assignee cell is the bar's track in the window boxes: the proportion
-   sits behind the name instead of costing a column of its own, which is how
-   five boxes fit beside the roster at all. */
-.t-win .c-who { position: relative; overflow: hidden; max-width: 0; width: 60%; }
-.wfill {
-  position: absolute; inset: 0 auto 0 0; z-index: 0;
-  opacity: 0.17; border-radius: 0 3px 3px 0; pointer-events: none;
-}
-.dot {
-  position: relative; z-index: 1;
-  display: inline-block; width: 0.42rem; height: 0.42rem; border-radius: 50%;
-  margin-right: 0.35rem; vertical-align: 0.04rem; flex: none;
-}
-.who {
-  position: relative; z-index: 1;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  display: inline-block; max-width: calc(100% - 0.8rem); vertical-align: bottom;
-}
-.t .c-n, .t .c-pc { text-align: right; }
-.c-pc { color: hsl(var(--muted-foreground)); width: 3.4rem; }
-.c-n { width: 3rem; }
-.n { font-weight: 700; }
-.n.zero { color: hsl(var(--muted-foreground)); opacity: 0.45; font-weight: 400; }
-a.link { color: inherit; text-decoration: none; }
-a.link:hover { text-decoration: underline; text-underline-offset: 0.15em; }
-.t-win tbody tr.lead .n { color: hsl(var(--foreground)); }
-
-/* Nobody's row and idle rows stay legible but recede, so the people carrying
-   work are the ones the eye lands on. */
-.t-matrix tbody tr.idle .who { color: hsl(var(--muted-foreground)); }
-.t-matrix tbody tr.nobody .who { font-style: italic; }
-.t-matrix .c-who { width: 40%; max-width: 0; overflow: hidden; }
-/* Not sticky: with no scroll container a sticky header would latch onto the
-   viewport and float over the rest of the page as you scroll past the box. */
-.sortable {
-  font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit;
-  padding: 0; border: 0; background: none;
-}
+.team.wall .ptab th { font-size: 10px; }
+.ptab th.c-who { text-align: left; }
+.ptab td { padding: 0 0.3rem; height: 1.7rem; white-space: nowrap; }
+.team.wall .ptab td { height: 2.1rem; }
+.ptab tbody tr { border-top: 1px solid hsl(var(--border) / 0.5); }
+.ptab tbody tr:hover { background: hsl(var(--muted)); }
+.ptab tfoot td { border-top: 1px solid var(--hair); font-weight: 800; }
+.c-who { max-width: 0; width: 20%; overflow: hidden; }
+.dot { display: inline-block; width: 0.42rem; height: 0.42rem; border-radius: 50%; margin-right: 0.35rem; vertical-align: 0.04rem; }
+.who { display: inline-block; max-width: calc(100% - 0.85rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.c-n { text-align: right; width: auto; min-width: 3.2rem; }
+.c-n .n { font-weight: 700; }
+.c-n .n.zero { color: hsl(var(--muted-foreground)); opacity: 0.45; font-weight: 400; }
+.c-n.bad { color: var(--j-crit); }
+.c-bar { width: 22%; min-width: 6rem; }
+.barwrap { display: flex; align-items: center; gap: 0.35rem; }
+.mbar { flex: 1; height: 0.38rem; min-width: 1.8rem; border-radius: 3px; background: hsl(var(--muted)); overflow: hidden; }
+.mfill { display: block; height: 100%; border-radius: 3px; }
+.mpct { color: hsl(var(--muted-foreground)); font-size: 0.9em; min-width: 2.4rem; text-align: right; }
+.sortable { font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; padding: 0; border: 0; background: none; }
 .sortable:hover { color: hsl(var(--foreground)); }
 .sortable.on { color: hsl(var(--foreground)); text-decoration: underline; text-underline-offset: 0.2em; }
-.c-bar { width: 22%; min-width: 5rem; }
-/* The flex lives on a wrapper, not the td: a table cell set to display:flex
-   leaves the row's column model and stops aligning with its own header. */
-.barwrap { display: flex; align-items: center; gap: 0.4rem; }
-.mbar {
-  flex: 1; height: 0.4rem; min-width: 2rem; border-radius: 3px;
-  background: hsl(var(--muted) / 0.7); overflow: hidden;
-}
-.mfill { display: block; height: 100%; border-radius: 3px; }
-.mpct { color: hsl(var(--muted-foreground)); font-size: 0.7em; min-width: 2.6rem; text-align: right; }
 
+/* --------------------------------------------------------------- heatmap */
+.heatwrap { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; }
+.heat { display: grid; grid-template-columns: 2.1rem repeat(24, minmax(0, 1fr)); gap: 2px; width: 100%; align-items: center; }
+.hday { font-family: var(--mono); font-size: 8px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.team.wall .hday { font-size: 10px; }
+.hh { font-family: var(--mono); font-size: 7px; color: hsl(var(--muted-foreground)); text-align: center; font-variant-numeric: tabular-nums; }
+.team.wall .hh { font-size: 9px; }
+.hcell { aspect-ratio: 1; min-height: 0.5rem; border-radius: 2px; background: var(--j-info); }
+.hcell.none { background: hsl(var(--muted)); opacity: 0.55; }
 
-/* ---------------------------------------------------------- effort block */
-/* The provenance note is part of the data, not decoration: a reader has to
-   know these numbers are an SLA clock rather than logged work, or they will
-   read them as something a person actually recorded. */
-.prov { border-color: color-mix(in srgb, var(--j-info) 30%, hsl(var(--border))); }
-.provnote {
-  display: inline-flex; align-items: center; gap: 0.35rem; margin: 0 0 0.5rem;
-  font-size: 0.68rem; color: hsl(var(--muted-foreground));
-  border: 1px solid hsl(var(--border) / 0.8); border-radius: 999px;
-  padding: 0.12rem 0.5rem; align-self: flex-start; cursor: help;
+/* A single line, not a panel: the cache is warm so this is a flicker at
+   worst, and a page-filling "loading" block for that is worse than nothing. */
+.thinload {
+  display: inline-flex; align-items: center; gap: 0.4rem; align-self: flex-start;
+  font-family: var(--mono); font-size: 0.72rem; color: hsl(var(--muted-foreground));
+  border: 1px solid var(--hair); border-radius: 999px; padding: 0.15rem 0.6rem;
 }
-.provnote code {
-  font-family: var(--j-mono); background: hsl(var(--muted) / 0.6);
-  padding: 0.02rem 0.25rem; border-radius: 3px; font-size: 0.95em;
-}
-.provnote b { color: hsl(var(--foreground)); font-weight: 700; }
-.provnote.err { color: var(--j-crit); }
 
-.estrip { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 0.1rem; }
-.ecell { display: flex; flex-direction: column; padding: 0.15rem 0.7rem 0 0; min-width: 5.5rem; }
-.e-sep { width: 1px; align-self: stretch; margin: 0.2rem 0.6rem; background: hsl(var(--border)); }
-.e-n {
-  font-family: var(--j-mono); font-variant-numeric: tabular-nums;
-  font-size: clamp(1.05rem, 1.6vw, 1.45rem); font-weight: 800; line-height: 1;
-  letter-spacing: -0.03em;
-}
-.team.wall .e-n { font-size: clamp(1.4rem, 2.2vw, 2rem); }
-.e-n.muted { color: hsl(var(--muted-foreground)); }
-.ecell.bad .e-n { color: var(--j-crit); }
-.e-l {
-  font-family: var(--j-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.13em;
-  text-transform: uppercase; color: hsl(var(--muted-foreground)); margin-top: 0.3rem;
-  white-space: nowrap;
-}
-.team.wall .e-l { font-size: 11px; }
-.c-n.slabad { color: var(--j-crit); }
+/* ------------------------------------------------------------- notices */
+.notice { border: 1px dashed var(--hair); border-radius: 10px; padding: 1rem 1.1rem; background: hsl(var(--card)); }
+.notice-error { border-style: solid; border-color: color-mix(in srgb, var(--j-crit) 45%, transparent); background: color-mix(in srgb, var(--j-crit) 8%, transparent); }
+.notice-title { display: flex; align-items: center; gap: 0.4rem; font-weight: 700; font-size: 0.9rem; }
+.notice-body { font-size: 0.82rem; color: hsl(var(--muted-foreground)); margin-top: 0.35rem; }
+.err-pre { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; color: var(--j-crit); background: color-mix(in srgb, var(--j-crit) 9%, transparent); border-radius: 6px; padding: 0.6rem 0.75rem; margin: 0; }
 
-/* ------------------------------------------------------------- heatmap */
-.b-heat { grid-column: span 12; }
-@media (min-width: 1280px) { .b-heat { grid-column: span 8; } }
-/* A day-label column plus a fixed 24, rather than auto-fit, so every row
-   lines up under the hour scale beneath it. */
-.heat {
-  display: grid; grid-template-columns: 2.2rem repeat(24, minmax(0, 1fr));
-  gap: 2px; align-items: center;
-}
-.hh {
-  font-family: var(--j-mono); font-size: 8px; color: hsl(var(--muted-foreground));
-  font-variant-numeric: tabular-nums; text-align: center; padding-top: 0.15rem;
-}
-.heat-day {
-  font-family: var(--j-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
-  color: hsl(var(--muted-foreground)); text-transform: uppercase;
-}
-.cellx {
-  aspect-ratio: 1; min-height: 0.65rem; border-radius: 2px;
-  background: var(--j-info);
-}
-.cellx.none { background: hsl(var(--muted) / 0.45); }
-/* The busiest hour gets an outline, so the peak is findable rather than
-   being merely the darkest of several dark squares. */
-.cellx.top { outline: 1.5px solid var(--j-warn); }
-
-@media (prefers-reduced-motion: reduce) {
-  .animate-spin { animation: none; }
-}
+@media (prefers-reduced-motion: reduce) { .animate-spin { animation: none; } }
 </style>
