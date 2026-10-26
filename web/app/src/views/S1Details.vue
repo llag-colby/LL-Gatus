@@ -47,87 +47,104 @@
       </div>
       <div v-else-if="!loaded" class="notice"><div class="notice-title">Reading estate…</div></div>
 
-      <!-- ================================================================
-           THE WALL.
-           Alert list dominant on the left, charts banked down the right, one
-           thin KPI strip across the top. The list is the focal point because
-           the threats are the work; the charts are context around it.
-           ================================================================ -->
       <template v-else-if="shown === 'wall'">
-        <!-- Thin strip. Compact on purpose - these are reference figures, not
-             the thing the eye should land on. -->
-        <div class="strip">
-          <div v-for="k in kpis" :key="k.l" class="kv" :class="k.tone" :style="{ '--kc': k.c }">
-            <span class="kv-n">{{ k.v }}<i v-if="k.unit">{{ k.unit }}</i></span>
-            <span class="kv-l">{{ k.l }}</span>
+        <!-- ================================================================
+             THE WALL.
+             One rail of figures, the threat list as the focal panel, and
+             three quiet panels down the right: fleet, detections, sites.
+             Colour is signal only; chrome is achromatic. If something is
+             coloured, something needs a person.
+             ================================================================ -->
+        <div v-if="stale" class="w-stale" role="status">
+          Data is {{ staleMins }} minutes old. The page is retrying and will reload itself if the feed does not return.
+        </div>
+
+        <!-- The rail header is hidden by the fullscreen layout, so the wall
+             carries its own: identity on the left, proof of life on the right. -->
+        <div v-if="isFullscreen" class="w-bar">
+          <span class="w-name">SentinelOne</span>
+          <span class="w-sub">{{ railSub }}</span>
+          <span class="w-feed">{{ feedLabel }}</span>
+          <span class="w-clock">{{ clockLabel }}</span>
+        </div>
+
+        <div class="w-kpis">
+          <div v-for="k in kpiRail" :key="k.l" class="w-kpi" :class="k.tone ? 'hot tone-' + k.tone : ''">
+            <div class="w-kn" :class="k.tone">{{ k.v }}<i v-if="k.unit">{{ k.unit }}</i></div>
+            <div class="w-kl">{{ k.l }}<span v-if="k.sub">{{ k.sub }}</span></div>
           </div>
         </div>
 
-        <div class="canvas">
-          <!-- ALERTS. The focal point: biggest area, severity down the left
-               edge, oldest first because age is the pressure on this queue. -->
-          <section class="panel-x alerts">
-            <header class="ph">
-              <h3 class="pt"><Siren class="h-3.5 w-3.5" /> Active threats</h3>
-              <div class="sevkey">
-                <span v-for="sv in SEVS" :key="sv.k" class="sk" :class="'sev-' + sv.k">
-                  <i></i>{{ sv.l }} {{ sevCounts[sv.k] }}
-                </span>
-              </div>
-            </header>
-            <div class="alist">
-              <table class="atab">
-                <thead>
-                  <tr>
-                    <th class="c-sev">Sev</th>
-                    <th class="c-age">Age</th>
-                    <th class="c-site">Site</th>
-                    <th class="c-host">Endpoint</th>
-                    <th>Threat</th>
-                    <th class="c-vd">Verdict</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="th in alerts" :key="th.id" @click="openThreat = th">
-                    <td class="c-sev"><span class="sevbar" :class="'sev-' + sevOf(th).k">{{ sevOf(th).l }}</span></td>
-                    <td class="c-age" :class="ageTone(th)">{{ ageShort(th.createdAt) }}</td>
-                    <td class="c-site"><span class="sitetag">{{ siteOf(th.endpoint) }}</span></td>
-                    <td class="c-host">{{ th.endpoint || '—' }}</td>
-                    <td class="c-file"><span class="fname">{{ th.name }}</span></td>
-                    <td class="c-vd">
-                      <span class="pill" :class="'vd-' + slug(th.verdict)">{{ th.verdictLabel || 'Undefined' }}</span>
-                    </td>
-                  </tr>
-                  <tr v-if="!alerts.length"><td colspan="6" class="empty">No active threats.</td></tr>
-                </tbody>
-              </table>
+        <div class="w-main">
+          <section class="w-card w-alerts">
+            <div class="w-head">
+              <span class="w-t">Active threats <b>{{ fmt(t.notResolved) }}</b></span>
+              <span class="w-key">
+                <span v-for="sv in SEVS" :key="sv.k" :class="'sev-' + sv.k"><i></i>{{ sv.l }} {{ sevCounts[sv.k] }}</span>
+              </span>
+            </div>
+            <div class="w-cols">
+              <span>Sev</span><span>Age</span><span>Endpoint</span><span>Threat</span><span class="r">Verdict</span>
+            </div>
+            <ol class="w-rows">
+              <li v-for="th in alerts" :key="th.id" class="w-row" :class="'sev-' + sevOf(th).k" @click="openThreat = th">
+                <span class="w-sev">{{ sevOf(th).l }}</span>
+                <span class="w-age" :class="ageTone(th)">{{ ageShort(th.createdAt) }}</span>
+                <span class="w-host"><b>{{ th.endpoint || '--' }}</b></span>
+                <span class="w-file" :title="th.name">{{ th.name }}</span>
+                <span class="w-vd" :class="'vd-' + slug(th.verdict)">{{ th.verdictLabel || 'No verdict' }}</span>
+              </li>
+              <li v-if="!alerts.length" class="w-empty">No active threats.</li>
+            </ol>
+            <div v-if="open.length > alerts.length" class="w-more">
+              Oldest and most severe first. {{ fmt(open.length - alerts.length) }} more in the queue.
             </div>
           </section>
 
-          <!-- CHART BANK -->
-          <section class="panel-x">
-            <header class="ph">
-              <h3 class="pt">Detections per day</h3>
-              <span class="ps">{{ trend.length }}d · bars = that day, line = 7-day average</span>
-            </header>
-            <div class="chart"><Bar :data="trendData" :options="trendOpts" /></div>
-          </section>
+          <div class="w-side">
+            <section class="w-card w-fleet">
+              <div class="w-head"><span class="w-t">Fleet check-in</span><span class="w-s">{{ fmt(a.total) }} agents</span></div>
+              <div class="w-fbody">
+                <div class="w-fbig" :class="fleetTone">{{ fleetPct }}<i>%</i></div>
+                <div class="w-fl">online</div>
+                <div class="w-track" role="img" :aria-label="`${a.online} of ${a.total} agents online`">
+                  <i class="w-tfill" :class="fleetTone" :style="{ width: fleetPct + '%' }"></i>
+                </div>
+                <div class="w-fstats">
+                  <span><b>{{ fmt(a.online) }}</b> online</span>
+                  <span :class="{ warn: a.offline > 0 }"><b>{{ fmt(a.offline) }}</b> silent</span>
+                  <span><b>{{ fmt(a.activeLicenses) }}</b> / {{ fmt(a.totalLicenses) }} licences</span>
+                </div>
+              </div>
+            </section>
 
-          <section class="panel-x">
-            <header class="ph">
-              <h3 class="pt">Open by site</h3>
-              <span class="ps">from endpoint naming</span>
-            </header>
-            <div class="chart"><Bar :data="siteData" :options="hBarOpts" /></div>
-          </section>
+            <section class="w-card w-trend">
+              <div class="w-head">
+                <span class="w-t">Detections, {{ trend.length }} days</span>
+                <span class="w-s">avg {{ trendAvg }} / day</span>
+              </div>
+              <div class="w-bars" role="img" :aria-label="`${fmt(t.newThisWeek)} detections this week`">
+                <div v-for="d in trendBars" :key="d.date" class="w-bar-col" :class="{ today: d.today, spike: d.spike }"
+                  :data-tooltip="`${d.date}  ${d.n} detections`">
+                  <span class="w-bar-n">{{ d.n || '' }}</span>
+                  <span class="w-bar-fill" :style="{ height: d.pct + '%' }"></span>
+                </div>
+              </div>
+              <div class="w-foot"><span>{{ fmt(t.newToday) }} today</span><span>{{ fmt(t.newThisWeek) }} this week</span></div>
+            </section>
 
-          <section class="panel-x">
-            <header class="ph">
-              <h3 class="pt">Verdict mix</h3>
-              <span class="ps">{{ fmt(t.notResolved) }} open</span>
-            </header>
-            <div class="chart"><Doughnut :data="verdictData" :options="donutOpts" /></div>
-          </section>
+            <section class="w-card w-sites">
+              <div class="w-head"><span class="w-t">Open by site</span><span class="w-s">from endpoint names</span></div>
+              <ul class="w-srows">
+                <li v-for="r in siteBars" :key="r.name">
+                  <span class="w-sn">{{ r.name }}</span>
+                  <span class="w-sbar"><i :style="{ width: r.pct + '%' }"></i></span>
+                  <b>{{ fmt(r.count) }}</b>
+                </li>
+                <li v-if="!siteBars.length" class="w-empty">Nothing open.</li>
+              </ul>
+            </section>
+          </div>
         </div>
 
         <section v-if="(snap.byAction || []).length" class="failstrip">
@@ -273,10 +290,10 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import {
-  ArrowLeft, RefreshCw, AlertTriangle, Siren,
+  ArrowLeft, RefreshCw, AlertTriangle,
   LayoutGrid, Rows3, ChartPie, ExternalLink, X,
 } from 'lucide-vue-next'
-import { Bar, Doughnut } from 'vue-chartjs'
+import { Bar } from 'vue-chartjs'
 import {
   Chart as ChartJS, BarElement, BarController, LineElement, PointElement, LineController,
   ArcElement, DoughnutController, CategoryScale, LinearScale, Tooltip, Legend,
@@ -440,84 +457,10 @@ const ageLong = (iso) => {
 const oldestDays = computed(() =>
   open.value.reduce((m, th) => Math.max(m, Math.round(ageDays(th.createdAt))), 0))
 
-// --- the thin strip ------------------------------------------------------
-// Reference figures only. Deliberately small: the alert list is the focal
-// point, and licence counts are not here because they are not operational.
-const kpis = computed(() => {
-  const th = t.value
-  return [
-    { l: 'Open', v: fmt(th.notResolved), c: C.value.violet },
-    { l: 'Critical', v: fmt(sevCounts.value.crit), c: C.value.crit,
-      tone: sevCounts.value.crit ? '' : 'calm' },
-    { l: 'Malicious', v: fmt(th.maliciousNotResolved), c: C.value.rose,
-      tone: th.maliciousNotResolved ? '' : 'calm' },
-    { l: 'Oldest', v: oldestDays.value, unit: 'd', c: oldestDays.value >= 14 ? C.value.crit : C.value.warn },
-    { l: 'Infected', v: fmt(a.value.infected), c: C.value.crit,
-      tone: a.value.infected ? '' : 'calm' },
-    { l: 'Agents', v: fmt(a.value.online), c: C.value.teal,
-      tone: 'calm' },
-    { l: 'Silent', v: fmt(a.value.offline), c: C.value.warn,
-      tone: a.value.offline ? '' : 'calm' },
-    { l: 'New today', v: fmt(th.newToday), c: C.value.info, tone: 'calm' },
-  ]
-})
-
 // --- charts --------------------------------------------------------------
 const grid = () => (dark.value ? 'rgba(148,163,184,0.16)' : 'rgba(100,116,139,0.16)')
 const ink = () => (dark.value ? 'rgba(226,232,240,0.88)' : 'rgba(51,65,85,0.80)')
 const fs = (small, big) => (isFullscreen.value ? big : small)
-
-const rollingMean = (series, w = 7) => series.map((_, i) => {
-  const slice = series.slice(Math.max(0, i - w + 1), i + 1)
-  return slice.reduce((s, n) => s + n, 0) / slice.length
-})
-
-const trendData = computed(() => {
-  const counts = trend.value.map(p => p.created || 0)
-  const peak = Math.max(...counts, 1)
-  return {
-    labels: trend.value.map(p => p.date.slice(5)),
-    datasets: [
-      {
-        type: 'line', label: '7-day average', data: rollingMean(counts),
-        borderColor: C.value.cyan, backgroundColor: C.value.cyan, borderWidth: 3,
-        pointRadius: 2.5, pointBackgroundColor: C.value.cyan,
-        pointBorderColor: dark.value ? '#1b1f27' : '#ffffff', pointBorderWidth: 1,
-        tension: 0.35, order: 0,
-      },
-      {
-        type: 'bar', label: 'Detections that day', data: counts,
-        backgroundColor: counts.map(n => (n >= peak ? C.value.warn : C.value.violet)),
-        borderRadius: 2, order: 1,
-      },
-    ],
-  }
-})
-const trendOpts = computed(() => ({
-  responsive: true, maintainAspectRatio: false, animation: { duration: 0 },
-  layout: { padding: { top: fs(12, 18) } },
-  plugins: {
-    legend: {
-      display: true, position: 'top', align: 'end',
-      labels: {
-        color: ink(), boxWidth: 10, boxHeight: 10, padding: 8,
-        usePointStyle: true, pointStyle: 'rectRounded',
-        font: { size: fs(9, 12), weight: '700' },
-      },
-    },
-    tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${Math.round(c.parsed.y).toLocaleString()}` } },
-    valueLabels: { color: ink(), size: fs(9, 12) },
-  },
-  scales: {
-    // Linear, zero-based: on a log axis a bar's length is no longer
-    // proportional to its value and the chart stops meaning anything.
-    x: { grid: { display: false }, ticks: { color: ink(), font: { size: fs(9, 11) }, maxRotation: 0 } },
-    y: {
-      beginAtZero: true, grace: '14%', grid: { color: grid() },
-      ticks: { color: ink(), font: { size: fs(9, 11) }, precision: 0, maxTicksLimit: 4 },
-    },
-  },
-}))
 
 // Top sites, tail folded into one row so a long list of ones does not crowd
 // out the sites that actually carry the backlog.
@@ -556,44 +499,77 @@ const hBarOpts = computed(() => ({
   },
 }))
 
-const verdictData = computed(() => {
-  const rows = snap.value.openVerdict || []
-  return {
-    labels: rows.map(r => r.name),
-    datasets: [{
-      data: rows.map(r => r.count),
-      backgroundColor: rows.map((_, i) => VERDICT_P.value[i % VERDICT_P.value.length]),
-      borderWidth: 0, spacing: 2,
-    }],
-  }
-})
-const donutOpts = computed(() => ({
-  responsive: true, maintainAspectRatio: false, animation: { duration: 0 },
-  cutout: '58%',
-  plugins: {
-    legend: {
-      display: true, position: 'right',
-      labels: {
-        color: ink(), boxWidth: 10, boxHeight: 10, padding: 8,
-        usePointStyle: true, pointStyle: 'rectRounded',
-        font: { size: fs(10, 13), weight: '700' },
-      },
-    },
-    tooltip: {
-      callbacks: {
-        label: (c) => {
-          const sum = c.dataset.data.reduce((x, y) => x + y, 0)
-          return ` ${c.label}: ${c.parsed.toLocaleString()}${sum ? ` (${Math.round((c.parsed / sum) * 100)}%)` : ''}`
-        },
-      },
-    },
-  },
-}))
-
 const fleetRows = computed(() => [
   { name: 'Online', count: a.value.online || 0 },
   { name: 'Silent', count: a.value.offline || 0 },
 ])
+
+// --- wall: rail, fleet, detections, sites -----------------------------------
+// Signal tones only. A figure takes a colour when it is a problem and stays
+// plain otherwise, so a quiet estate is a quiet screen.
+const kpiRail = computed(() => {
+  const th = t.value, ag = a.value
+  const crit = sevCounts.value.crit
+  const oldest = oldestDays.value
+  const silentPct = ag.total > 0 ? Math.round((ag.offline / ag.total) * 100) : 0
+  return [
+    { l: 'Open threats', v: fmt(th.notResolved), sub: th.newToday ? `+${fmt(th.newToday)} today` : '' },
+    { l: 'Critical', v: fmt(crit), tone: crit ? 'crit' : '' },
+    { l: 'Malicious', v: fmt(th.maliciousNotResolved), tone: th.maliciousNotResolved ? 'warn' : '' },
+    { l: 'Oldest open', v: oldest, unit: 'd', tone: oldest >= 30 ? 'crit' : oldest >= 7 ? 'warn' : '' },
+    { l: 'Infected', v: fmt(ag.infected), tone: ag.infected ? 'crit' : '' },
+    { l: 'Agents online', v: fmt(ag.online), sub: ag.total ? `of ${fmt(ag.total)}` : '' },
+    { l: 'Silent', v: fmt(ag.offline), sub: ag.offline ? `${silentPct}%` : '', tone: ag.offline ? 'warn' : '' },
+  ]
+})
+
+const fleetPct = computed(() => (a.value.total > 0 ? Math.round((a.value.online / a.value.total) * 100) : 0))
+const fleetTone = computed(() => (fleetPct.value >= 90 ? 'ok' : fleetPct.value >= 75 ? 'warn' : 'crit'))
+
+const trendAvg = computed(() => {
+  const s = trend.value.map(p => p.created || 0)
+  return s.length ? (s.reduce((x, y) => x + y, 0) / s.length).toFixed(1) : '0'
+})
+const trendBars = computed(() => {
+  const s = trend.value
+  const peak = Math.max(1, ...s.map(p => p.created || 0))
+  const avg = s.length ? s.reduce((x, p) => x + (p.created || 0), 0) / s.length : 0
+  return s.map((p, i) => ({
+    date: p.date, n: p.created || 0, today: i === s.length - 1,
+    pct: ((p.created || 0) / peak) * 100,
+    // A day well over the fortnight's norm is the only bar that earns a colour.
+    spike: avg > 0 && (p.created || 0) >= avg * 2 && (p.created || 0) >= 5,
+  }))
+})
+
+const siteBars = computed(() => {
+  const tally = {}
+  for (const th of open.value) {
+    const k = siteOf(th.endpoint)
+    tally[k] = (tally[k] || 0) + 1
+  }
+  const rows = Object.entries(tally).map(([name, count]) => ({ name, count }))
+    .sort((x, y) => y.count - x.count || x.name.localeCompare(y.name))
+  const top = rows.slice(0, 6)
+  const rest = rows.slice(6).reduce((s, r) => s + r.count, 0)
+  if (rest > 0) top.push({ name: `+${rows.length - 6} more`, count: rest })
+  const m = Math.max(1, ...top.map(r => r.count))
+  return top.map(r => ({ ...r, pct: (r.count / m) * 100 }))
+})
+
+// --- feed health ----------------------------------------------------------
+// The wall must never look healthy while frozen. If nothing has arrived for
+// five minutes it says so, and the wall guard reloads the page if it persists.
+const STALE_MS = 5 * 60 * 1000
+const lastFrame = ref(0)
+const staleMins = computed(() => {
+  void serverNow.value
+  return Math.floor((Date.now() - lastFrame.value) / 60000)
+})
+const stale = computed(() => {
+  void serverNow.value
+  return loaded.value && lastFrame.value > 0 && Date.now() - lastFrame.value > STALE_MS
+})
 
 // --- full queue ----------------------------------------------------------
 const QUEUE_FILTERS = [
@@ -701,7 +677,7 @@ const fetchMetrics = async () => {
   loading.value = true
   try {
     const res = await fetch('/api/v1/s1/metrics', { cache: 'no-store' })
-    if (res.ok) snap.value = await res.json()
+    if (res.ok) { snap.value = await res.json(); lastFrame.value = Date.now() }
   } catch (e) {
     // keep the last good snapshot; the age label carries the staleness
   } finally {
@@ -709,15 +685,33 @@ const fetchMetrics = async () => {
     loaded.value = true
   }
 }
-let es = null
+// The stream heals itself: EventSource retries a dropped connection but stays
+// closed after a proxy restart or 5xx, which would freeze a wall on old data.
+let es = null, reconnect = null, backoff = 2000
+const closeLive = () => { if (es) { es.close(); es = null } }
 const connectLive = () => {
+  closeLive()
+  clearTimeout(reconnect)
   try {
     es = new EventSource('/api/v1/s1/live')
     es.onmessage = (e) => {
-      try { snap.value = JSON.parse(e.data); loaded.value = true; live.value = true } catch (err) { /* malformed frame */ }
+      try {
+        snap.value = JSON.parse(e.data); loaded.value = true; live.value = true
+        lastFrame.value = Date.now(); backoff = 2000
+      } catch (err) { /* malformed frame */ }
     }
-    es.onerror = () => { live.value = false }
-  } catch (e) { live.value = false }
+    es.onerror = () => {
+      live.value = false
+      if (es && es.readyState === 2) {
+        reconnect = setTimeout(connectLive, backoff)
+        backoff = Math.min(backoff * 2, 60000)
+      }
+    }
+  } catch (e) {
+    live.value = false
+    reconnect = setTimeout(connectLive, backoff)
+    backoff = Math.min(backoff * 2, 60000)
+  }
 }
 let fallback = null
 onMounted(() => {
@@ -729,11 +723,16 @@ onMounted(() => {
     dark.value = document.documentElement.classList.contains('dark')
   })
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
-  fallback = setInterval(() => { if (!live.value) fetchMetrics() }, 30000)
+  fallback = setInterval(() => {
+    if (!live.value) fetchMetrics()
+    // A socket that is open but silent for 3 minutes is dead: rebuild it.
+    else if (lastFrame.value && Date.now() - lastFrame.value > 180000) { fetchMetrics(); connectLive() }
+  }, 30000)
 })
 onUnmounted(() => {
   if (themeObserver) themeObserver.disconnect()
-  if (es) es.close()
+  closeLive()
+  clearTimeout(reconnect)
   if (fallback) clearInterval(fallback)
   window.removeEventListener('keydown', onKey)
 })
@@ -755,16 +754,9 @@ onUnmounted(() => {
    monitor in peripheral vision all day.
    ==================================================================== */
 .s1-view {
-  --ok: #16a34a; --warn: #d97706; --crit: #dc2626; --idle: #64748b;
-  --info: #2563eb; --accent: #7c3aed; --rose: #e11d48;
   --mono: var(--j-mono, ui-monospace, "SF Mono", Menlo, monospace);
   --hair: hsl(var(--border));
   --tint: 12%;
-}
-:global(.dark) .s1-view {
-  --ok: #4ade80; --warn: #fbbf24; --crit: #f87171; --idle: #94a3b8;
-  --info: #60a5fa; --accent: #a78bfa; --rose: #fb7185;
-  --tint: 16%;
 }
 
 .s1-shell { width: 100%; padding: 0.8rem 0.9rem 1.1rem; display: flex; flex-direction: column; gap: 0.55rem; }
@@ -799,35 +791,6 @@ onUnmounted(() => {
 }
 .tab:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 .tab.on { color: hsl(var(--foreground)); background: hsl(var(--card)); border-color: var(--hair); }
-
-/* ------------------------------------------------------------- thin strip */
-/* Reference figures. Small by design - the alert list is the focal point,
-   and a row of big boxes competes with it for attention. */
-.strip {
-  flex: none; display: grid; gap: 0.3rem;
-  grid-template-columns: repeat(auto-fit, minmax(5.2rem, 1fr));
-}
-.kv {
-  display: flex; align-items: baseline; gap: 0.35rem; min-width: 0;
-  padding: 0.3rem 0.5rem; border-radius: 7px;
-  border: 1px solid color-mix(in srgb, var(--kc) 30%, var(--hair));
-  background: color-mix(in srgb, var(--kc) var(--tint), hsl(var(--card)));
-}
-.kv.calm { background: hsl(var(--card)); border-color: var(--hair); }
-.kv-n {
-  font-family: var(--mono); font-variant-numeric: tabular-nums;
-  font-size: 1.1rem; font-weight: 800; line-height: 1.1; letter-spacing: -0.04em;
-  color: var(--kc);
-}
-.s1-view.wall .kv-n { font-size: 1.5rem; }
-.kv.calm .kv-n { color: hsl(var(--foreground)); }
-.kv-n i { font-style: normal; font-size: 0.6em; opacity: 0.7; }
-.kv-l {
-  font-family: var(--mono); font-size: 8px; font-weight: 800; letter-spacing: 0.1em;
-  text-transform: uppercase; color: hsl(var(--muted-foreground));
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.s1-view.wall .kv-l { font-size: 10px; }
 
 /* ---------------------------------------------------------------- canvas */
 /* Alert list across roughly 60%, three charts banked down the right. */
@@ -1007,4 +970,105 @@ onUnmounted(() => {
 @media (prefers-reduced-motion: reduce) {
   .animate-spin, .livedot.on { animation: none; }
 }
+
+/* ====================== WALL (same vocabulary as the Jira board) ====================== */
+.s1-view {
+  --ok: var(--j-ok); --warn: var(--j-warn); --crit: var(--j-crit);
+  --idle: var(--j-idle); --info: var(--j-info); --accent: var(--j-info); --rose: var(--j-warn);
+  --surface: hsl(var(--card)); --sunk: hsl(var(--muted) / 0.35); --hair-soft: hsl(var(--border) / 0.55);
+}
+.s1-view.wall .s1-shell { display: flex; flex-direction: column; gap: 0.6rem; }
+.s1-view.wall .s1-shell > .w-main { flex: 1 1 auto; min-height: 0; }
+
+.w-stale { flex: none; border: 1px solid color-mix(in srgb, var(--crit) 45%, transparent); background: color-mix(in srgb, var(--crit) 9%, transparent); color: var(--crit); border-radius: 9px; padding: 0.45rem 0.8rem; font-size: 0.85rem; font-weight: 600; }
+.w-bar { flex: none; display: flex; align-items: baseline; gap: 0.8rem; }
+.w-name { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
+.w-sub { font-family: var(--mono); font-size: 0.78rem; color: hsl(var(--muted-foreground)); }
+.w-feed { margin-left: auto; font-family: var(--mono); font-size: 0.78rem; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.w-clock { font-family: var(--mono); font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.w-kpis { flex: none; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--hair); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.w-kpi { padding: 0.8rem 1rem; border-left: 1px solid var(--hair-soft); min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.w-kpi:first-child { border-left: 0; }
+.w-kpi.hot { box-shadow: inset 3px 0 0 currentColor; }
+.w-kpi.tone-crit { color: var(--crit); } .w-kpi.tone-warn { color: var(--warn); }
+.w-kn { font-family: var(--mono); font-size: clamp(1.9rem, 3.2vw, 3.1rem); font-weight: 800; line-height: 0.95; letter-spacing: -0.045em; font-variant-numeric: tabular-nums; color: hsl(var(--foreground)); white-space: nowrap; }
+.w-kn.crit { color: var(--crit); } .w-kn.warn { color: var(--warn); }
+.w-kn i { font-style: normal; font-size: 0.45em; font-weight: 700; margin-left: 0.15rem; color: hsl(var(--muted-foreground)); }
+.w-kl { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.5rem; font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.w-kl span { letter-spacing: 0; text-transform: none; font-size: 0.72rem; }
+
+.w-main { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 0.75rem; min-height: 0; }
+.w-card { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--hair); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.w-head { flex: none; display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--hair); background: var(--sunk); }
+.w-t { font-family: var(--mono); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; display: inline-flex; align-items: baseline; gap: 0.5rem; }
+.w-t b { font-size: 1rem; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.w-s { font-family: var(--mono); font-size: 0.68rem; color: hsl(var(--muted-foreground)); white-space: nowrap; }
+.w-key { display: inline-flex; gap: 0.8rem; font-family: var(--mono); font-size: 0.7rem; font-weight: 700; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.w-key i { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 2px; margin-right: 0.3rem; }
+.w-key .sev-crit i { background: var(--crit); } .w-key .sev-high i { background: var(--warn); }
+.w-key .sev-med i { background: var(--info); } .w-key .sev-low i { background: var(--idle); }
+
+/* threat list */
+.w-cols, .w-row { display: grid; grid-template-columns: 3.4rem 3.2rem minmax(0, 1.1fr) minmax(0, 1.6fr) 7.5rem; gap: 0.8rem; align-items: center; padding: 0 0.9rem; }
+.w-cols { flex: none; height: 1.8rem; font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: hsl(var(--muted-foreground)); border-bottom: 1px solid var(--hair-soft); }
+.w-cols .r { text-align: right; }
+.w-rows { list-style: none; margin: 0; padding: 0; flex: 1 1 auto; min-height: 0; overflow: hidden; display: grid; grid-auto-rows: minmax(2.4rem, 1fr); align-content: start; }
+.w-row { border-bottom: 1px solid var(--hair-soft); cursor: pointer; font-variant-numeric: tabular-nums; transition: background var(--dur-2) ease; --sc: var(--idle); box-shadow: inset 3px 0 0 var(--sc); }
+.w-row:hover { background: hsl(var(--accent) / 0.45); }
+.w-row.sev-crit { --sc: var(--crit); } .w-row.sev-high { --sc: var(--warn); } .w-row.sev-med { --sc: var(--info); }
+.s1-view.wall .w-row { cursor: default; }
+.w-sev { font-family: var(--mono); font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em; color: var(--sc); }
+.w-age { font-family: var(--mono); font-size: clamp(0.9rem, 1.1vw, 1.15rem); font-weight: 800; color: hsl(var(--muted-foreground)); }
+.w-age.a2 { color: var(--warn); } .w-age.a3 { color: var(--crit); }
+.w-host { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: clamp(0.85rem, 1vw, 1.05rem); }
+.w-host b { font-weight: 700; }
+.w-file { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: clamp(0.85rem, 1vw, 1.05rem); color: hsl(var(--muted-foreground)); }
+.w-vd { text-align: right; font-size: 0.78rem; font-weight: 600; color: hsl(var(--muted-foreground)); white-space: nowrap; }
+.w-vd.vd-true-positive { color: var(--crit); } .w-vd.vd-suspicious { color: var(--warn); }
+.w-empty { padding: 1.2rem 0.9rem; font-size: 0.9rem; color: hsl(var(--muted-foreground)); }
+.w-more { flex: none; padding: 0.45rem 0.9rem; border-top: 1px solid var(--hair); font-family: var(--mono); font-size: 0.7rem; color: hsl(var(--muted-foreground)); }
+
+.w-side { display: grid; grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr); gap: 0.75rem; min-height: 0; }
+
+/* fleet */
+.w-fbody { padding: 0.8rem 0.9rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.w-fbig { font-family: var(--mono); font-size: clamp(2.4rem, 4vw, 4rem); font-weight: 800; line-height: 0.95; letter-spacing: -0.05em; font-variant-numeric: tabular-nums; }
+.w-fbig i { font-style: normal; font-size: 0.45em; margin-left: 0.1rem; color: hsl(var(--muted-foreground)); }
+.w-fbig.ok { color: hsl(var(--foreground)); } .w-fbig.warn { color: var(--warn); } .w-fbig.crit { color: var(--crit); }
+.w-fl { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: hsl(var(--muted-foreground)); margin-top: -0.2rem; }
+.w-track { position: relative; height: 0.55rem; border-radius: 3px; background: hsl(var(--muted)); overflow: hidden; }
+.w-tfill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--ok); transition: width 600ms var(--ease-out-quart); }
+.w-tfill.warn { background: var(--warn); } .w-tfill.crit { background: var(--crit); }
+.w-fstats { display: flex; justify-content: space-between; gap: 0.6rem; font-family: var(--mono); font-size: 0.72rem; color: hsl(var(--muted-foreground)); }
+.w-fstats b { color: hsl(var(--foreground)); font-size: 0.9rem; }
+.w-fstats .warn b { color: var(--warn); }
+
+/* detections: pure CSS bars so nothing repaints a canvas on every poll */
+.w-bars { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; gap: 3px; padding: 0.6rem 0.9rem 0.3rem; }
+.w-bar-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; }
+.w-bar-n { font-family: var(--mono); font-size: 0.66rem; font-weight: 700; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; min-height: 0.9rem; }
+.w-bar-fill { width: 100%; min-height: 2px; border-radius: 2px 2px 0 0; background: hsl(var(--muted-foreground) / 0.45); }
+.w-bar-col.today .w-bar-fill { background: hsl(var(--foreground)); }
+.w-bar-col.today .w-bar-n { color: hsl(var(--foreground)); }
+.w-bar-col.spike .w-bar-fill { background: var(--warn); } .w-bar-col.spike .w-bar-n { color: var(--warn); }
+.w-foot { flex: none; display: flex; justify-content: space-between; padding: 0.3rem 0.9rem 0.5rem; font-family: var(--mono); font-size: 0.7rem; color: hsl(var(--muted-foreground)); }
+
+/* sites */
+.w-srows { list-style: none; margin: 0; padding: 0.4rem 0; flex: 1 1 auto; min-height: 0; overflow: hidden; display: grid; grid-auto-rows: minmax(0, 1fr); }
+.w-srows li { display: grid; grid-template-columns: 5.2rem minmax(0, 1fr) 3ch; gap: 0.7rem; align-items: center; padding: 0 0.9rem; }
+.w-sn { font-family: var(--mono); font-size: clamp(0.78rem, 0.95vw, 1rem); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-sbar { height: 0.45rem; border-radius: 2px; background: hsl(var(--muted)); position: relative; }
+.w-sbar i { position: absolute; inset: 0 auto 0 0; background: hsl(var(--foreground) / 0.7); border-radius: 2px; }
+.w-srows b { font-family: var(--mono); font-size: clamp(0.9rem, 1.1vw, 1.15rem); text-align: right; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 1100px) {
+  .w-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .w-kpi { border-top: 1px solid var(--hair-soft); }
+  .w-main { grid-template-columns: 1fr; }
+  .w-cols, .w-row { grid-template-columns: 3rem 2.6rem minmax(0, 1fr) 6rem; }
+  .w-cols span:nth-child(4), .w-file { display: none; }
+  .w-bars { min-height: 8rem; } .w-srows { min-height: 10rem; }
+}
+@media (prefers-reduced-motion: reduce) { .w-tfill { transition: none; } }
 </style>
