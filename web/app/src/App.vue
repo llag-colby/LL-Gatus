@@ -177,6 +177,7 @@ import s1Icon from '@/assets/sentinelone.png'
 import { requestRefresh, soundEnabled, setSoundEnabled, applyStatusColors, isFullscreen } from '@/store'
 import { unlockAudio } from '@/utils/sounds'
 import { installTooltips, hideTooltip } from '@/utils/tooltip'
+import { installWallGuard, wallMode } from '@/utils/wallguard'
 
 const route = useRoute()
 
@@ -224,7 +225,7 @@ const toggleFullscreen = () => {
   }
 }
 const handleFullscreenChange = () => {
-  isFullscreen.value = !!document.fullscreenElement
+  isFullscreen.value = !!document.fullscreenElement || wallMode.value
 }
 
 // Computed properties
@@ -292,6 +293,7 @@ onMounted(() => {
   installTooltips()     // global [data-tooltip] bubbles (fixed-position, clamped to the viewport)
   fetchConfig()
   fetchVersion()
+  installWallGuard({ onWallChange: (on) => { if (on) isFullscreen.value = true } })
   // Refresh config every 10 minutes for announcements
   configInterval = setInterval(fetchConfig, 600000)
   // Add click listener for closing persistent tooltips

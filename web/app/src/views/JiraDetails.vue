@@ -61,7 +61,7 @@
       <!-- SNAPSHOT: the executive daily view. First tab and the default,
            because it is the one the leadership team reads. -->
       <JiraSnapshot v-else-if="tab === 'snapshot' && snapshot.configured"
-        :project-key="selectedKey || proj?.key || ''" :base-url="snapshot.baseUrl || ''" />
+        :project-key="selectedKey || proj?.key || ''" :base-url="snapshot.baseUrl || ''" :live="proj" />
 
       <!-- TEAM: per-assignee counts. Sits in the same v-if chain as Kanban, so
            an unreachable Jira shows the one error above rather than each tab
@@ -541,27 +541,53 @@ const fetchMetrics = async () => {
   }
 }
 
-let es = null
+// The live stream heals itself. EventSource retries on its own for a dropped
+// connection, but a proxy restart or a 5xx leaves it CLOSED for good, so a
+// wall would sit on frozen numbers. Reopen it with backoff, and treat a stream
+// that has gone quiet as dead even when the browser still calls it open.
+let es = null, reconnect = null, backoff = 2000, lastFrame = 0
+const closeLive = () => { if (es) { es.close(); es = null } }
 const connectLive = () => {
+  closeLive()
+  clearTimeout(reconnect)
   try {
     es = new EventSource('/api/v1/jira/live')
     es.onmessage = (e) => {
-      try { applySnapshot(JSON.parse(e.data)); live.value = true } catch (err) { /* malformed frame */ }
+      try {
+        applySnapshot(JSON.parse(e.data))
+        live.value = true; lastFrame = Date.now(); backoff = 2000
+      } catch (err) { /* malformed frame */ }
     }
-    es.onerror = () => { live.value = false }
-  } catch (e) { live.value = false }
+    es.onerror = () => {
+      live.value = false
+      if (es && es.readyState === 2) {
+        reconnect = setTimeout(connectLive, backoff)
+        backoff = Math.min(backoff * 2, 60000)
+      }
+    }
+  } catch (e) {
+    live.value = false
+    reconnect = setTimeout(connectLive, backoff)
+    backoff = Math.min(backoff * 2, 60000)
+  }
 }
 
-let tick = null, fallback = null
+let tick = null, fallback = null, watch5 = null
 onMounted(() => { document.title = "Jira" })
 onMounted(() => {
   fetchMetrics()
   connectLive()
   tick = setInterval(() => { now.value = Date.now() }, 1000)              // drives the countdowns
   fallback = setInterval(() => { if (!live.value) fetchMetrics() }, 30000) // if SSE drops
+  // No frame for 3 minutes while "open" means a half-dead socket: rebuild it.
+  watch5 = setInterval(() => {
+    if (lastFrame && Date.now() - lastFrame > 180000) { lastFrame = Date.now(); fetchMetrics(); connectLive() }
+  }, 60000)
 })
 onUnmounted(() => {
-  if (es) es.close()
+  closeLive()
+  clearTimeout(reconnect)
+  if (watch5) clearInterval(watch5)
   if (tick) clearInterval(tick)
   if (fallback) clearInterval(fallback)
 })
