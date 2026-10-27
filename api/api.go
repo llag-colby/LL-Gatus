@@ -232,6 +232,7 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	app.Get("/sites/:name", SinglePageApplication(cfg.UI))
 	app.Get("/jira", SinglePageApplication(cfg.UI))
 	app.Get("/s1", SinglePageApplication(cfg.UI))
+	app.Get("/wall", SinglePageApplication(cfg.UI))
 	app.Get("/settings", SinglePageApplication(cfg.UI))
 	// Health endpoint
 	healthHandler := health.Handler().WithJSON(true)

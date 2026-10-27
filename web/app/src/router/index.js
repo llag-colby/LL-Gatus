@@ -6,6 +6,7 @@ import JiraDetails from '@/views/JiraDetails';
 import S1Details from '@/views/S1Details';
 import SiteOverview from '@/views/SiteOverview';
 import SettingsView from '@/views/SettingsView';
+import CommandWall from '@/views/CommandWall';
 
 const routes = [
     {
@@ -42,6 +43,13 @@ const routes = [
         path: '/s1',
         name: 'SentinelOne',
         component: S1Details
+    },
+    {
+        // One-screen verdict across services, service desk and endpoints,
+        // built for the fourth NOC monitor.
+        path: '/wall',
+        name: 'CommandWall',
+        component: CommandWall
     },
     {
         // Which checks are paused, globally, plus a note on where the
