@@ -97,7 +97,7 @@
               <li v-if="!alerts.length" class="w-empty">No active threats.</li>
             </ol>
             <div v-if="open.length > alerts.length" class="w-more">
-              Oldest and most severe first. {{ fmt(open.length - alerts.length) }} more in the queue.
+              Newest first.{{ fmt(open.length - alerts.length) }} more in the queue.
             </div>
           </section>
 
@@ -424,14 +424,9 @@ const siteOf = (host) => {
 }
 
 // --- alerts, the focal point ---------------------------------------------
-// Severity first, then oldest: the top of this list is what someone should
-// pick up next.
+// Newest first: what just landed is at the top of the wall.
 const alerts = computed(() => {
-  const rows = [...open.value].sort((x, y) => {
-    const s = SEV_ORDER[sevOf(x).k] - SEV_ORDER[sevOf(y).k]
-    if (s !== 0) return s
-    return String(x.createdAt).localeCompare(String(y.createdAt))
-  })
+  const rows = [...open.value].sort((x, y) => String(y.createdAt).localeCompare(String(x.createdAt)))
   return rows.slice(0, isFullscreen.value ? 18 : 12)
 })
 

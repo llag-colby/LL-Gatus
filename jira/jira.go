@@ -57,6 +57,7 @@ type Issue struct {
 	Priority    string `json:"priority"`
 	Assignee    string `json:"assignee"`
 	Created     string `json:"created"`
+	Updated     string `json:"updated"`
 	SLABreached bool   `json:"slaBreached"`
 	// Live SLA timing for the soonest-breaching ongoing metric on this ticket.
 	SLAName        string `json:"slaName,omitempty"`
@@ -505,6 +506,7 @@ type rawIssue struct {
 	Fields struct {
 		Summary        string `json:"summary"`
 		Created        string `json:"created"`
+		Updated        string `json:"updated"`
 		ResolutionDate string `json:"resolutiondate"`
 		Status         *struct {
 			Name           string `json:"name"`
@@ -525,7 +527,7 @@ type rawIssue struct {
 }
 
 func (ri rawIssue) toIssue() Issue {
-	iss := Issue{Key: ri.Key, Summary: ri.Fields.Summary, Created: ri.Fields.Created}
+	iss := Issue{Key: ri.Key, Summary: ri.Fields.Summary, Created: ri.Fields.Created, Updated: ri.Fields.Updated}
 	if ri.Fields.Status != nil {
 		iss.Status = ri.Fields.Status.Name
 		iss.Category = ri.Fields.Status.StatusCategory.Key
@@ -542,7 +544,7 @@ func (ri rawIssue) toIssue() Issue {
 	return iss
 }
 
-var issueFields = []string{"summary", "status", "issuetype", "priority", "assignee", "created", "resolutiondate"}
+var issueFields = []string{"summary", "status", "issuetype", "priority", "assignee", "created", "updated", "resolutiondate"}
 
 // searchAll runs an enhanced JQL search, paginating via nextPageToken up to cap.
 func (c *client) searchAll(ctx context.Context, jql string, cap int) ([]rawIssue, error) {

@@ -4,12 +4,6 @@
     <div class="ctl">
       <span class="ctl-date">{{ todayLong }}
         <i v-if="daily.monthDays">day {{ daily.monthDay }} of {{ daily.monthDays }}</i></span>
-      <ul class="key" data-tooltip="Colour is the figure as a percentage of its target" data-tip-pos="bottom">
-        <li class="g-on"><i></i>on target</li>
-        <li class="g-near"><i></i>within 10%</li>
-        <li class="g-behind"><i></i>behind</li>
-      </ul>
-      <span class="ctl-tgt">target: {{ targetSource }}</span>
       <span class="ctl-feed" :class="{ stale }">{{ feedText }}</span>
       <button v-if="!isFullscreen" class="ctl-rf" @click="refresh" :disabled="busy"
         data-tooltip="Refresh  R" data-tip-pos="bottom">
@@ -22,22 +16,88 @@
       Data is {{ staleMins }} minutes old. The page is retrying and will reload itself if the feed does not return.
     </div>
 
-    <!-- Right-now numbers, then how the month is going. Time metrics are month
-         to date: a single morning has too few tickets for an average to mean
-         anything, so the wall never shows one. -->
-    <div class="kpis">
-      <div class="kpi" v-for="k in liveKpis" :key="k.l" :class="k.tone">
-        <div class="kpi-n" :class="k.cls">{{ k.v }}</div>
-        <div class="kpi-l">{{ k.l }}</div>
-      </div>
-      <div v-for="k in kpis" :key="k.id" class="kpi graded" :class="'g-' + k.grade">
-        <div class="kpi-n">{{ k.value }}<em>{{ k.pace }}</em></div>
-        <div class="kpi-l">{{ k.label }}<b>{{ k.pctText }}</b></div>
-      </div>
+    <!-- One plain sentence first: what the scorecard below adds up to. -->
+    <div v-if="sheet.length" class="brief">
+      <b>{{ fmt(tot.open) }}</b> tickets open across {{ sheet.length }} spaces, <b>{{ fmt(tot.paused) }}</b> paused.
+      Today <b>{{ fmt(tot.opened) }}</b> opened and <b>{{ fmt(tot.closed) }}</b> closed, so the backlog
+      <b :class="tot.net > 0 ? 'bad' : tot.net < 0 ? 'good' : ''">{{ netWord(tot.net) }}</b>.
+      Of the active tickets, <b :class="{ bad: tot.over3 }">{{ fmt(tot.over3) }}</b> are 3+ days old,
+      <b :class="{ bad: tot.stale }">{{ fmt(tot.stale) }}</b> are stale and
+      <b :class="{ bad: tot.sla }">{{ fmt(tot.sla) }}</b> missed an SLA.
     </div>
 
+    <!-- THE SCORECARD: every space, every number, one table. Paused tickets
+         (waiting on a customer or vendor) are left out of the age, stale and
+         SLA figures and out of the grade, because the team cannot move them. -->
+    <article v-if="sheet.length" class="panel sheet-panel">
+      <div class="p-head"><span class="p-t">Spaces</span><span class="p-s">best grade first</span></div>
+      <table class="sheet">
+        <thead>
+          <tr>
+            <th class="l">Space</th>
+            <th data-tooltip="Every ticket not finished, paused included" data-tip-pos="bottom">Open</th>
+            <th data-tooltip="Waiting on a customer or vendor; the team cannot move these" data-tip-pos="bottom">Paused</th>
+            <th data-tooltip="Open and not paused: the work the team can act on" data-tip-pos="bottom">Active</th>
+            <th class="g">New</th><th>Closed</th><th data-tooltip="New minus closed today" data-tip-pos="bottom">Net</th>
+            <th class="g">New</th><th>Closed</th>
+            <th class="g" data-tooltip="Tickets finished so far this month" data-tip-pos="bottom">Month closed</th>
+            <th class="g" data-tooltip="Active tickets created more than 3 days ago" data-tip-pos="bottom">3d+</th>
+            <th data-tooltip="Active tickets not touched since the start of the last business day" data-tip-pos="bottom">Stale</th>
+            <th data-tooltip="Active tickets past their SLA" data-tip-pos="bottom">SLA missed</th>
+            <th class="g" data-tooltip="Average opened per business day, last 2 weeks" data-tip-pos="bottom">In / day</th>
+            <th data-tooltip="Average closed per business day, last 2 weeks" data-tip-pos="bottom">Out / day</th>
+            <th>Pace</th>
+            <th class="g">Grade</th>
+          </tr>
+          <tr class="grp">
+            <th></th><th colspan="3">Queue</th><th colspan="3">Today</th><th colspan="2">Yesterday</th>
+            <th>Month</th><th colspan="3">Needs attention</th><th colspan="3">Last 2 weeks</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="x in sheet" :key="x.key" :class="{ sel: x.key === projectKey, idle: x.idle }">
+            <td class="l"><b>{{ x.key }}</b><span>{{ x.name }}</span></td>
+            <td>{{ fmt(x.open) }}</td>
+            <td class="dim">{{ fmt(x.paused) }}</td>
+            <td>{{ fmt(x.active) }}</td>
+            <td class="g">{{ fmt(x.opened) }}</td><td>{{ fmt(x.closed) }}</td>
+            <td :class="x.net > 0 ? 'bad' : x.net < 0 ? 'good' : 'dim'">{{ signed(x.net) }}</td>
+            <td class="g">{{ fmt(x.yOpened) }}</td><td>{{ fmt(x.yClosed) }}</td>
+            <td class="g">{{ fmt(x.mClosed) }}</td>
+            <td class="g" :class="{ bad: x.over3 > 0 }">{{ fmt(x.over3) }}</td>
+            <td :class="{ bad: x.stale > 0 }">{{ fmt(x.stale) }}</td>
+            <td v-if="x.slaMeasured" :class="{ bad: x.sla > 0 }">{{ fmt(x.sla) }}</td>
+            <td v-else class="dim">n/a</td>
+            <td class="g">{{ x.inDay.toFixed(1) }}</td><td>{{ x.outDay.toFixed(1) }}</td>
+            <td class="pace" :class="x.paceTone">{{ x.paceText }}</td>
+            <td class="g grade-cell">
+              <span v-if="x.grade" class="grade" :class="'gr-' + x.grade">{{ x.grade }}<em>{{ x.score }}</em></span>
+              <span v-else class="dim">idle</span>
+            </td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="l"><b>All spaces</b></td>
+            <td>{{ fmt(tot.open) }}</td><td class="dim">{{ fmt(tot.paused) }}</td><td>{{ fmt(tot.active) }}</td>
+            <td class="g">{{ fmt(tot.opened) }}</td><td>{{ fmt(tot.closed) }}</td>
+            <td :class="tot.net > 0 ? 'bad' : tot.net < 0 ? 'good' : 'dim'">{{ signed(tot.net) }}</td>
+            <td class="g">{{ fmt(tot.yOpened) }}</td><td>{{ fmt(tot.yClosed) }}</td>
+            <td class="g">{{ fmt(tot.mClosed) }}</td>
+            <td class="g" :class="{ bad: tot.over3 > 0 }">{{ fmt(tot.over3) }}</td>
+            <td :class="{ bad: tot.stale > 0 }">{{ fmt(tot.stale) }}</td>
+            <td :class="{ bad: tot.sla > 0 }">{{ fmt(tot.sla) }}</td>
+            <td class="g">{{ tot.inDay.toFixed(1) }}</td><td>{{ tot.outDay.toFixed(1) }}</td>
+            <td class="pace" :class="tot.paceTone">{{ tot.paceText }}</td>
+            <td class="g"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </article>
+
+    <!-- Month-to-date leaderboards for the space picked in the header. -->
     <div class="panels">
-      <article v-for="p in boards" :key="p.id" class="panel">
+      <article v-for="p in boards" :key="p.id" class="panel board">
         <div class="p-head"><span class="p-t">{{ p.title }}</span><span class="p-s">{{ p.sub }}</span></div>
         <ol class="p-rows" :style="{ '--n': Math.max(p.rows.length, 1) }">
           <li v-for="(r, i) in p.rows" :key="r.name" class="prow" :class="['g-' + r.grade, { muted: r.muted }]"
@@ -52,41 +112,6 @@
         </ol>
         <div class="p-foot"><span>{{ p.footLabel }}</span><b>{{ p.footValue }}</b></div>
       </article>
-
-      <!-- PACE: where the month lands, the last two weeks, and who is slow. -->
-      <article class="panel pace">
-        <div class="p-head"><span class="p-t">Month pace</span><span class="p-s">{{ fmt(mtd.bucket.closed) }} of {{ fmt(Math.round(targets.closedMonth)) }}</span></div>
-        <div class="pace-body">
-          <div class="pace-big" :class="'g-' + paceGrade">
-            <span class="pace-n">{{ fmt(monthPace) }}</span>
-            <span class="pace-l">on pace to close<b>{{ pacePct }}</b></span>
-          </div>
-          <div class="pace-track" role="img" :aria-label="`Month to date ${mtd.bucket.closed} of ${Math.round(targets.closedMonth)}`">
-            <i class="pace-fill" :class="'g-' + paceGrade" :style="{ width: paceFill + '%' }"></i>
-            <i class="pace-day" :style="{ left: dayFraction * 100 + '%' }"></i>
-          </div>
-          <div class="pace-note">line marks today in the month</div>
-
-          <div class="flow-head"><span class="kpi-l">14-day flow</span>
-            <span class="flow-today"><b class="in">+{{ live?.createdToday ?? 0 }}</b><b class="out">-{{ live?.resolvedToday ?? 0 }}</b><em>today</em></span></div>
-          <div class="flowchart" role="img" :aria-label="flowLabel">
-            <div v-for="d in flow" :key="d.date" class="fday" :class="{ today: d.today }"
-              :data-tooltip="`${d.date}  +${d.created} in  -${d.resolved} out`">
-              <div class="fup"><span :style="{ height: d.up + '%' }"></span></div>
-              <div class="faxis"></div>
-              <div class="fdown"><span :style="{ height: d.down + '%' }"></span></div>
-            </div>
-          </div>
-
-          <div class="kpi-l slow-l">Slowest to resolve, month to date</div>
-          <ul class="slow">
-            <li v-for="r in slowest" :key="r.name" :class="'g-' + r.grade">
-              <span class="s-name">{{ r.name }}</span><span class="s-sec">1st {{ r.first }}</span><b>{{ r.value }}</b>
-            </li>
-            <li v-if="!slowest.length" class="s-none">No resolved tickets with a clock yet.</li>
-          </ul>
-        </div>
-      </article>
     </div>
   </section>
 </template>
@@ -99,8 +124,9 @@ import { isFullscreen, now as serverNow } from '@/store'
 const props = defineProps({
   projectKey: { type: String, default: '' },
   baseUrl: { type: String, default: '' },
-  // The live project object from /jira/metrics (open, breached, unassigned...).
+  // The live project object from /jira/metrics, and every project beside it.
   live: { type: Object, default: null },
+  projects: { type: Array, default: () => [] },
 })
 
 const daily = ref({ configured: false, ok: false, projects: [] })
@@ -162,23 +188,13 @@ const EMPTY = {
   closed: 0, opened: 0, frtMedianMs: 0, frtAvgMs: 0,
   resMedianMs: 0, resAvgMs: 0, slaMet: 0, slaBreach: 0, measured: 0,
 }
-const periodFor = (id) => (project.value?.periods || []).find(x => x.id === id)
+const periodOf = (proj, id) => (proj?.periods || []).find(x => x.id === id)
   || { id, label: id, bucket: EMPTY, slaPct: 0, byLocation: [], byTech: [], from: '' }
+const periodFor = (id) => periodOf(project.value, id)
 const today = computed(() => periodFor('today'))
 const mtd = computed(() => periodFor('mtd'))
 const targets = computed(() => project.value?.targets
   || { closedPerDay: 0, closedMonth: 0, frtMs: 0, resMs: 0, slaPct: 95, source: 'none' })
-const targetSource = computed(() => targets.value.source === 'configured'
-  ? 'configured' : `last month (${fmt(project.value?.baseline?.closed || 0)} closed)`)
-const dayFraction = computed(() => {
-  const d = daily.value
-  return d.monthDays && d.monthDay ? d.monthDay / d.monthDays : 1
-})
-const monthPace = computed(() => dayFraction.value > 0 ? Math.round(mtd.value.bucket.closed / dayFraction.value) : 0)
-const paceRatio = computed(() => targets.value.closedMonth > 0 ? (monthPace.value / targets.value.closedMonth) * 100 : 0)
-const pacePct = computed(() => paceRatio.value ? `${Math.round(paceRatio.value)}% of target` : '')
-const paceGrade = computed(() => gradeOf(paceRatio.value))
-const paceFill = computed(() => targets.value.closedMonth > 0 ? Math.min(100, (mtd.value.bucket.closed / targets.value.closedMonth) * 100) : 0)
 
 const unsetName = (n) => n === 'No location set' || n === 'Unassigned'
 const gradeOf = (p) => {
@@ -188,37 +204,74 @@ const gradeOf = (p) => {
   return 'behind'
 }
 
-// --- rail -----------------------------------------------------------------
-const slaMeasured = computed(() => (props.live?.slaBreached ?? -1) >= 0)
-const liveKpis = computed(() => {
-  const p = props.live
-  if (!p) return []
-  const breach = Math.max(0, p.slaBreached || 0)
-  return [
-    { l: 'Open now', v: p.totalOpen },
-    {
-      l: slaMeasured.value ? 'SLA breached' : 'SLA not measured', v: slaMeasured.value ? breach : '--',
-      tone: breach > 0 ? 'hot tone-crit' : '', cls: breach > 0 ? 'crit' : '',
-    },
-    { l: 'Unassigned', v: p.unassigned, tone: p.unassigned > 0 ? 'hot tone-warn' : '', cls: p.unassigned > 0 ? 'warn' : '' },
-  ]
+// --- the scorecard ---------------------------------------------------------
+// Statuses that mean "waiting on someone outside the team". Matched by name,
+// case-insensitive, so a rename in Jira only needs this list to follow.
+const PAUSED = new Set(['waiting for customer', 'pending', 'waiting on vendor', 'scheduled', 'paused'])
+const DAY = 86400000
+const startOfDay = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime() }
+// Start of the last business day: Friday on a Monday, and on a weekend.
+const staleCut = () => {
+  let d = startOfDay(serverNow.value || Date.now())
+  do { d -= DAY } while ([0, 6].includes(new Date(d).getDay()))
+  return d
+}
+const gradeLetter = (s) => (s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'F')
+
+const sheet = computed(() => {
+  void serverNow.value
+  const cut = staleCut()
+  const old = Date.now() - 3 * DAY
+  const rows = (props.projects || []).map(p => {
+    const issues = (p.issues || []).filter(i => i.category !== 'done')
+    const paused = issues.filter(i => PAUSED.has((i.status || '').toLowerCase()))
+    const act = issues.filter(i => !PAUSED.has((i.status || '').toLowerCase()))
+    const dp = (daily.value.projects || []).find(d => d.key === p.key)
+    const t = periodOf(dp, 'today').bucket, y = periodOf(dp, 'yesterday').bucket, m = periodOf(dp, 'mtd').bucket
+    const opened = dp ? t.opened : (p.createdToday || 0)
+    const closed = dp ? t.closed : (p.resolvedToday || 0)
+    const over3 = act.filter(i => i.created && new Date(i.created).getTime() <= old).length
+    const stl = act.filter(i => i.updated && new Date(i.updated).getTime() < cut).length
+    const slaMeasured = (p.slaBreached ?? -1) >= 0
+    const sla = slaMeasured ? act.filter(i => i.slaBreached).length : 0
+    const n14 = (p.trend || []).reduce((s, d) => s + (d.created || 0), 0)
+    const c14 = (p.trend || []).reduce((s, d) => s + (d.resolved || 0), 0)
+    const inDay = n14 / 10, outDay = c14 / 10
+    const g = Math.round((inDay - outDay) * 10) / 10
+    const idle = issues.length === 0 && opened === 0 && closed === 0
+    const left = (n) => (act.length ? 100 - (n / act.length) * 100 : 100)
+    const parts = [
+      opened ? Math.min(closed / opened, 1) * 100 : 100,
+      left(over3), left(stl),
+      n14 ? Math.min(c14 / n14, 1) * 100 : 100,
+    ]
+    if (slaMeasured) parts.push(left(sla))
+    const score = Math.round(parts.reduce((a, v) => a + v, 0) / parts.length)
+    return {
+      key: p.key, name: p.name, open: issues.length, paused: paused.length, active: act.length,
+      opened, closed, net: opened - closed, yOpened: y.opened, yClosed: y.closed, mClosed: m.closed,
+      over3, stale: stl, sla, slaMeasured, inDay, outDay,
+      paceText: n14 + c14 === 0 ? 'no activity' : g > 0 ? `+${g.toFixed(1)} / day` : g < 0 ? `${g.toFixed(1)} / day` : 'flat',
+      paceTone: n14 + c14 === 0 ? 'dim' : g > 0 ? 'bad' : 'good',
+      idle, score, grade: idle ? null : gradeLetter(score),
+    }
+  })
+  return rows.sort((a, b) => Number(a.idle) - Number(b.idle) || b.score - a.score || a.net - b.net)
 })
-const kpis = computed(() => {
-  const T = targets.value
-  const t = today.value.bucket, b = mtd.value.bucket
-  const todayPct = T.closedPerDay > 0 ? (t.closed / T.closedPerDay) * 100 : 0
-  const frtPct = T.frtMs > 0 && b.frtAvgMs > 0 ? (T.frtMs / b.frtAvgMs) * 100 : 0
-  const resPct = T.resMs > 0 && b.resAvgMs > 0 ? (T.resMs / b.resAvgMs) * 100 : 0
-  const slaNow = b.slaMet + b.slaBreach > 0 ? (b.slaMet / (b.slaMet + b.slaBreach)) * 100 : 0
-  const slaPct = T.slaPct > 0 ? (slaNow / T.slaPct) * 100 : 0
-  const pc = (v) => (v ? `${Math.round(v)}%` : '')
-  return [
-    { id: 'vol', label: 'Closed today', value: fmt(t.closed), grade: gradeOf(todayPct), pctText: pc(todayPct), pace: `of ${fmt(Math.round(T.closedPerDay))}` },
-    { id: 'frt', label: 'First response', value: dur(b.frtAvgMs), grade: gradeOf(frtPct), pctText: pc(frtPct), pace: `goal ${dur(T.frtMs)}` },
-    { id: 'res', label: 'Time to resolve', value: dur(b.resAvgMs), grade: gradeOf(resPct), pctText: pc(resPct), pace: `goal ${dur(T.resMs)}` },
-    { id: 'sla', label: 'SLA met', value: slaNow ? `${slaNow.toFixed(0)}%` : '--', grade: gradeOf(slaPct), pctText: pc(slaPct), pace: `${fmt(b.slaBreach)} missed` },
-  ]
+const tot = computed(() => {
+  const sum = (k) => sheet.value.reduce((s, x) => s + (x[k] || 0), 0)
+  const inDay = sum('inDay'), outDay = sum('outDay')
+  const g = Math.round((inDay - outDay) * 10) / 10
+  return {
+    open: sum('open'), paused: sum('paused'), active: sum('active'), opened: sum('opened'), closed: sum('closed'),
+    net: sum('opened') - sum('closed'), yOpened: sum('yOpened'), yClosed: sum('yClosed'), mClosed: sum('mClosed'),
+    over3: sum('over3'), stale: sum('stale'), sla: sum('sla'), inDay, outDay,
+    paceText: inDay + outDay === 0 ? 'no activity' : g > 0 ? `+${g.toFixed(1)} / day` : g < 0 ? `${g.toFixed(1)} / day` : 'flat',
+    paceTone: inDay + outDay === 0 ? 'dim' : g > 0 ? 'bad' : 'good',
+  }
 })
+const signed = (n) => (n > 0 ? `+${fmt(n)}` : n < 0 ? `-${fmt(-n)}` : '0')
+const netWord = (n) => (n > 0 ? `grew by ${n}` : n < 0 ? `shrank by ${-n}` : 'held flat')
 
 // --- leaderboards: month to date, today beside it -------------------------
 const todayCount = (dim, name) => {
@@ -234,7 +287,7 @@ const board = (dim, title) => {
     ...src.filter(r => unsetName(r.name))]
   const m = Math.max(1, ...ordered.map(r => r.bucket.closed), target)
   return {
-    id: dim, title, dim,
+    id: dim, title: `${title}${project.value ? ' · ' + project.value.key : ''}`, dim,
     sub: `expected ${fmt(Math.round(target))} each so far`,
     rows: ordered.map(r => {
       const muted = unsetName(r.name)
@@ -251,28 +304,6 @@ const board = (dim, title) => {
 }
 const boards = computed(() => [board('tech', 'Closed by technician'), board('location', 'Closed by location')])
 
-const slowest = computed(() => {
-  const T = targets.value
-  return (mtd.value.byLocation || [])
-    .filter(r => !unsetName(r.name) && r.bucket.resAvgMs > 0 && r.bucket.closed >= 5)
-    .sort((a, b) => b.bucket.resAvgMs - a.bucket.resAvgMs).slice(0, 4)
-    .map(r => ({
-      name: r.name, value: dur(r.bucket.resAvgMs), first: dur(r.bucket.frtAvgMs),
-      grade: gradeOf(T.resMs > 0 ? (T.resMs / r.bucket.resAvgMs) * 100 : 0),
-    }))
-})
-
-const flow = computed(() => {
-  const t = props.live?.trend || []
-  const max = Math.max(1, ...t.map(p => Math.max(p.created, p.resolved)))
-  const last = t.length - 1
-  return t.map((p, i) => ({
-    date: p.date, created: p.created, resolved: p.resolved, today: i === last,
-    up: (p.created / max) * 100, down: (p.resolved / max) * 100,
-  }))
-})
-const flowLabel = computed(() => `14 day flow: ${props.live?.createdLast7d ?? 0} created and ${props.live?.resolvedLast7d ?? 0} resolved in the last 7 days`)
-
 // Click a row to open exactly that slice in Jira (month to date).
 const openInJira = (row, dim) => {
   if (!props.baseUrl || !project.value || isFullscreen.value) return
@@ -285,16 +316,6 @@ const openInJira = (row, dim) => {
 }
 
 const fmt = (n) => (Number(n) || 0).toLocaleString()
-const dur = (ms) => {
-  if (!ms || ms <= 0) return '--'
-  const s = ms / 1000
-  if (s < 60) return `${Math.round(s)}s`
-  const m = s / 60
-  if (m < 60) return `${Math.round(m)}m`
-  const h = m / 60
-  if (h < 24) return `${h.toFixed(h < 10 ? 1 : 0)}h`
-  return `${(h / 24).toFixed(1)}d`
-}
 const todayLong = computed(() => {
   const d = new Date(`${today.value.from || daily.value.today}T12:00:00`)
   return isNaN(d) ? '' : d.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })
@@ -305,15 +326,13 @@ const todayLong = computed(() => {
 /* ====================================================================
    IT DAILY SNAPSHOT, WALL EDITION
 
-   Built from the Overview's own vocabulary so the two read as one board:
-   hairline panels, achromatic chrome, huge tight monospace numerals over
-   tiny wide-tracked labels, colour only where something is happening.
-
-   Fullscreen is a three-row grid pinned to the viewport (rail, KPIs,
-   panels) and never scrolls; each panel's rows stretch to fill it.
+   Dense by design: a one-line summary, one scorecard table with every
+   number for every space, then two compact month-to-date leaderboards.
+   Hairline panels, achromatic chrome, mono numerals; colour only where a
+   figure needs a person (red) or is going the right way (green).
    ==================================================================== */
 .snap {
-  display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; width: 100%;
+  display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; width: 100%;
   --hair: hsl(var(--border));
   --hair-soft: hsl(var(--border) / 0.55);
   --surface: hsl(var(--card));
@@ -321,84 +340,65 @@ const todayLong = computed(() => {
   --mono: var(--j-mono, ui-monospace, Menlo, monospace);
   --on: var(--j-ok); --near: var(--j-warn); --behind: var(--j-crit);
 }
-.snap.wall {
-  display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 0.6rem;
-  height: 100%; min-height: 0; overflow: hidden;
-}
-.snap.wall:has(.stalebar) { grid-template-rows: auto auto auto minmax(0, 1fr); }
-.snap.wall:has(.stalebar ~ .stalebar) { grid-template-rows: auto auto auto auto minmax(0, 1fr); }
+.snap.wall { height: 100%; min-height: 0; overflow: hidden; }
 .stalebar.warm { border-color: var(--hair); background: var(--sunk); color: hsl(var(--muted-foreground)); }
 
 /* ---- control rail ---- */
-.ctl { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
-.seg { display: inline-flex; border: 1px solid var(--hair); border-radius: 9px; overflow: hidden; }
-.sgb { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.8rem; font-size: 0.82rem; font-weight: 700; color: hsl(var(--muted-foreground)); background: transparent; cursor: pointer; transition: color var(--dur-2) ease, background var(--dur-2) ease; }
-.sgb + .sgb { border-left: 1px solid var(--hair-soft); }
-.sgb:hover { color: hsl(var(--foreground)); background: hsl(var(--accent) / 0.4); }
-.sgb.on { color: hsl(var(--foreground)); background: var(--sunk); box-shadow: inset 0 -2px 0 var(--j-info); }
-.sgb kbd { font-family: var(--mono); font-size: 0.6rem; border: 1px solid var(--hair); border-radius: 3px; padding: 0.05rem 0.25rem; color: hsl(var(--muted-foreground)); }
-.wall .sgb { font-size: 1rem; cursor: default; }
+.ctl { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; flex: none; }
 .ctl-date { font-size: 1.05rem; font-weight: 800; letter-spacing: -0.01em; white-space: nowrap; }
 .ctl-date i { font-style: normal; font-family: var(--mono); font-size: 0.72rem; font-weight: 600; color: hsl(var(--muted-foreground)); margin-left: 0.5rem; }
 .wall .ctl-date { font-size: 1.3rem; }
-.ctl-rot { display: inline-flex; gap: 4px; }
-.ctl-rot i { width: 18px; height: 3px; border-radius: 2px; background: var(--hair); }
-.ctl-rot i.on { background: var(--j-info); }
-.key { display: flex; gap: 0.7rem; margin: 0 0 0 auto; padding: 0; list-style: none; cursor: help; }
-.key li { display: inline-flex; align-items: center; gap: 0.3rem; font-family: var(--mono); font-size: 0.66rem; font-weight: 700; color: hsl(var(--muted-foreground)); white-space: nowrap; }
-.key i { width: 0.55rem; height: 0.55rem; border-radius: 2px; }
-.key .g-on i { background: var(--on); } .key .g-near i { background: var(--near); } .key .g-behind i { background: var(--behind); }
-.ctl-tgt, .ctl-feed { font-family: var(--mono); font-size: 0.68rem; color: hsl(var(--muted-foreground)); white-space: nowrap; font-variant-numeric: tabular-nums; letter-spacing: 0.03em; }
+.ctl-feed { margin-left: auto; font-family: var(--mono); font-size: 0.68rem; color: hsl(var(--muted-foreground)); white-space: nowrap; font-variant-numeric: tabular-nums; letter-spacing: 0.03em; }
 .ctl-feed.stale { color: var(--j-crit); font-weight: 700; }
 .ctl-rf { color: hsl(var(--muted-foreground)); } .ctl-rf:hover:not(:disabled) { color: hsl(var(--foreground)); }
+.stalebar { flex: none; border: 1px solid color-mix(in srgb, var(--j-crit) 45%, transparent); background: color-mix(in srgb, var(--j-crit) 9%, transparent); color: var(--j-crit); border-radius: 9px; padding: 0.45rem 0.8rem; font-size: 0.85rem; font-weight: 600; }
 
-.stalebar { border: 1px solid color-mix(in srgb, var(--j-crit) 45%, transparent); background: color-mix(in srgb, var(--j-crit) 9%, transparent); color: var(--j-crit); border-radius: 9px; padding: 0.45rem 0.8rem; font-size: 0.85rem; font-weight: 600; }
-
-/* ---- KPI rail ---- */
-.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 0.8fr)) repeat(4, minmax(0, 1.15fr)) minmax(0, 1.8fr); border: 1px solid var(--hair); border-radius: 12px; background: var(--surface); overflow: hidden; }
-.kpi { padding: 0.8rem 1rem; border-left: 1px solid var(--hair-soft); min-width: 0; display: flex; flex-direction: column; justify-content: center; }
-.kpi:first-child { border-left: 0; }
-.kpi.hot { box-shadow: inset 3px 0 0 currentColor; }
-.kpi.tone-crit { color: var(--j-crit); } .kpi.tone-warn { color: var(--j-warn); }
-.kpi-n { font-family: var(--mono); font-size: clamp(1.9rem, 3.2vw, 3.1rem); font-weight: 800; line-height: 0.95; letter-spacing: -0.045em; font-variant-numeric: tabular-nums; color: hsl(var(--foreground)); white-space: nowrap; }
-.kpi-n.crit { color: var(--j-crit); } .kpi-n.warn { color: var(--j-warn); }
-.kpi-n em { font-style: normal; font-size: clamp(0.62rem, 0.8vw, 0.8rem); font-weight: 700; letter-spacing: 0; color: hsl(var(--muted-foreground)); margin-left: 0.45rem; }
-.kpi-l { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: hsl(var(--muted-foreground)); margin-top: 0.5rem; display: flex; justify-content: space-between; gap: 0.5rem; }
-.kpi-l b { letter-spacing: 0; }
-/* A graded cell is marked by a left rule and a coloured percentage, not a
-   tinted panel: four tints would compete, one rule marks one result. */
-.kpi.graded { --gc: hsl(var(--border)); box-shadow: inset 3px 0 0 var(--gc); }
-.kpi.graded.g-on { --gc: var(--on); } .kpi.graded.g-near { --gc: var(--near); } .kpi.graded.g-behind { --gc: var(--behind); }
-.kpi.graded .kpi-l b { color: var(--gc); font-size: 0.8rem; }
-.kpi.graded.g-behind .kpi-n { color: var(--behind); }
-
-.flow { background: var(--sunk); gap: 0.4rem; }
-.flow-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
-.flow .kpi-l { margin-top: 0; }
-.flow-today { font-family: var(--mono); font-size: 0.78rem; font-variant-numeric: tabular-nums; display: inline-flex; align-items: baseline; gap: 0.4rem; }
-.flow-today .in { color: var(--j-info); } .flow-today .out { color: var(--j-ok); }
-.flow-today em { font-style: normal; font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
-.flowchart { display: flex; align-items: stretch; gap: 2px; height: 46px; }
-.fday { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
-.fup, .fdown { flex: 1 1 0; display: flex; } .fup { align-items: flex-end; }
-.fup span, .fdown span { width: 100%; border-radius: 1px; min-height: 0; }
-.fup span { background: var(--j-info); opacity: 0.75; align-self: flex-end; } .fdown span { background: var(--j-ok); opacity: 0.75; }
-.faxis { height: 1px; background: var(--hair); flex-shrink: 0; }
-.fday.today .fup span, .fday.today .fdown span { opacity: 1; }
-.fday.today .faxis { background: hsl(var(--foreground) / 0.45); }
+.brief { flex: none; font-size: clamp(0.9rem, 1.15vw, 1.2rem); line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.brief b { font-family: var(--mono); color: hsl(var(--foreground)); font-variant-numeric: tabular-nums; }
+.brief b.bad { color: var(--j-crit); } .brief b.good { color: var(--j-ok); }
 
 /* ---- panels ---- */
-.panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; min-height: 0; }
 .panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--hair); border-radius: 12px; background: var(--surface); overflow: hidden; }
-.p-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--hair); background: var(--sunk); flex: none; }
+.p-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; padding: 0.45rem 0.9rem; border-bottom: 1px solid var(--hair); background: var(--sunk); flex: none; }
 .p-t { font-family: var(--mono); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
 .p-s { font-family: var(--mono); font-size: 0.66rem; color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.p-rows { list-style: none; margin: 0; padding: 0.2rem 0; flex: 1 1 auto; min-height: 0; overflow-y: auto; display: grid; align-content: start; }
-.wall .p-rows { align-content: start; grid-auto-rows: minmax(3.4rem, 5.5rem); overflow: hidden; }
-.wall .prow { align-content: center; }
+
+/* ---- scorecard table ---- */
+.sheet-panel { flex: none; }
+.sheet { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.sheet th, .sheet td { text-align: right; padding: 0 0.7rem; white-space: nowrap; }
+.sheet .l { text-align: left; }
+.sheet thead th { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: hsl(var(--muted-foreground)); padding-top: 0.5rem; padding-bottom: 0.3rem; }
+.sheet thead tr.grp th { padding: 0 0.7rem 0.4rem; font-size: 9px; letter-spacing: 0.18em; text-align: center; border-bottom: 1px solid var(--hair); color: hsl(var(--muted-foreground) / 0.8); }
+.sheet thead tr.grp th[colspan] { border-left: 1px solid var(--hair-soft); }
+.sheet .g { border-left: 1px solid var(--hair-soft); }
+.sheet tbody td { font-family: var(--mono); font-size: clamp(1.05rem, 1.6vw, 1.7rem); font-weight: 800; letter-spacing: -0.03em; height: clamp(2.6rem, 5.4vh, 4rem); border-bottom: 1px solid var(--hair-soft); }
+.sheet tbody tr:last-child td { border-bottom: 0; }
+.sheet tbody tr.sel td.l { box-shadow: inset 3px 0 0 var(--j-info); }
+.sheet tbody tr.idle td { opacity: 0.55; }
+.sheet td.l { font-family: inherit; letter-spacing: 0; }
+.sheet td.l b { font-family: var(--mono); font-size: clamp(1.05rem, 1.5vw, 1.55rem); letter-spacing: -0.02em; margin-right: 0.6rem; }
+.sheet td.l span { font-size: clamp(0.72rem, 0.85vw, 0.9rem); font-weight: 500; color: hsl(var(--muted-foreground)); }
+.sheet .dim { color: hsl(var(--muted-foreground)); font-weight: 600; }
+.sheet .bad { color: var(--j-crit); } .sheet .good { color: var(--j-ok); }
+.sheet td.pace { font-size: clamp(0.78rem, 0.95vw, 1rem); font-weight: 700; letter-spacing: 0; }
+.sheet tfoot td { font-family: var(--mono); font-size: clamp(1.05rem, 1.6vw, 1.7rem); font-weight: 800; letter-spacing: -0.03em; height: clamp(2.6rem, 5.2vh, 3.8rem); background: var(--sunk); border-top: 1px solid var(--hair); }
+.sheet tfoot td.l b { font-size: clamp(0.8rem, 1vw, 1rem); letter-spacing: 0.1em; text-transform: uppercase; }
+.sheet tfoot td.pace { font-size: clamp(0.78rem, 0.95vw, 1rem); font-weight: 700; letter-spacing: 0; }
+.sheet .grade-cell { text-align: center; }
+.grade { display: inline-flex; align-items: baseline; gap: 0.35rem; padding: 0.05rem 0.7rem; border-radius: 6px; color: #fff; font-family: var(--mono); font-weight: 800; }
+.grade em { font-style: normal; font-size: 0.55em; font-weight: 700; opacity: 0.9; }
+.gr-A { background: var(--j-ok); } .gr-B { background: var(--j-info); }
+.gr-C { background: var(--j-warn); } .gr-D { background: var(--j-warn); }
+.gr-F { background: var(--j-crit); }
+
+/* ---- compact leaderboards ---- */
+.panels { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+.p-rows { list-style: none; margin: 0; padding: 0.2rem 0; flex: 1 1 auto; min-height: 0; overflow: hidden; display: grid; grid-template-rows: repeat(var(--n), minmax(0, 1fr)); }
+.snap:not(.wall) .p-rows { grid-template-rows: none; grid-auto-rows: 2.4rem; }
 .prow {
-  display: grid; align-items: center; gap: 0.2rem 0.6rem; padding: 0.35rem 0.9rem;
-  grid-template-columns: 1.1rem minmax(0, 1fr) auto auto; grid-template-areas: "rank name sec val" "bar bar bar bar";
+  display: grid; align-items: center; align-content: center; gap: 0.15rem 0.6rem; padding: 0 0.9rem;
+  grid-template-columns: 1.1rem minmax(0, 1fr) auto minmax(3ch, auto); grid-template-areas: "rank name today val" "bar bar bar bar";
   border-bottom: 1px solid var(--hair-soft); cursor: pointer; transition: background var(--dur-2) ease;
   --gc: hsl(var(--border));
 }
@@ -406,63 +406,24 @@ const todayLong = computed(() => {
 .prow:hover { background: hsl(var(--accent) / 0.45); }
 .wall .prow { cursor: default; }
 .prow.g-on { --gc: var(--on); } .prow.g-near { --gc: var(--near); } .prow.g-behind { --gc: var(--behind); }
-.pr-rank { grid-area: rank; font-family: var(--mono); font-size: 0.7rem; font-weight: 700; color: hsl(var(--muted-foreground)); }
-.pr-name { grid-area: name; min-width: 0; font-size: clamp(0.88rem, 1.05vw, 1.1rem); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pr-sec { grid-area: sec; font-family: var(--mono); font-size: 0.72rem; color: hsl(var(--muted-foreground)); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.pr-val { grid-area: val; min-width: 3.2ch; text-align: right; font-family: var(--mono); font-size: clamp(1.1rem, 1.5vw, 1.55rem); font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--gc); }
+.prow.muted { opacity: 0.6; }
+.pr-rank { grid-area: rank; font-family: var(--mono); font-size: 0.66rem; font-weight: 700; color: hsl(var(--muted-foreground)); }
+.pr-name { grid-area: name; min-width: 0; font-size: clamp(0.8rem, 0.95vw, 1rem); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-today { grid-area: today; font-family: var(--mono); font-size: 0.72rem; font-weight: 700; color: transparent; font-variant-numeric: tabular-nums; }
+.pr-today.on { color: var(--j-info); }
+.pr-val { grid-area: val; min-width: 3ch; text-align: right; font-family: var(--mono); font-size: clamp(0.95rem, 1.2vw, 1.3rem); font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--gc); }
 .prow.g-none .pr-val { color: hsl(var(--foreground)); }
-.pr-bar { grid-area: bar; position: relative; height: 0.32rem; border-radius: 2px; background: hsl(var(--muted)); }
+.pr-bar { grid-area: bar; position: relative; height: 0.26rem; border-radius: 2px; background: hsl(var(--muted)); }
 .pr-fill { position: absolute; inset: 0 auto 0 0; background: var(--gc); border-radius: 2px; transition: width 600ms var(--ease-out-quart); }
 .pr-tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: hsl(var(--foreground) / 0.7); }
 .p-empty { padding: 1.1rem 0.9rem; font-size: 0.85rem; color: hsl(var(--muted-foreground)); }
-.p-foot { display: flex; justify-content: space-between; padding: 0.45rem 0.9rem; border-top: 1px solid var(--hair); font-family: var(--mono); font-size: 0.78rem; font-weight: 700; color: hsl(var(--muted-foreground)); flex: none; }
-.p-foot b { color: hsl(var(--foreground)); font-size: 0.95rem; }
+.p-foot { display: flex; justify-content: space-between; padding: 0.35rem 0.9rem; border-top: 1px solid var(--hair); font-family: var(--mono); font-size: 0.72rem; font-weight: 700; color: hsl(var(--muted-foreground)); flex: none; }
+.p-foot b { color: hsl(var(--foreground)); font-size: 0.85rem; }
 
 @media (max-width: 1100px) {
-  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .kpi { border-top: 1px solid var(--hair-soft); }
-  .flow { grid-column: 1 / -1; }
+  .snap.wall { height: auto; overflow: visible; }
   .panels { grid-template-columns: 1fr; }
+  .sheet-panel { overflow-x: auto; }
 }
 @media (prefers-reduced-motion: reduce) { .animate-spin { animation: none; } .pr-fill { transition: none; } }
-
-/* panels: a 12-person board has to fit, so rows share the height equally */
-.panels { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.9fr); }
-.p-rows { display: grid; grid-template-rows: repeat(var(--n), minmax(0, 1fr)); padding: 0.3rem 0; }
-.wall .p-rows { align-content: stretch; grid-auto-rows: unset; }
-.snap:not(.wall) .p-rows { grid-template-rows: none; grid-auto-rows: 3rem; }
-.prow { grid-template-columns: 1.1rem minmax(0, 1fr) auto minmax(3ch, auto); grid-template-areas: "rank name today val" "bar bar bar bar"; align-content: center; padding: 0 0.9rem; }
-.wall .prow { align-content: center; }
-.prow.muted { opacity: 0.6; }
-.pr-today { grid-area: today; font-family: var(--mono); font-size: 0.8rem; font-weight: 700; color: transparent; font-variant-numeric: tabular-nums; }
-.pr-today.on { color: var(--j-info); }
-.pr-name { font-size: clamp(0.85rem, 1.1vw, 1.15rem); }
-.pr-val { font-size: clamp(1.1rem, 1.6vw, 1.7rem); }
-.kpis { grid-template-columns: repeat(3, minmax(0, 0.8fr)) repeat(4, minmax(0, 1.2fr)); }
-
-.pace-body { flex: 1 1 auto; min-height: 0; padding: 0.8rem 0.9rem; display: flex; flex-direction: column; gap: 0.5rem; }
-.pace-big { --gc: hsl(var(--foreground)); }
-.pace-big.g-on { --gc: var(--on); } .pace-big.g-near { --gc: var(--near); } .pace-big.g-behind { --gc: var(--behind); }
-.pace-n { font-family: var(--mono); font-size: clamp(2.6rem, 5vw, 4.6rem); font-weight: 800; line-height: 0.95; letter-spacing: -0.05em; color: var(--gc); font-variant-numeric: tabular-nums; }
-.pace-l { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: hsl(var(--muted-foreground)); margin-top: 0.4rem; }
-.pace-l b { letter-spacing: 0; color: var(--gc); font-size: 0.8rem; }
-.pace-track { position: relative; height: 0.8rem; border-radius: 3px; background: hsl(var(--muted)); }
-.pace-fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: hsl(var(--muted-foreground)); }
-.pace-fill.g-on { background: var(--on); } .pace-fill.g-near { background: var(--near); } .pace-fill.g-behind { background: var(--behind); }
-.pace-day { position: absolute; top: -4px; bottom: -4px; width: 2px; background: hsl(var(--foreground)); }
-.pace-note { font-family: var(--mono); font-size: 0.64rem; color: hsl(var(--muted-foreground)); margin-top: -0.2rem; }
-.pace-body .flow-head { margin-top: 0.7rem; display: flex; justify-content: space-between; align-items: baseline; }
-.pace-body .kpi-l { margin-top: 0; }
-.pace-body .flowchart { height: clamp(46px, 9vh, 110px); }
-.slow-l { margin-top: 0.7rem !important; }
-.slow { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
-.slow li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 0.7rem; align-items: baseline; --gc: hsl(var(--foreground)); }
-.slow li.g-behind { --gc: var(--behind); } .slow li.g-near { --gc: var(--near); } .slow li.g-on { --gc: var(--on); }
-.s-name { font-size: clamp(0.85rem, 1.1vw, 1.1rem); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.s-sec { font-family: var(--mono); font-size: 0.7rem; color: hsl(var(--muted-foreground)); }
-.slow b { font-family: var(--mono); font-size: clamp(1rem, 1.4vw, 1.4rem); color: var(--gc); font-variant-numeric: tabular-nums; }
-.s-none { font-size: 0.85rem; color: hsl(var(--muted-foreground)); }
-.snap.wall { grid-template-rows: auto auto minmax(0, 1fr); }
-.snap.wall:has(.stalebar) { grid-template-rows: auto auto auto minmax(0, 1fr); }
-@media (max-width: 1100px) { .panels { grid-template-columns: 1fr; } }
 </style>

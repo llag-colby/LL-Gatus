@@ -61,7 +61,7 @@
       <!-- SNAPSHOT: the executive daily view. First tab and the default,
            because it is the one the leadership team reads. -->
       <JiraSnapshot v-else-if="tab === 'snapshot' && snapshot.configured"
-        :project-key="selectedKey || proj?.key || ''" :base-url="snapshot.baseUrl || ''" :live="proj" />
+        :project-key="selectedKey || proj?.key || ''" :base-url="snapshot.baseUrl || ''" :live="proj" :projects="projects" />
 
       <!-- TEAM: per-assignee counts. Sits in the same v-if chain as Kanban, so
            an unreachable Jira shows the one error above rather than each tab
