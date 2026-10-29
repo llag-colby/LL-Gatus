@@ -322,7 +322,10 @@ const snapshot = ref({ configured: false, ok: false, status: 'unknown', projects
 
 // Which tab is showing, remembered so a wall display that reboots comes back
 // to the same view. 'tickets' is the pre-rewrite value for what is now 'queue'.
-const savedTab = localStorage.getItem('gatus.jira.tab')
+// A ?tab= in the URL wins over the remembered one, so a kiosk profile (which
+// starts with empty storage) can be pointed at a specific view.
+const urlTab = new URLSearchParams(window.location.search).get('tab')
+const savedTab = TABS.some(t => t.id === urlTab) ? urlTab : localStorage.getItem('gatus.jira.tab')
 const tab = ref(TABS.some(t => t.id === savedTab) ? savedTab : 'snapshot')
 watch(tab, (v) => localStorage.setItem('gatus.jira.tab', v))
 
