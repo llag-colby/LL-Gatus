@@ -345,12 +345,12 @@ ChartJS.register(
 )
 
 const LIGHT = {
-  crit: '#dc2626', rose: '#e11d48', warn: '#d97706', ok: '#16a34a',
+  crit: '#dc2626', rose: '#e11d48', warn: '#7c6ad8', ok: '#16a34a',
   teal: '#0d9488', info: '#2563eb', cyan: '#0891b2', violet: '#7c3aed',
   fuchsia: '#a21caf', idle: '#64748b', slate: '#94a3b8',
 }
 const DARK = {
-  crit: '#f87171', rose: '#fb7185', warn: '#fbbf24', ok: '#4ade80',
+  crit: '#f87171', rose: '#fb7185', warn: '#b4a7ff', ok: '#4ade80',
   teal: '#2dd4bf', info: '#60a5fa', cyan: '#22d3ee', violet: '#a78bfa',
   fuchsia: '#e879f9', idle: '#94a3b8', slate: '#cbd5e1',
 }
@@ -842,7 +842,7 @@ onUnmounted(() => {
 .sk i { width: 0.5rem; height: 0.5rem; border-radius: 2px; display: inline-block; }
 .sk.sev-crit i { background: var(--crit); }
 .sk.sev-high i { background: var(--rose); }
-.sk.sev-med i { background: var(--warn); }
+.sk.sev-med i { background: var(--info); }
 .sk.sev-low i { background: var(--idle); }
 
 /* ---------------------------------------------------------------- alerts */
@@ -870,7 +870,7 @@ onUnmounted(() => {
 .s1-view.wall .sevbar { font-size: 0.72rem; }
 .sevbar.sev-crit { background: var(--crit); }
 .sevbar.sev-high { background: var(--rose); }
-.sevbar.sev-med { background: var(--warn); color: hsl(20 14% 12%); }
+.sevbar.sev-med { background: var(--info); color: #fff; }
 .sevbar.sev-low { background: var(--idle); }
 
 .c-age { width: 3rem; font-weight: 700; }
@@ -972,11 +972,21 @@ onUnmounted(() => {
 }
 
 /* ====================== WALL (same vocabulary as the Jira board) ====================== */
+/* Own palette, no yellow or amber anywhere: red = needs action, violet =
+   elevated, blue = watch, teal = healthy, slate = everything else. */
 .s1-view {
-  --ok: var(--j-ok); --warn: var(--j-warn); --crit: var(--j-crit);
-  --idle: var(--j-idle); --info: var(--j-info); --accent: var(--j-info); --rose: var(--j-warn);
+  --ok: #2bb3a3; --warn: #9b8cf0; --crit: #f0566b;
+  --idle: #7a879c; --info: #4f9cf0; --accent: #4f9cf0; --rose: #9b8cf0;
   --surface: hsl(var(--card)); --sunk: hsl(var(--muted) / 0.35); --hair-soft: hsl(var(--border) / 0.55);
 }
+:root.dark .s1-view {
+  --ok: #3cc9b6; --warn: #b4a7ff; --crit: #ff6b80;
+  --idle: #8b97ad; --info: #6db0ff; --accent: #6db0ff; --rose: #b4a7ff;
+  --surface: hsl(222 24% 12%); --sunk: hsl(222 24% 15%); --hair-soft: hsl(222 18% 22%); --hair: hsl(222 18% 26%);
+}
+/* Centred in a padded frame on every side, with tighter spacing inside. */
+.s1-shell { max-width: 1900px; margin: 0 auto; padding: clamp(1.25rem, 2.6vw, 3rem); box-sizing: border-box; }
+.s1-view.wall .s1-shell { padding: clamp(1.5rem, 3vw, 3.25rem); gap: 0.7rem; }
 .s1-view.wall .s1-shell { display: flex; flex-direction: column; gap: 0.6rem; }
 .s1-view.wall .s1-shell > .w-main { flex: 1 1 auto; min-height: 0; }
 
