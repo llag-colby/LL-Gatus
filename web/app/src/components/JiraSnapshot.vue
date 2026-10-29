@@ -42,7 +42,7 @@
             <th class="g">New</th><th>Closed</th>
             <th class="g" data-tooltip="Tickets finished so far this month" data-tip-pos="bottom">Month closed</th>
             <th class="g" data-tooltip="Active tickets created more than 3 days ago" data-tip-pos="bottom">3d+</th>
-            <th data-tooltip="Active tickets not touched since the start of the last business day" data-tip-pos="bottom">Stale</th>
+            <th data-tooltip="Active tickets with no update in 3 days or more" data-tip-pos="bottom">Stale</th>
             <th data-tooltip="Active tickets past their SLA" data-tip-pos="bottom">SLA missed</th>
             <th class="g" data-tooltip="Average opened per business day, last 2 weeks" data-tip-pos="bottom">In / day</th>
             <th data-tooltip="Average closed per business day, last 2 weeks" data-tip-pos="bottom">Out / day</th>
@@ -209,13 +209,8 @@ const gradeOf = (p) => {
 // case-insensitive, so a rename in Jira only needs this list to follow.
 const PAUSED = new Set(['waiting for customer', 'pending', 'waiting on vendor', 'scheduled', 'paused'])
 const DAY = 86400000
-const startOfDay = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime() }
-// Start of the last business day: Friday on a Monday, and on a weekend.
-const staleCut = () => {
-  let d = startOfDay(serverNow.value || Date.now())
-  do { d -= DAY } while ([0, 6].includes(new Date(d).getDay()))
-  return d
-}
+// Stale = no update for 3 days or more, the same rule as the daily email.
+const staleCut = () => Date.now() - 3 * DAY
 const gradeLetter = (s) => (s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'F')
 
 const sheet = computed(() => {
@@ -231,7 +226,7 @@ const sheet = computed(() => {
     const opened = dp ? t.opened : (p.createdToday || 0)
     const closed = dp ? t.closed : (p.resolvedToday || 0)
     const over3 = act.filter(i => i.created && new Date(i.created).getTime() <= old).length
-    const stl = act.filter(i => i.updated && new Date(i.updated).getTime() < cut).length
+    const stl = act.filter(i => i.updated && new Date(i.updated).getTime() <= cut).length
     const slaMeasured = (p.slaBreached ?? -1) >= 0
     const sla = slaMeasured ? act.filter(i => i.slaBreached).length : 0
     const n14 = (p.trend || []).reduce((s, d) => s + (d.created || 0), 0)
