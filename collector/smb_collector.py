@@ -61,10 +61,28 @@ Env
     SMB_FREE_WARN_GB                    degraded below this GB free (default 20)
     SMB_SLOW_MS                         degraded above this listing time (default 4000)
     SMB_TIMEOUT                         per-server connection timeout (default 20)
+    SMB_CHECK_DEADLINE                  hard limit on one share's whole check (default 90)
     LOOP, SWEEP_MIN, SWEEP_MAX
+
+Hangs
+-----
+SMB_TIMEOUT only bounds the TCP connect. Every request after that (the NTLM
+session setup, tree connect, volume stat, directory listing) waits on the
+server's reply with NO timeout in smbprotocol, so one reply that never arrives
+(a half-open connection across a VPN tunnel, a file server wedged mid-request)
+blocks the call forever. That froze this collector for days: no sweep ever
+finished, nothing was pushed, and the rows sat on their last result.
+
+So each share is checked in a child process with a hard deadline. On overrun
+the child is killed, the row is pushed DOWN naming the stage it hung in, and the
+sweep moves on. Threads cannot do this: a thread blocked inside the library
+cannot be stopped, and it would hold the library's shared connection cache.
+Config.yaml also gives these rows a Gatus heartbeat, so if the collector itself
+ever stops pushing again the rows go red instead of freezing.
 """
 
 import json
+import multiprocessing
 import os
 import random
 import sys
@@ -190,12 +208,13 @@ def classify(exc, stage="connect"):
     return f"{exc.__class__.__name__}: {text}", stage
 
 
-def check_share(entry, user, password, timeout, thresholds):
+def check_share(entry, user, password, timeout, thresholds, on_stage=None):
     """Connect to one share and report what happened, stage by stage.
 
     Returns (status, reason, counts, detail). Never raises: a share that cannot
     be reached is a result, not a crash, and one bad server must not stop the
-    other rows from reporting.
+    other rows from reporting. on_stage(name) is called as each stage starts, so
+    check_share_bounded can say which stage a hung check was stuck in.
     """
     path = smb_path(entry["host"], entry["share"])
     steps = []
@@ -223,6 +242,8 @@ def check_share(entry, user, password, timeout, thresholds):
 
     def step(name, fn):
         """Run one stage, time it, and record it. Returns (ok, value)."""
+        if on_stage is not None:
+            on_stage(name)
         started = time.monotonic()
         try:
             value = fn()
@@ -321,6 +342,78 @@ def check_share(entry, user, password, timeout, thresholds):
     return "healthy", "", counts, detail
 
 
+def _check_in_child(conn, entry, user, password, timeout, thresholds):
+    """Child-process body for check_share_bounded. Streams stages, then the result."""
+    def on_stage(name):
+        try:
+            conn.send(("stage", name))
+        except Exception:  # noqa: BLE001 - parent gone; nothing left to tell
+            pass
+    try:
+        result = check_share(entry, user, password, timeout, thresholds, on_stage)
+    except BaseException as exc:  # noqa: BLE001 - report it rather than die silently
+        result = ("down", f"collector error: {exc.__class__.__name__}: {exc}", {}, {"steps": []})
+    try:
+        conn.send(("result", result))
+    finally:
+        conn.close()
+
+
+def check_share_bounded(entry, user, password, timeout, thresholds, deadline):
+    """check_share in a child process that is killed if it overruns deadline.
+
+    See "Hangs" in the module docstring for why this cannot be a thread or a
+    library timeout. Same return shape as check_share.
+    """
+    ctx = multiprocessing.get_context("fork")
+    reader, writer = ctx.Pipe(duplex=False)
+    proc = ctx.Process(target=_check_in_child,
+                       args=(writer, entry, user, password, timeout, thresholds),
+                       daemon=True)
+    started = time.monotonic()
+    proc.start()
+    writer.close()  # the child holds its own copy; EOF on reader now means it exited
+
+    stage = "connect"
+    result = None
+    try:
+        while result is None:
+            left = deadline - (time.monotonic() - started)
+            if left <= 0:
+                break
+            if not reader.poll(min(left, 1.0)):
+                continue
+            try:
+                kind, value = reader.recv()
+            except EOFError:
+                break  # child exited without a result
+            if kind == "stage":
+                stage = value
+            else:
+                result = value
+    finally:
+        if proc.is_alive():
+            proc.kill()
+        proc.join(5)
+        reader.close()
+
+    if result is not None:
+        return result
+
+    elapsed = (time.monotonic() - started) * 1000.0
+    if elapsed >= deadline * 1000.0:
+        reason = (f"server stopped answering during {stage}: "
+                  f"no reply within {int(deadline)}s, check abandoned")
+    else:
+        reason = f"the check crashed during {stage} (exit code {proc.exitcode})"
+    detail = {
+        "steps": [{"name": stage, "ok": False, "ms": round(elapsed, 1), "error": reason}],
+        "server": entry["server"], "host": entry["host"], "share": entry["share"],
+        "drive": entry["drive"], "unc": unc(entry["server"], entry["share"]),
+    }
+    return "down", reason, {}, detail
+
+
 def report(base, token, entry, status, reason, counts, detail):
     """Push the snapshot, then the pass/fail result. Mirrors unifi_collector."""
     key = entry["key"]
@@ -379,6 +472,7 @@ def sweep_once():
              or os.environ.get("PHONES_PUSH_TOKEN") or "").strip()
     base = os.environ.get("GATUS_PUSH_BASE", "http://localhost:8080")
     timeout = int(os.environ.get("SMB_TIMEOUT", "20"))
+    deadline = float(os.environ.get("SMB_CHECK_DEADLINE", "90"))
     thresholds = {
         "free_pct": float(os.environ.get("SMB_FREE_WARN_PCT", "10")),
         "free_gb": float(os.environ.get("SMB_FREE_WARN_GB", "20")),
@@ -401,20 +495,14 @@ def sweep_once():
 
     for entry in SHARES:
         started = time.monotonic()
-        status, reason, counts, detail = check_share(entry, user, password, timeout, thresholds)
+        status, reason, counts, detail = check_share_bounded(
+            entry, user, password, timeout, thresholds, deadline)
         elapsed = (time.monotonic() - started) * 1000.0
         print(f"{entry['key']}: status={status} "
               f"free={counts.get('freeGB', '?')}GB entries={counts.get('entries', '?')} "
               f"dur={int(elapsed)}ms" + (f" reason={reason}" if reason else ""))
         report(base, token, entry, status, reason, counts, detail)
 
-    # Belt and braces: check_share already drops the cached session before each
-    # share, so auth is exercised per share. This clears whatever the last share
-    # left open so nothing is held between sweeps either.
-    try:
-        smbclient.reset_connection_cache()
-    except Exception:  # noqa: BLE001 - teardown must never fail a sweep
-        pass
 
 
 def main():

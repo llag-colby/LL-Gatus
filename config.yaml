@@ -404,16 +404,28 @@ external-endpoints:
   # access-denied. Re-add it here, in collector/smb_collector.py SHARES and in
   # web/app/src/utils/smbShares.js if that account is ever granted access.
   #
+  # Heartbeat: if no push lands for 10 minutes the row records a failure and
+  # reads red, rather than sitting frozen on its last result. A worst-case
+  # sweep is three 90s deadlines plus a 90s sleep, about six minutes, so ten
+  # never trips on a slow but working collector. This is what would have
+  # flagged the collector hang that froze these rows for days.
+  #
   # NOTE: external-endpoints only (re)load on `docker compose down && up -d`.
   - name: SMB Shares
     group: "L:"
     token: "${PHONES_PUSH_TOKEN}"
+    heartbeat:
+      interval: 10m
   - name: SMB Shares
     group: "K:"
     token: "${PHONES_PUSH_TOKEN}"
+    heartbeat:
+      interval: 10m
   - name: SMB Shares
     group: "P:"
     token: "${PHONES_PUSH_TOKEN}"
+    heartbeat:
+      interval: 10m
 
   # --- Hypervisor rows (collector/hv_collector.py) -------------------------
   # One row per Hyper-V host, pushed by the collector rather than pinged. Three
