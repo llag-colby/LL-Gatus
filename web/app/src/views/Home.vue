@@ -154,8 +154,17 @@ const barsToShow = computed(() => resultPageSize)
 // This deliberately outranks the health sort too: the tier keeps a fixed place
 // on the wall so people learn where to find it, rather than moving when it
 // breaks. Flip the pinRank comparison below if a failing tier should jump.
-const PINNED_LAST = new Set(['Domain Controllers', 'SMB Shares', 'Hypervisors'])
+// Hosted Apps is the same kind of tier: public web apps, not a store.
+const PINNED_LAST = new Set(['Domain Controllers', 'SMB Shares', 'Hosted Apps'])
 const pinRank = (name) => (PINNED_LAST.has(name) ? 1 : 0)
+
+// Cards kept off the wall entirely, whatever the shared layout says. Unlike a
+// layout hide this also drops them from the audio alerts below. The endpoints
+// are still collected and stored, and their detail pages still work, so
+// bringing a card back is deleting it from this set.
+const HIDDEN_CARDS = new Set(['Hypervisors'])
+const wallEndpoints = computed(() =>
+  endpointStatuses.value.filter(ep => !HIDDEN_CARDS.has(ep.name)))
 
 // --- helpers ---
 const latestFailed = (ep) => {
@@ -171,7 +180,7 @@ const everFailed = (ep) => {
 // apply search / filter / sort at the location level.
 const locations = computed(() => {
   const map = new Map()
-  for (const ep of endpointStatuses.value) {
+  for (const ep of wallEndpoints.value) {
     if (!map.has(ep.name)) map.set(ep.name, { name: ep.name, endpoints: [] })
     map.get(ep.name).endpoints.push(ep)
   }
@@ -443,7 +452,7 @@ let prevStatuses = {}
 let statusInitialized = false
 const effectiveStatuses = computed(() => {
   const groups = {}
-  for (const ep of endpointStatuses.value) {
+  for (const ep of wallEndpoints.value) {
     if (!groups[ep.name]) groups[ep.name] = []
     groups[ep.name].push(ep)
   }
