@@ -231,6 +231,49 @@ def fetch_uplink_settings(base, key):
         return 0
 
 
+# What the wireless row uses when Gatus cannot be asked: the rules this collector
+# applied before they were operator-settable. Keep in step with
+# defaultWirelessThresholds in api/unifi_wireless_settings.go.
+DEFAULT_WIRELESS_RULES = {"degradedAt": 1, "downAt": 0,
+                          "txRetryPct": TX_RETRY_DEGRADED_PCT, "ignored": frozenset()}
+
+
+def fetch_wireless_rules(base, key):
+    """Operator-set wireless thresholds and ignored APs for one wireless row.
+
+    degradedAt / downAt count offline APs that are NOT ignored; downAt 0 means
+    down only when every counted AP is offline. txRetryPct 0 turns the tx-retry
+    check off. ignored holds lowered MACs (or names, for an AP with no MAC).
+    Best effort: any error falls back to DEFAULT_WIRELESS_RULES, loudly.
+    """
+    safe_key = urllib.parse.quote(key, safe="")
+    try:
+        req = urllib.request.Request(f"{base}/api/v1/unifi/{safe_key}/wireless-settings",
+                                     headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+            data = json.loads(resp.read())
+        eff = data.get("effective") or {}
+        return {
+            "degradedAt": max(1, int(eff.get("degradedAt") or 1)),
+            "downAt": max(0, int(eff.get("downAt") or 0)),
+            "txRetryPct": float(eff.get("txRetryPct") or 0),
+            "ignored": frozenset(str(i).strip().lower()
+                                 for i in (data.get("ignored") or []) if str(i).strip()),
+        }
+    except urllib.error.HTTPError as exc:
+        print(f"WARN: cannot read wireless settings for {key} (HTTP {exc.code}), "
+              f"using defaults", file=sys.stderr)
+    except (urllib.error.URLError, OSError, ValueError, TypeError, AttributeError) as exc:
+        print(f"WARN: cannot read wireless settings for {key} ({exc}), using defaults",
+              file=sys.stderr)
+    return dict(DEFAULT_WIRELESS_RULES)
+
+
+def ap_id(device):
+    """The id an operator ignores an AP by: its MAC, or its name without one."""
+    return str(device.get("mac") or device.get("name") or "").strip().lower()
+
+
 SITE_CACHE_PATH = os.environ.get("UNIFI_SITE_CACHE",
                                  os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                               ".unifi_sites.json"))
@@ -470,8 +513,14 @@ def collect_firewall(site, estate, expected_wans=0):
     return "healthy", counts, detail, None
 
 
-def collect_wireless(site, estate):
-    """Access points + clients. Returns (status, counts, detail, reason)."""
+def collect_wireless(site, estate, rules=None):
+    """Access points + clients. Returns (status, counts, detail, reason).
+
+    rules is fetch_wireless_rules() output: which APs are counted out of the
+    site's health, and how many counted APs offline is degraded or down.
+    """
+    rules = rules or DEFAULT_WIRELESS_RULES
+    ignored_ids = rules.get("ignored") or frozenset()
     host = estate.host_by_name(site["wireless_host"])
     if host is None:
         return "down", {"apsOnline": 0, "apsTotal": 0, "clients": 0}, {}, \
@@ -488,15 +537,32 @@ def collect_wireless(site, estate):
     online_count = max(0, total - offline)
     tx_retry = num((stats.get("percentages") or {}).get("txRetry"))
 
+    radios = [d for d in estate.devices_for_host(host) if is_wireless(d)]
+    is_ignored = lambda d: bool(ignored_ids) and ap_id(d) in ignored_ids  # noqa: E731
+    is_offline = lambda d: str(d.get("status") or "").lower() != "online"  # noqa: E731
+
     # The device list only names the offline APs; the counts above are truth.
+    # Ignored APs are left out of the names, since they no longer move the row.
     offline_names = sorted(
         d.get("name") or d.get("model") or d.get("mac") or "?"
-        for d in estate.devices_for_host(host)
-        if is_wireless(d) and str(d.get("status") or "").lower() != "online"
+        for d in radios if is_offline(d) and not is_ignored(d)
     )
+
+    # Counted = the site statistics minus what the operator counted out. The
+    # statistics and the device list do not always agree (a building bridge can
+    # be listed but not counted), so only ignored radios that the list shows are
+    # subtracted, and the result is clamped rather than allowed to go negative.
+    ignored_radios = [d for d in radios if is_ignored(d)]
+    ignored_offline = sum(1 for d in ignored_radios if is_offline(d))
+    counted_total = max(0, total - len(ignored_radios))
+    counted_offline = min(counted_total, max(0, offline - ignored_offline))
+    counted_online = counted_total - counted_offline
+
     aps = sorted(
         ({
             "name": d.get("name") or d.get("model") or d.get("mac") or "?",
+            "mac": d.get("mac") or "",
+            "ignored": is_ignored(d),
             "model": d.get("shortname") or d.get("model") or "",
             "ip": d.get("ip") or "",
             "state": str(d.get("status") or "").upper(),
@@ -522,6 +588,7 @@ def collect_wireless(site, estate):
             "since": d.get("startupTime") or "",
             "mac": d.get("mac") or "",
             "wireless": is_wireless(d),
+            "ignored": is_wireless(d) and is_ignored(d),
         } for d in estate.devices_for_host(host)),
         key=lambda d: (not d["wireless"], d["name"].lower()),
     )
@@ -536,6 +603,12 @@ def collect_wireless(site, estate):
         "guests": int(c.get("guestClient") or 0),
         "wiredClients": int(c.get("wiredClient") or 0),
         "txRetryPct": tx_retry,
+        # What the status below is judged on. apsOnline / apsTotal stay the
+        # site's raw statistics, because they are charted and redefining them
+        # would splice two quantities into one history line.
+        "apsCountedOnline": counted_online,
+        "apsCountedTotal": counted_total,
+        "apsIgnored": len(ignored_radios),
     }
     detail = {
         "site": (record.get("meta") or {}).get("desc") or Estate._name(host),
@@ -549,18 +622,34 @@ def collect_wireless(site, estate):
             "pendingUpdate": int(c.get("pendingUpdateDevice") or 0),
             "ssids": int(c.get("wifiConfiguration") or 0),
         },
+        "rules": {"degradedAt": rules.get("degradedAt", 1),
+                  "downAt": rules.get("downAt", 0),
+                  "txRetryPct": rules.get("txRetryPct", TX_RETRY_DEGRADED_PCT),
+                  "ignored": sorted(ignored_ids)},
     }
+
+    degraded_at = max(1, int(rules.get("degradedAt") or 1))
+    down_at = max(0, int(rules.get("downAt") or 0))
+    tx_limit = float(rules.get("txRetryPct") or 0)
+    ignored_note = f", {len(ignored_radios)} ignored" if ignored_radios else ""
 
     if total == 0:
         return "down", counts, detail, "no access points on this site"
-    if online_count == 0:
-        return "down", counts, detail, "every access point is offline"
-    if offline:
-        listed = ", ".join(offline_names[:4]) or f"{offline} AP(s)"
-        return "degraded", counts, detail, \
-            f"{offline} of {total} access points offline ({listed})"
-    if tx_retry is not None and tx_retry > TX_RETRY_DEGRADED_PCT:
-        return "degraded", counts, detail, f"wireless tx-retry {tx_retry}%"
+    if counted_total == 0:
+        # Every AP is counted out. Nothing is being judged, so nothing is down.
+        return "healthy", counts, detail, None
+    if counted_online == 0:
+        return "down", counts, detail, \
+            f"every counted access point is offline{ignored_note}"
+    listed = ", ".join(offline_names[:4]) or f"{counted_offline} AP(s)"
+    summary = (f"{counted_offline} of {counted_total} access points offline "
+               f"({listed}){ignored_note}")
+    if down_at and counted_offline >= down_at:
+        return "down", counts, detail, summary
+    if counted_offline >= degraded_at:
+        return "degraded", counts, detail, summary
+    if tx_limit > 0 and tx_retry is not None and tx_retry > tx_limit:
+        return "degraded", counts, detail, f"wireless tx-retry {tx_retry}% (over {tx_limit:g}%)"
     return "healthy", counts, detail, None
 
 
@@ -569,7 +658,7 @@ COLLECTORS = {"firewall": collect_firewall, "wireless": collect_wireless}
 
 
 def run_row(kind, site, estate, push_token, base, fatal=None, api_ms=0.0,
-            discovery=None, expected_wans=0):
+            discovery=None, expected_wans=0, wireless_rules=None):
     """Collect and push one row. Returns True if Gatus does not know this key.
 
     A 404 from the snapshot push is not an error to shout about once per sweep:
@@ -593,7 +682,8 @@ def run_row(kind, site, estate, push_token, base, fatal=None, api_ms=0.0,
                 status, counts, detail, reason = collect_firewall(
                     site, estate, expected_wans)
             else:
-                status, counts, detail, reason = collect_wireless(site, estate)
+                status, counts, detail, reason = collect_wireless(
+                    site, estate, wireless_rules)
         except (urllib.error.URLError, OSError, ValueError, KeyError) as exc:
             status, counts, detail, reason = "down", {}, {}, f"no unifi reporting ({exc})"
     # Response time = the UniFi API round-trip. One estate read serves every row,
@@ -709,16 +799,20 @@ def sweep_once():
     # reported latency is measured over, which made the Firewall row's chart
     # partly a measurement of Gatus's own responsiveness.
     settings = {}
+    wireless_rules = {}
     for kind, site in rows:
+        key = f"{kind}_{site['slug']}"
         if kind == "firewall":
-            key = f"{kind}_{site['slug']}"
             settings[key] = fetch_uplink_settings(base, key)
+        elif not fatal:
+            wireless_rules[key] = fetch_wireless_rules(base, key)
 
     unregistered = []
     for kind, site in rows:
         try:
             if run_row(kind, site, estate, push_token, base, fatal, api_ms, discovery,
-                       settings.get(f"{kind}_{site['slug']}", 0)):
+                       settings.get(f"{kind}_{site['slug']}", 0),
+                       wireless_rules.get(f"{kind}_{site['slug']}")):
                 unregistered.append((kind, site))
         except Exception as exc:  # never let one row kill the sweep
             print(f"ERROR running {kind}_{site['slug']}: {exc}", file=sys.stderr)

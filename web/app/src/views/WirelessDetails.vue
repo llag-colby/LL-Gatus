@@ -26,6 +26,70 @@
             data-tooltip="Refresh" data-tip-pos="bottom">
             <RefreshCw class="h-5 w-5" :class="{ 'animate-spin': loading }" />
           </Button>
+
+          <!-- Health thresholds: what counts as degraded / down for this site -->
+          <div class="relative">
+            <Button variant="ghost" size="icon" class="h-9 w-9" @click="toggleSettings"
+              data-tooltip="Health thresholds" data-tip-pos="bottom" aria-label="Health thresholds">
+              <SlidersHorizontal class="h-5 w-5" />
+            </Button>
+            <div v-if="settingsOpen" class="fixed inset-0 z-40" @click="settingsOpen = false"></div>
+            <div v-if="settingsOpen" class="pop-in absolute right-0 mt-2 w-80 rounded-lg border bg-popover text-popover-foreground shadow-xl p-3 z-50 space-y-3 text-left dark:border-border" style="transform-origin: top right;">
+              <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Health thresholds</div>
+              <div class="flex gap-1">
+                <button type="button" class="flex-1 text-xs py-1 rounded-md border transition-colors truncate px-1"
+                  :class="scope === 'site' ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50 dark:hover:bg-accent/40'" @click="setScope('site')">
+                  {{ siteName }}
+                </button>
+                <button type="button" class="flex-1 text-xs py-1 rounded-md border transition-colors"
+                  :class="scope === 'global' ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50 dark:hover:bg-accent/40'" @click="setScope('global')">
+                  Global default
+                </button>
+              </div>
+              <label class="flex items-center justify-between gap-2">
+                <span class="text-sm">Degraded when ≥</span>
+                <span class="flex items-center gap-1.5">
+                  <input type="number" min="1" v-model.number="form.degradedAt"
+                    class="w-14 text-sm text-right bg-background border rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-ring dark:bg-background" />
+                  <span class="text-xs text-muted-foreground w-12">offline</span>
+                </span>
+              </label>
+              <label class="flex items-center justify-between gap-2">
+                <span class="text-sm">Down when ≥</span>
+                <span class="flex items-center gap-1.5">
+                  <input type="number" min="0" v-model.number="form.downAt"
+                    class="w-14 text-sm text-right bg-background border rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-ring dark:bg-background" />
+                  <span class="text-xs text-muted-foreground w-12">offline</span>
+                </span>
+              </label>
+              <label class="flex items-center justify-between gap-2">
+                <span class="text-sm">Tx retry warn over</span>
+                <span class="flex items-center gap-1.5">
+                  <input type="number" min="0" max="100" step="1" v-model.number="form.txRetryPct"
+                    class="w-14 text-sm text-right bg-background border rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-ring dark:bg-background" />
+                  <span class="text-xs text-muted-foreground w-12">%</span>
+                </span>
+              </label>
+              <div class="text-[11px] text-muted-foreground leading-snug">
+                Counts only APs that are counted in. Down at 0 means down only when every
+                counted AP is offline. Tx retry at 0 turns that check off.
+              </div>
+              <div class="flex items-center gap-2">
+                <Button size="sm" class="flex-1" @click="saveSettings">Save</Button>
+                <Button v-if="scope === 'site' && wlSettings && wlSettings.override" size="sm" variant="ghost"
+                  class="text-muted-foreground" @click="useGlobal">Use global</Button>
+              </div>
+              <div class="text-[11px] text-muted-foreground">
+                <template v-if="scope === 'site'">
+                  <span v-if="wlSettings && wlSettings.override">Site override active. It replaces the global default here.</span>
+                  <span v-else>Using the global default. Save here to give this site its own.</span>
+                </template>
+                <template v-else>Applies to every site without its own override.</template>
+                Takes effect at the next sweep, within a minute.
+              </div>
+            </div>
+          </div>
+
           <MonitorToggle :endpoint-key="routeKey" />
         </div>
       </div>
@@ -63,7 +127,7 @@
         <div class="flex flex-wrap items-center gap-3">
           <span class="status-pill" :class="statusMeta.cls">{{ statusMeta.label }}</span>
           <span class="band-facts">
-            <b>{{ apsOnline }}</b>/{{ apsTotal }} APs online · <b>{{ fmt(counts.clients) }}</b> wifi clients
+            <b>{{ apsOnline }}</b>/{{ apsTotal }} APs online<template v-if="ignoredCount"> · {{ ignoredCount }} not counted</template> · <b>{{ fmt(counts.clients) }}</b> wifi clients
             <template v-if="controller"> · {{ controller }}</template>
           </span>
         </div>
@@ -197,7 +261,8 @@
             <span class="lg"><i class="sw sw-on"></i>online ({{ onlineCount }})</span>
             <span class="lg"><i class="sw sw-pend"></i>update pending ({{ pendingCount }})</span>
             <span class="lg"><i class="sw sw-off"></i>offline ({{ offlineCount }})</span>
-            <span class="lg lg-dim">click a tile to filter the table</span>
+            <span v-if="ignoredCount" class="lg"><i class="sw sw-ign"></i>not counted ({{ ignoredCount }})</span>
+            <span class="lg lg-dim">click a tile to filter the table · use Counted in the table to count an AP out</span>
           </div>
           <p v-if="rosterNote" class="panel-note mt-2">{{ rosterNote }}</p>
         </section>
@@ -248,7 +313,7 @@
               </thead>
               <tbody>
                 <tr v-for="ap in sortedAps" :key="'row-' + ap.name + ap.ip"
-                  :class="{ 'row-sel': selected === ap.name, 'row-off': !isOnline(ap) }">
+                  :class="{ 'row-sel': selected === ap.name, 'row-off': !isOnline(ap) && !isIgnored(ap), 'row-ign': isIgnored(ap) }">
                   <td>
                     <span class="lamp" :class="isOnline(ap) ? 'up' : 'down'"></span>
                     <span :class="isOnline(ap) ? 'st-text-up' : 'st-text-down'">{{ stateLabel(ap) }}</span>
@@ -261,9 +326,17 @@
                     <span class="pill" :class="upToDate(ap) ? 'pill-ok' : 'pill-pend'">{{ firmwareLabel(ap) }}</span>
                   </td>
                   <td class="dim">{{ sinceLabel(ap) }}</td>
+                  <td class="counted-cell">
+                    <button v-if="ap.wireless !== false" type="button" class="switch" :class="{ on: !isIgnored(ap) }"
+                      role="switch" :aria-checked="!isIgnored(ap)" :disabled="!apId(ap) || pendingIds.has(apId(ap))"
+                      :aria-label="(isIgnored(ap) ? 'Count ' : 'Stop counting ') + (ap.name || 'this AP')"
+                      :title="isIgnored(ap) ? 'Not counted: click to count this AP in the site health' : 'Counted: click to count this AP out'"
+                      @click="toggleCounted(ap)"><span class="knob"></span></button>
+                    <span v-else class="dim">-</span>
+                  </td>
                 </tr>
                 <tr v-if="!sortedAps.length">
-                  <td colspan="7" class="py-10 text-center text-muted-foreground">
+                  <td colspan="8" class="py-10 text-center text-muted-foreground">
                     No access points match “{{ search }}”.
                   </td>
                 </tr>
@@ -279,13 +352,13 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowLeft, RefreshCw, AlertTriangle, PauseCircle } from 'lucide-vue-next'
+import { ArrowLeft, RefreshCw, AlertTriangle, PauseCircle, SlidersHorizontal } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import MonitorToggle from '@/components/MonitorToggle.vue'
 import RangeSelector from '@/components/RangeSelector.vue'
 import HistoryChart from '@/components/HistoryChart.vue'
 import { generatePrettyTimeAgo, prettifyTimestamp } from '@/utils/time'
-import { isMonitored, now, historyRange, setHistoryRange } from '@/store'
+import { isMonitored, now, historyRange, setHistoryRange, addToast } from '@/store'
 
 const route = useRoute()
 const routeKey = computed(() => route.params.key || '')
@@ -342,18 +415,47 @@ const isOnline = (ap) => String(ap.state || '').toUpperCase() === 'ONLINE'
 const upToDate = (ap) => String(ap.firmware || '').toLowerCase().replace(/[^a-z]/g, '') === 'uptodate'
 
 // The site statistics are the truth for totals; the device list can name fewer
-// devices than the counts do, so never derive one from the other.
-const apsTotal = computed(() => (counts.value.apsTotal != null ? counts.value.apsTotal : aps.value.length))
-const apsOnline = computed(() => (
-  counts.value.apsOnline != null ? counts.value.apsOnline : aps.value.filter(isOnline).length
-))
+// devices than the counts do, so never derive one from the other. The COUNTED
+// pair is those statistics minus the APs an operator counted out; it is what
+// the status is judged on, so it is what the page leads with. Older snapshots
+// lack it, hence the fall-back to the raw pair.
+const apsTotal = computed(() => {
+  if (counts.value.apsCountedTotal != null) return counts.value.apsCountedTotal
+  return counts.value.apsTotal != null ? counts.value.apsTotal : aps.value.length
+})
+const apsOnline = computed(() => {
+  if (counts.value.apsCountedOnline != null) return counts.value.apsCountedOnline
+  return counts.value.apsOnline != null ? counts.value.apsOnline : aps.value.filter(isOnline).length
+})
+
+// --- Counted / not counted ---------------------------------------------
+// An AP is identified by MAC, or by name when the snapshot carried no MAC.
+// Two APs can share a name, so the MAC is the one that matters.
+const apId = (ap) => String((ap && (ap.mac || ap.name)) || '').trim().toLowerCase()
+const wlSettings = ref(null)
+const pendingIds = ref(new Set())
+// The settings read is the live answer. Until it lands, the flags the collector
+// put on the snapshot stand in, so the page never flashes everything as counted.
+const ignoredSet = computed(() => {
+  if (wlSettings.value && Array.isArray(wlSettings.value.ignored)) return new Set(wlSettings.value.ignored)
+  return new Set(aps.value.filter(a => a.ignored).map(apId))
+})
+const isIgnored = (ap) => ignoredSet.value.has(apId(ap))
+const ignoredCount = computed(() => aps.value.filter(a => a.wireless !== false && isIgnored(a)).length)
+const txLimit = computed(() => {
+  const eff = wlSettings.value && wlSettings.value.effective
+  return eff && eff.txRetryPct != null ? Number(eff.txRetryPct) : 20
+})
 const onlineCount = computed(() => aps.value.filter(a => isOnline(a) && upToDate(a)).length)
 const pendingCount = computed(() => aps.value.filter(a => isOnline(a) && !upToDate(a)).length)
-const offlineCount = computed(() => aps.value.filter(a => !isOnline(a)).length)
+const offlineCount = computed(() => aps.value.filter(a => !isOnline(a) && !isIgnored(a)).length)
+// Compares the listing with the site's RAW statistics, not the counted pair:
+// counting an AP out is an operator choice, not a disagreement in the data.
+const rawApsTotal = computed(() => (counts.value.apsTotal != null ? counts.value.apsTotal : aps.value.length))
 const rosterNote = computed(() => {
-  if (!aps.value.length || aps.value.length === apsTotal.value) return ''
+  if (!aps.value.length || aps.value.length === rawApsTotal.value) return ''
   return `The console listed ${aps.value.length} devices this sweep but its site statistics count `
-    + `${apsTotal.value}. The map shows what was listed; the counts above are the site's own numbers.`
+    + `${rawApsTotal.value}. The map shows what was listed; the counts above are the site's own numbers.`
 })
 
 const STATUS_META = {
@@ -367,15 +469,16 @@ const statusMeta = computed(() => STATUS_META[(snapshot.value || {}).status] || 
 const fmt = (v) => (v == null ? '—' : String(v))
 const txTone = computed(() => {
   const v = counts.value.txRetryPct
-  if (v == null) return ''
-  if (v > 35) return 'tone-bad'
-  if (v > 20) return 'tone-warn'
+  if (v == null || !txLimit.value) return ''
+  if (v > txLimit.value + 15) return 'tone-bad'
+  if (v > txLimit.value) return 'tone-warn'
   return ''
 })
 const cells = computed(() => [
   {
     label: 'APs online', value: `${apsOnline.value}/${apsTotal.value}`,
-    sub: offlineCount.value ? `${offlineCount.value} offline` : 'all up',
+    sub: (apsTotal.value - apsOnline.value ? `${apsTotal.value - apsOnline.value} offline` : 'all up')
+      + (ignoredCount.value ? `, ${ignoredCount.value} not counted` : ''),
     tone: apsOnline.value < apsTotal.value ? 'tone-bad' : '',
   },
   { label: 'Wifi clients', value: fmt(counts.value.clients), sub: 'associated now', tone: '' },
@@ -387,7 +490,7 @@ const cells = computed(() => [
   {
     label: 'Tx retry',
     value: counts.value.txRetryPct == null ? '—' : `${counts.value.txRetryPct}%`,
-    sub: counts.value.txRetryPct == null ? 'not reported' : 'warn over 20%',
+    sub: counts.value.txRetryPct == null ? 'not reported' : (txLimit.value ? `warn over ${txLimit.value}%` : 'check off'),
     tone: txTone.value,
   },
   { label: 'SSIDs', value: fmt(wlan.value.ssids), sub: 'broadcast here', tone: '' },
@@ -474,8 +577,8 @@ const firmwareLabel = (ap) => {
 
 // --- Roster tiles -------------------------------------------------------
 const tileClass = (ap) => {
-  if (!isOnline(ap)) return 'tile-off'
-  return upToDate(ap) ? 'tile-on' : 'tile-pend'
+  const state = !isOnline(ap) ? 'tile-off' : (upToDate(ap) ? 'tile-on' : 'tile-pend')
+  return isIgnored(ap) ? [state, 'tile-ign'] : state
 }
 const tileTip = (ap) => [
   ap.name || 'unnamed',
@@ -483,6 +586,7 @@ const tileTip = (ap) => [
   ap.ip || 'no ip',
   stateLabel(ap),
   upToDate(ap) ? `firmware ${ap.version || '—'}` : `firmware ${firmwareLabel(ap)}`,
+  ...(isIgnored(ap) ? ['not counted in site health'] : []),
 ].join(' · ')
 
 const pick = (ap) => {
@@ -507,6 +611,7 @@ const COLUMNS = [
   { key: 'version', label: 'Version' },
   { key: 'firmware', label: 'Firmware' },
   { key: 'since', label: 'Up since' },
+  { key: 'counted', label: 'Counted' },
 ]
 
 // Offline first: the reason anyone opens this page.
@@ -532,6 +637,7 @@ const sortValue = (ap, key) => {
   switch (key) {
     case 'state': return isOnline(ap) ? 1 : 0
     case 'firmware': return upToDate(ap) ? 1 : 0
+    case 'counted': return isIgnored(ap) ? 0 : 1
     case 'ip': return ipKey(ap.ip)
     case 'since': {
       const d = asDate(ap.since)
@@ -719,9 +825,84 @@ const fetchResults = async () => {
   }
 }
 
+// --- Wireless settings: thresholds + counted-out APs -----------------------
+const settingsUrl = () => `/api/v1/unifi/${encodeURIComponent(routeKey.value)}/wireless-settings`
+const fetchWirelessSettings = async () => {
+  try {
+    const res = await fetch(settingsUrl(), { cache: 'no-store' })
+    if (res.ok) wlSettings.value = await res.json()
+  } catch (e) {
+    // non-fatal: the snapshot's own ignored flags stand in until the next poll
+  }
+}
+
+const toggleCounted = async (ap) => {
+  const id = apId(ap)
+  if (!id || pendingIds.value.has(id)) return
+  const ignore = !isIgnored(ap)
+  const who = ap.name || id
+  pendingIds.value = new Set([...pendingIds.value, id])
+  try {
+    const res = await fetch(`/api/v1/unifi/${encodeURIComponent(routeKey.value)}/wireless-ignored`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ignored: ignore }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    wlSettings.value = await res.json()
+    addToast(ignore
+      ? `${who} no longer counts toward ${siteName.value}. Status updates at the next sweep.`
+      : `${who} counts toward ${siteName.value} again. Status updates at the next sweep.`, 'success')
+  } catch (e) {
+    addToast(`Couldn't update ${who}, try again`, 'error')
+  } finally {
+    const next = new Set(pendingIds.value)
+    next.delete(id)
+    pendingIds.value = next
+  }
+}
+
+const settingsOpen = ref(false)
+const scope = ref('site')
+const form = ref({ degradedAt: 1, downAt: 0, txRetryPct: 20 })
+const applyFormFromScope = () => {
+  const d = wlSettings.value
+  if (!d) return
+  const src = scope.value === 'global' ? d.global : (d.override || d.global)
+  if (src) form.value = { degradedAt: src.degradedAt, downAt: src.downAt, txRetryPct: src.txRetryPct }
+}
+const toggleSettings = async () => {
+  settingsOpen.value = !settingsOpen.value
+  if (settingsOpen.value) {
+    await fetchWirelessSettings()
+    applyFormFromScope()
+  }
+}
+const setScope = (s) => { scope.value = s; applyFormFromScope() }
+const postSettings = async (body, okMsg) => {
+  try {
+    const res = await fetch(settingsUrl(), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    wlSettings.value = await res.json()
+    applyFormFromScope()
+    addToast(okMsg, 'success')
+  } catch (e) {
+    addToast('Couldn\'t save thresholds, try again', 'error')
+  }
+}
+const saveSettings = () => postSettings({
+  scope: scope.value,
+  degradedAt: Number(form.value.degradedAt) || 1,
+  downAt: Number(form.value.downAt) || 0,
+  txRetryPct: Number(form.value.txRetryPct) || 0,
+}, scope.value === 'global' ? 'Global wireless thresholds saved' : `${siteName.value} wireless thresholds saved`)
+const useGlobal = () => postSettings({ scope: 'site', clear: true },
+  `${siteName.value} now uses the global default`)
+
 const refresh = async () => {
   loading.value = true
-  try { await Promise.all([fetchSnapshot(), fetchResults()]) } finally {
+  try { await Promise.all([fetchSnapshot(), fetchResults(), fetchWirelessSettings()]) } finally {
     loading.value = false
     loaded.value = true
   }
@@ -910,6 +1091,29 @@ onUnmounted(() => {
 .sw-pend { background: #e0a458; }
 .sw-off { background: #ef6b53; }
 .lg-dim { opacity: 0.6; }
+.sw-ign { background: transparent; border: 1px dashed hsl(var(--muted-foreground)); }
+
+/* Counted out: still shown, visibly not part of the verdict */
+.tile.tile-ign { opacity: 0.45; border-style: dashed; }
+.tile.tile-ign::before { background: hsl(var(--muted-foreground)); }
+.roster-table tr.row-ign td:not(.counted-cell) { opacity: 0.45; }
+.roster-table .counted-cell { text-align: center; }
+
+.switch {
+  display: inline-block; position: relative; width: 34px; height: 18px; padding: 0;
+  border-radius: 999px; border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted)); cursor: pointer; vertical-align: middle;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.switch .knob {
+  position: absolute; top: 1px; left: 1px; width: 14px; height: 14px; border-radius: 999px;
+  background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.35); transition: transform 0.15s ease;
+}
+.switch.on { background: var(--status-up); border-color: var(--status-up); }
+.switch.on .knob { transform: translateX(16px); }
+.switch:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.switch:disabled { cursor: not-allowed; opacity: 0.5; }
+@media (prefers-reduced-motion: reduce) { .switch, .switch .knob { transition: none; } }
 
 /* --- AP table (same idiom as the phone directory) --------------------- */
 .roster-table thead th {

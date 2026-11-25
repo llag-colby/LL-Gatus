@@ -168,6 +168,11 @@ func (a *API) createRouter(cfg *config.Config) *fiber.App {
 	// bare :key route; kept above it as a matter of habit, not necessity.
 	apiV1Router.Get("/v1/unifi/:key/settings", GetUniFiSettings)
 	apiV1Router.Post("/v1/unifi/:key/settings", SetUniFiSettings)
+	// Wireless thresholds and ignored APs, set from the wireless drill-in and
+	// read by the collector each sweep. See api/unifi_wireless_settings.go.
+	apiV1Router.Get("/v1/unifi/:key/wireless-settings", GetWirelessSettings)
+	apiV1Router.Post("/v1/unifi/:key/wireless-settings", SetWirelessSettings)
+	apiV1Router.Post("/v1/unifi/:key/wireless-ignored", SetWirelessIgnored)
 	apiV1Router.Get("/v1/unifi/:key", GetUniFiSnapshot)
 	// SMB share side-channel, same shape as UniFi above: the collector POSTs one
 	// snapshot per share, the drill-in GETs them all at once for its sibling

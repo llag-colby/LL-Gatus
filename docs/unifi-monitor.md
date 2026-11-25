@@ -172,7 +172,7 @@ Environment-driven, in `.env`, injected into the `unifi-collector` container via
 | `UNIFI_PUSH_TOKEN` | yes | — | Push token; falls back to `PHONES_PUSH_TOKEN`. Must equal the `token` on the endpoint in `config.yaml`. Exits 1 if neither is set. |
 | `PHONES_PUSH_TOKEN` | — | — | What `config.yaml` actually interpolates into every UniFi endpoint's `token`. Reused deliberately rather than minting a new secret: it is the same collector trust boundary, and every deployed box already has it set. |
 | `GATUS_PUSH_BASE` | no | `http://localhost:8080` | Compose sets `http://gatus:8080` to reach Gatus over the compose network. |
-| `UNIFI_TX_RETRY_DEGRADED_PCT` | no | `20` | Site tx-retry above this marks Wireless degraded. |
+| `UNIFI_TX_RETRY_DEGRADED_PCT` | no | `20` | Fallback only: used when the collector cannot read the operator-set tx-retry threshold from Gatus (see Wireless thresholds below). |
 | `LOOP` | no | unset | `1` = daemon. Anything else means one sweep, then exit. |
 | `SWEEP_MIN` | no | `30` | Low end of the jittered sleep, in seconds. |
 | `SWEEP_MAX` | no | `60` | High end. UniFi state moves slower than phone registrations, hence the wider interval than the phone collector's. |
@@ -201,11 +201,32 @@ Disabled WANs are skipped entirely.
 
 **Wireless**
 
+Judged on COUNTED access points: the site statistics minus any AP an operator
+has counted out on the wireless drill-in.
+
 | Status | When |
 |--------|------|
-| `healthy` | Every AP online and tx-retry at or below the threshold. |
-| `degraded` | Some APs offline, or tx-retry above `UNIFI_TX_RETRY_DEGRADED_PCT`. |
-| `down` | No AP online; or the site has no APs at all; or no console matches `wireless_host`; or the console reports no site statistics. |
+| `healthy` | Fewer counted APs offline than the degraded threshold, and tx-retry at or below its threshold. Also healthy when every AP is counted out. |
+| `degraded` | Counted APs offline at or above **Degraded when** (default 1), or tx-retry above **Tx retry warn over** (default 20%, 0 turns it off). |
+| `down` | Counted APs offline at or above **Down when** (default 0, meaning only when every counted AP is offline); or the site has no APs at all; or no console matches `wireless_host`; or the console reports no site statistics. |
+
+### Wireless thresholds and counting an AP out
+
+Set from the wireless drill-in, stored in `/data/unifi_wireless_settings.json`,
+read by the collector at the start of every sweep, so a change lands within a
+minute.
+
+- **Counted** column in the AP table: switch an AP off to count it out of the
+  site's health. It stays listed (dimmed, dashed on the map) but no longer moves
+  the row. Identified by MAC, so two APs with the same name are kept apart.
+- **Health thresholds** (sliders icon): Degraded when, Down when, and Tx retry
+  warn over. Edit the global default or give one site its own override; **Use
+  global** drops the override.
+- `apsOnline` / `apsTotal` stay the site's raw statistics, because they are
+  charted. The status, the card and the page header use `apsCountedOnline` /
+  `apsCountedTotal`, with `apsIgnored` alongside.
+- API: `GET/POST /api/v1/unifi/{key}/wireless-settings`,
+  `POST /api/v1/unifi/{key}/wireless-ignored` with `{"id":"<mac>","ignored":true}`.
 
 **`degraded` is a warning and does not fail the check — only `down` does.** The
 result is pushed with `success = (status != "down")`, matching how the Phones row

@@ -432,11 +432,18 @@ const firewallMetric = (endpoint) => {
 const wirelessMetric = (endpoint) => {
   const c = unifiCounts(endpoint)
   if (!c || c.apsTotal == null) return latencyOf(endpoint)
+  // Lead with the COUNTED pair (APs an operator counted out are left out),
+  // since that is what the row's status is judged on. Older snapshots lack it.
+  const counted = c.apsCountedTotal != null
+  const online = counted ? c.apsCountedOnline : c.apsOnline
+  const total = counted ? c.apsCountedTotal : c.apsTotal
+  const ignored = counted ? (c.apsIgnored || 0) : 0
   return {
-    value: `${c.apsOnline}/${c.apsTotal} AP`,
-    bad: c.apsOnline < c.apsTotal,
+    value: `${online}/${total} AP`,
+    bad: online < total,
     sub: c.clients != null ? `${c.clients} cl` : '',
-    tooltip: `${c.apsOnline} of ${c.apsTotal} access points online`
+    tooltip: `${online} of ${total} access points online`
+      + (ignored ? ` · ${ignored} not counted` : '')
       + (c.clients != null ? ` · ${c.clients} clients` : ''),
   }
 }
